@@ -1,8 +1,4 @@
-import { CitationPanel } from "../components/CitationPanel";
-import { DocumentLibrary } from "../components/DocumentLibrary";
-import { HighlightPalette } from "../components/HighlightPalette";
-import { PageMappingPanel } from "../components/PageMappingPanel";
-import { ReaderWorkspace } from "../components/ReaderWorkspace";
+import { ScriptoriumWorkflow } from "../components/ScriptoriumWorkflow";
 
 export default function HomePage() {
   return (
@@ -16,15 +12,7 @@ export default function HomePage() {
         </p>
       </header>
 
-      <section className="workspaceGrid" aria-label="Scriptorium workspace mock">
-        <DocumentLibrary />
-        <ReaderWorkspace />
-        <aside className="sideStack">
-          <HighlightPalette />
-          <PageMappingPanel />
-          <CitationPanel />
-        </aside>
-      </section>
+      <ScriptoriumWorkflow />
     </main>
   );
 }
