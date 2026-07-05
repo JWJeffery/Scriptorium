@@ -6,6 +6,8 @@
   --muted: #6e655a;
   --line: #ddd2c2;
   --accent: #5d4631;
+  --accent-strong: #392819;
+  --soft: #f8f2e8;
 }
 
 * {
@@ -26,8 +28,40 @@ select {
   font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--ink);
+}
+
+textarea {
+  resize: vertical;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+label input,
+label textarea,
+label select {
+  color: var(--ink);
+}
+
 .shell {
-  width: min(1440px, calc(100vw - 48px));
+  width: min(1560px, calc(100vw - 48px));
   margin: 0 auto;
   padding: 40px 0 64px;
 }
@@ -52,22 +86,24 @@ h1 {
   letter-spacing: -0.055em;
 }
 
+h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  letter-spacing: -0.035em;
+}
+
 .lede {
-  max-width: 720px;
+  max-width: 760px;
   color: var(--muted);
   font-size: 1.15rem;
   line-height: 1.55;
 }
 
-.workspaceGrid {
-  display: grid;
-  grid-template-columns: 280px minmax(420px, 1fr) 360px;
-  gap: 18px;
-  align-items: start;
-}
-
 .panel,
-.reader {
+.reader,
+.workflow,
+.pdfPanel,
+.annotationList {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -85,6 +121,256 @@ h1 {
 
 .panel p {
   color: var(--muted);
+}
+
+.workflow {
+  padding: 22px;
+}
+
+.workflowHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+
+.workflowHeader p:not(.eyebrow) {
+  max-width: 740px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.uploadButton,
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  padding: 10px 16px;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.uploadButton,
+.primaryButton {
+  background: var(--accent-strong);
+  color: #fff;
+}
+
+.uploadButton input {
+  display: none;
+}
+
+.secondaryButton {
+  margin-top: 10px;
+  background: transparent;
+  color: var(--accent-strong);
+}
+
+.statusLine {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+  color: var(--muted);
+}
+
+.milestoneGrid {
+  display: grid;
+  grid-template-columns: 330px minmax(420px, 1fr) 360px;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.controlsPanel,
+.annotationPanel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.twoColumnInputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mappingFormula {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+.mappingFormula > span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  align-self: center;
+}
+
+.workflowPalette {
+  display: grid;
+  gap: 8px;
+}
+
+.workflowSwatch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px;
+  text-align: left;
+}
+
+.workflowSwatch.active {
+  outline: 3px solid rgb(93 70 49 / 22%);
+  border-color: var(--accent);
+}
+
+.workflowSwatch span,
+.recordColor {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgb(0 0 0 / 15%);
+  flex: 0 0 auto;
+}
+
+.pdfPanel {
+  overflow: hidden;
+  min-height: 760px;
+  background: #eee5d7;
+}
+
+.pdfObject {
+  width: 100%;
+  min-height: 760px;
+  border: 0;
+  background: #fff;
+}
+
+.emptyPdfState {
+  display: grid;
+  place-content: center;
+  min-height: 760px;
+  gap: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.emptyPdfState strong {
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.generatedCitation {
+  padding: 12px;
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  background: var(--soft);
+  line-height: 1.55;
+}
+
+.generatedCitation span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.generatedCitation p {
+  margin: 0;
+  color: var(--ink);
+}
+
+.annotationList {
+  margin-top: 18px;
+  padding: 18px;
+}
+
+.sectionHeading,
+.recordHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.sectionHeading h3 {
+  margin: 0;
+}
+
+.sectionHeading span,
+.recordHeader span:last-child,
+.documentSummary span,
+.emptyAnnotationState {
+  color: var(--muted);
+}
+
+.documentSummary {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+.recordsStack {
+  display: grid;
+  gap: 12px;
+}
+
+.annotationRecord {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.annotationRecord blockquote {
+  margin: 14px 0;
+  padding-left: 14px;
+  border-left: 3px solid var(--line);
+  line-height: 1.55;
+}
+
+.annotationRecord p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.recordHeader {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.recordCitation {
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--soft);
+  line-height: 1.5;
+}
+
+.workspaceGrid {
+  display: grid;
+  grid-template-columns: 280px minmax(420px, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
 }
 
 .sideStack {
@@ -194,12 +480,40 @@ h1 {
 .citationBox {
   padding: 12px;
   border-left: 4px solid var(--accent);
-  background: #f8f2e8;
+  background: var(--soft);
   line-height: 1.55;
+}
+
+@media (max-width: 1250px) {
+  .milestoneGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .pdfPanel,
+  .pdfObject,
+  .emptyPdfState {
+    min-height: 620px;
+  }
 }
 
 @media (max-width: 1100px) {
   .workspaceGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    width: min(100vw - 24px, 1560px);
+  }
+
+  .workflowHeader,
+  .sectionHeading {
+    display: grid;
+  }
+
+  .twoColumnInputs,
+  .mappingFormula {
     grid-template-columns: 1fr;
   }
 }
