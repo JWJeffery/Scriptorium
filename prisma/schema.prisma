@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DocumentKind {
+  PDF
+  DOCX
+  OFFICE
+  GOOGLE_DOC
+  GOOGLE_SHEET
+  GOOGLE_SLIDE
+  TXT
+  MARKDOWN
+  OTHER
+}
+
+enum SnapshotKind {
+  ORIGINAL
+  PDF_RENDERING
+  TEXT_EXTRACTION
+  HTML_RENDERING
+  IMAGE_SCAN
+}
+
+enum PageNumberingSystem {
+  ARABIC
+  ROMAN
+  UNNUMBERED
+  APPENDIX
+  FOLIO
+  CUSTOM
+}
+
+enum MappingConfidence {
+  IMPORTED
+  INFERRED
+  USER_CONFIRMED
+  UNCERTAIN
+}
+
+enum ResearchThreadItemType {
+  DOCUMENT
+  ANNOTATION
+  CITATION
+  SOURCE
+  NOTE
+}
+
+model Document {
+  id               String            @id @default(cuid())
+  title            String
+  originalFilename String?
+  kind             DocumentKind
+  mediaType        String?
+  storageKey       String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  versions         DocumentVersion[]
+  sources          Source[]
+  annotations      Annotation[]
+
+  @@index([title])
+}
+
+model DocumentVersion {
+  id              String       @id @default(cuid())
+  documentId      String
+  document        Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sourceChecksum  String?
+  snapshotKind    SnapshotKind
+  snapshotKey     String?
+  extractionState String       @default("pending")
+  createdAt       DateTime     @default(now())
+  pages           PageMap[]
+  textSpans       TextSpan[]
+  annotations     Annotation[]
+
+  @@index([documentId])
+}
+
+model Source {
+  id          String     @id @default(cuid())
+  documentId  String?
+  document    Document?  @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  shortTitle  String?
+  cslJson     Json
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  citations   Citation[]
+
+  @@index([documentId])
+}
+
+model PageMap {
+  id              String              @id @default(cuid())
+  versionId       String
+  version         DocumentVersion     @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  pdfPageIndex    Int
+  visibleLabel    String?
+  bookPageLabel   String?
+  numberingSystem PageNumberingSystem @default(ARABIC)
+  confidence      MappingConfidence   @default(UNCERTAIN)
+  note            String?
+  annotations     Annotation[]
+  textSpans       TextSpan[]
+
+  @@unique([versionId, pdfPageIndex])
+  @@index([bookPageLabel])
+}
+
+model TextSpan {
+  id        String          @id @default(cuid())
+  versionId String
+  version   DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  pageMapId String?
+  pageMap   PageMap?        @relation(fields: [pageMapId], references: [id], onDelete: SetNull)
+  text      String
+  anchor    Json?
+  createdAt DateTime        @default(now())
+
+  @@index([versionId])
+  @@index([pageMapId])
+}
+
+model Annotation {
+  id          String          @id @default(cuid())
+  documentId  String
+  document    Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionId   String
+  version     DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  pageMapId   String?
+  pageMap     PageMap?        @relation(fields: [pageMapId], references: [id], onDelete: SetNull)
+  colorKey    String
+  selectedText String
+  note        String?
+  tags        String[]
+  anchor      Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  citations   Citation[]
+
+  @@index([documentId])
+  @@index([versionId])
+  @@index([pageMapId])
+  @@index([colorKey])
+}
+
+model Citation {
+  id           String      @id @default(cuid())
+  sourceId     String
+  source       Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  annotationId String?
+  annotation   Annotation? @relation(fields: [annotationId], references: [id], onDelete: SetNull)
+  styleId      String
+  locale       String      @default("en-US")
+  locatorType  String      @default("page")
+  locatorValue String?
+  prefix       String?
+  suffix       String?
+  generatedText String
+  createdAt    DateTime   @default(now())
+
+  @@index([sourceId])
+  @@index([annotationId])
+  @@index([styleId])
+}
+
+model ResearchThread {
+  id          String               @id @default(cuid())
+  title       String
+  description String?
+  tags        String[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  items       ResearchThreadItem[]
+}
+
+model ResearchThreadItem {
+  id               String                 @id @default(cuid())
+  researchThreadId String
+  researchThread   ResearchThread         @relation(fields: [researchThreadId], references: [id], onDelete: Cascade)
+  itemType         ResearchThreadItemType
+  itemId           String
+  note             String?
+  orderIndex       Int                    @default(0)
+
+  @@index([researchThreadId])
+  @@index([itemType, itemId])
+}
+
+model QueryLog {
+  id        String   @id @default(cuid())
+  query     String
+  mode      String
+  filters   Json?
+  resultIds Json?
+  createdAt DateTime @default(now())
+}
