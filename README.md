@@ -28,10 +28,9 @@ The first complete user flow is intentionally narrow:
 ## Proposed stack
 
 - Web app: Next.js + React + TypeScript
-- Database: PostgreSQL
-- Vector search: pgvector, added after the basic annotation workflow works
+- Database: MySQL-compatible Prisma schema for the Spaceship/cPanel deployment path
 - ORM: Prisma
-- PDF rendering: PDF.js via a React wrapper or direct integration
+- PDF rendering: PDF.js
 - Citation formatting: CSL JSON + citeproc-compatible engine
 - Document conversion: later service layer for Office, Google Workspace, Markdown, and text ingestion
 
