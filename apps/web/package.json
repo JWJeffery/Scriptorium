@@ -12,6 +12,7 @@
   "dependencies": {
     "@prisma/client": "latest",
     "next": "latest",
+    "pdfjs-dist": "latest",
     "react": "latest",
     "react-dom": "latest"
   },
