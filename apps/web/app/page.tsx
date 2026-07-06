@@ -1,4 +1,4 @@
-import { ScriptoriumMilestoneOne } from "../components/ScriptoriumMilestoneOne";
+import { ScriptoriumMilestoneOnePersisted } from "../components/ScriptoriumMilestoneOnePersisted";
 
 export default function HomePage() {
   return (
@@ -7,7 +7,7 @@ export default function HomePage() {
         <p className="eyebrow">Scriptorium</p>
         <h1>Scholarly reading, annotation, citation, and research memory.</h1>
       </header>
-      <ScriptoriumMilestoneOne />
+      <ScriptoriumMilestoneOnePersisted />
     </main>
   );
 }
