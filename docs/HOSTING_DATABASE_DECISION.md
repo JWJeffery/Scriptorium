@@ -2,31 +2,51 @@
 
 ## Current implementation target
 
-Scriptorium currently targets Prisma with PostgreSQL.
+Scriptorium now targets Prisma with MySQL compatibility for the Spaceship/cPanel deployment path.
 
 This is reflected in `prisma/schema.prisma`:
 
 ```prisma
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 ```
 
+## Why this changed
+
+If Scriptorium is deployed into the user's Spaceship/cPanel environment, the schema must be compatible with MySQL/MariaDB rather than PostgreSQL-specific features.
+
+Prisma scalar lists are only supported where the database connector supports them natively or at a Prisma level. The earlier `tags String[]` fields were therefore removed from the schema. Tags are now represented by normalized relation tables:
+
+- `AnnotationTag`
+- `ResearchThreadTag`
+
+## Current storage boundary
+
+The database now stores scholarly records:
+
+- document metadata,
+- document versions,
+- source metadata,
+- page maps,
+- annotations,
+- annotation tags,
+- citations,
+- research threads,
+- query logs.
+
+The PDF binary itself remains browser-local for the Milestone 1 prototype. Durable file storage must be decided before deployment.
+
 ## Deployment caution
 
-Do not assume the Spaceship/cPanel database is compatible with the current schema without checking the actual database engine available in the hosting account.
+Before deploying to Spaceship/cPanel, confirm:
 
-The current schema uses PostgreSQL-oriented choices, including scalar list fields such as `tags String[]`. If the deployment database is MySQL/MariaDB, those fields must be redesigned before deployment.
-
-## Decision rule
-
-Before deploying Scriptorium to Spaceship/cPanel, choose one of these paths:
-
-1. **Keep PostgreSQL**: use hosting/app infrastructure that supports PostgreSQL and a persistent Node/Next.js runtime.
-2. **Convert to MySQL/MariaDB**: revise Prisma schema fields that rely on PostgreSQL-only behavior, especially scalar lists.
-3. **Split app and database**: host the app where Next.js runs cleanly and use a managed PostgreSQL database elsewhere.
+1. the exact MySQL or MariaDB version,
+2. whether Node/Next.js server routes are supported persistently,
+3. whether the app should be deployed as a Node app, static export plus separate API, or hosted elsewhere with Spaceship only handling domain/DNS,
+4. where durable PDF/object storage will live.
 
 ## Current disciplined choice
 
-For Issue #1, keep the current PostgreSQL Prisma model. Do not begin a hosting migration until the PDF annotation persistence path builds and passes verification.
+For Issue #1, continue with the MySQL-compatible Prisma model and do not begin Office files, Google integrations, semantic interrogation, or export systems until the PDF annotation persistence path validates.
