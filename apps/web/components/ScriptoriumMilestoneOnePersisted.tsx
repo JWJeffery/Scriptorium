@@ -22,6 +22,7 @@ const DEFAULT_PAGE_MAP: PageMap = { basePdfPageIndex: 1, baseBookPage: 1, curren
 function localId(prefix: string) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
 function bookPage(pageMap: PageMap) { return String(pageMap.baseBookPage + pageMap.currentPdfPageIndex - pageMap.basePdfPageIndex); }
 function bytes(size: number) { return size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`; }
+function serverPdfUrl(document: StoredDocument) { return document.server?.storageKey ? `/api/milestone-one/files/${document.server.documentId}` : null; }
 
 function citation(document: StoredDocument, locator: string, style: CitationStyle) {
   const source = document.source;
@@ -74,14 +75,7 @@ async function persistDocument(document: StoredDocument, locator: string) {
   const response = await fetch("/api/milestone-one/documents", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      title: document.title,
-      filename: document.filename,
-      mediaType: document.mediaType,
-      size: document.size,
-      source: document.source,
-      pageMap: { ...document.pageMap, bookPageLabel: locator }
-    })
+    body: JSON.stringify({ title: document.title, filename: document.filename, mediaType: document.mediaType, size: document.size, source: document.source, pageMap: { ...document.pageMap, bookPageLabel: locator } })
   });
   if (!response.ok) throw new Error("Document persistence failed.");
   const body = await response.json() as { document: { id: string }; version: { id: string }; source: { id: string }; pageMap: { id: string } };
@@ -100,7 +94,6 @@ async function persistPdfFile(file: File, document: StoredDocument, locator: str
   formData.set("baseBookPage", String(document.pageMap.baseBookPage));
   formData.set("currentPdfPageIndex", String(document.pageMap.currentPdfPageIndex));
   formData.set("bookPageLabel", locator);
-
   const response = await fetch("/api/milestone-one/files", { method: "POST", body: formData });
   if (!response.ok) throw new Error("PDF upload persistence failed.");
   const body = await response.json() as { document: { id: string; storageKey?: string | null }; version: { id: string }; source: { id: string }; pageMap: { id: string }; storedFile?: { storageKey: string } };
@@ -112,21 +105,7 @@ async function persistAnnotation(document: StoredDocument, record: SavedAnnotati
   const response = await fetch("/api/milestone-one/annotations", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      documentId: document.server.documentId,
-      versionId: document.server.versionId,
-      sourceId: document.server.sourceId,
-      pageMapId: document.server.pageMapId,
-      colorKey: record.colorKey,
-      selectedText: record.selectedText,
-      note: record.note,
-      tags: [],
-      anchor: record.anchor,
-      citationStyle: record.citationStyle,
-      citationText: record.citationText,
-      locatorType: "page",
-      locatorValue: record.bookPageLabel
-    })
+    body: JSON.stringify({ documentId: document.server.documentId, versionId: document.server.versionId, sourceId: document.server.sourceId, pageMapId: document.server.pageMapId, colorKey: record.colorKey, selectedText: record.selectedText, note: record.note, tags: [], anchor: record.anchor, citationStyle: record.citationStyle, citationText: record.citationText, locatorType: "page", locatorValue: record.bookPageLabel })
   });
   if (!response.ok) throw new Error("Annotation persistence failed.");
   return await response.json() as { annotation: { id: string }; citation: { id: string } };
@@ -150,13 +129,22 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (!storedDocument) return;
     setDocumentRecord(storedDocument);
     getPdf(storedDocument.id).then((blob) => {
-      if (!blob) { setStatus("Recovered records, but no PDF blob was found in browser storage."); return; }
-      setPdfUrl(URL.createObjectURL(blob));
-      setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
+      if (blob) {
+        setPdfUrl(URL.createObjectURL(blob));
+        setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
+        return;
+      }
+      const storedServerUrl = serverPdfUrl(storedDocument);
+      if (storedServerUrl) {
+        setPdfUrl(storedServerUrl);
+        setStatus("Recovered PDF from server file storage.");
+        return;
+      }
+      setStatus("Recovered records, but no browser or server PDF was found.");
     });
   }, []);
 
-  useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
+  useEffect(() => () => { if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
 
   const locator = useMemo(() => documentRecord ? bookPage(documentRecord.pageMap) : "-", [documentRecord]);
   const generatedCitation = useMemo(() => documentRecord ? citation(documentRecord, locator, style) : "Register a document before generating a citation.", [documentRecord, locator, style]);
@@ -166,17 +154,13 @@ export function ScriptoriumMilestoneOnePersisted() {
     return [{ id: record.id, color: color.color, anchor: record.anchor }];
   }), [annotations]);
 
-  const captureAnchor = useCallback((nextAnchor: PdfSelectionAnchor) => {
-    setAnchor(nextAnchor);
-    setSelectedText(nextAnchor.selectedText);
-    setStatus("Captured selected text, context, and highlight rectangles from the PDF page.");
-  }, []);
+  const captureAnchor = useCallback((nextAnchor: PdfSelectionAnchor) => { setAnchor(nextAnchor); setSelectedText(nextAnchor.selectedText); setStatus("Captured selected text, context, and highlight rectangles from the PDF page."); }, []);
 
   async function registerPdf(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     if (file.type !== "application/pdf") { setStatus("Milestone 1 accepts PDFs only."); return; }
-    if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
     const documentId = localId("doc");
     const title = file.name.replace(/\.pdf$/i, "");
     let nextDocument: StoredDocument = { id: documentId, title, filename: file.name, mediaType: file.type, size: file.size, source: { ...EMPTY_SOURCE, title }, pageMap: DEFAULT_PAGE_MAP };
