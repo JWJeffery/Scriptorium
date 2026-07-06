@@ -1,4 +1,4 @@
-import { ScriptoriumWorkflow } from "../components/ScriptoriumWorkflow";
+import { ScriptoriumMilestoneOne } from "../components/ScriptoriumMilestoneOne";
 
 export default function HomePage() {
   return (
@@ -6,13 +6,8 @@ export default function HomePage() {
       <header className="masthead">
         <p className="eyebrow">Scriptorium</p>
         <h1>Scholarly reading, annotation, citation, and research memory.</h1>
-        <p className="lede">
-          A clean-slate platform for reading texts, preserving notes, mapping book pages,
-          and generating citations from the exact passage under study.
-        </p>
       </header>
-
-      <ScriptoriumWorkflow />
+      <ScriptoriumMilestoneOne />
     </main>
   );
 }
