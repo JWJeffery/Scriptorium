@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
-import { storePdfFile } from "../../../../lib/server-storage";
+import { deleteStoredPdfFile, storePdfFile } from "../../../../lib/server-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
   const baseBookPage = parsePositivePage(readText(formData, "baseBookPage"), 1);
   const currentPdfPageIndex = parsePositivePage(readText(formData, "currentPdfPageIndex"), 1);
   const bookPageLabel = readText(formData, "bookPageLabel") || String(baseBookPage + currentPdfPageIndex - basePdfPageIndex);
+  let storageKeyToClean: string | undefined;
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
       });
 
       const storedFile = await storePdfFile(document.id, file);
+      storageKeyToClean = storedFile.storageKey;
 
       const updatedDocument = await tx.document.update({
         where: { id: document.id },
@@ -121,11 +123,16 @@ export async function POST(request: NextRequest) {
         }
       });
 
+      storageKeyToClean = undefined;
       return { document: updatedDocument, version, source: sourceRecord, pageMap, storedFile };
     });
 
     return NextResponse.json(result, { status: 201 });
   } catch {
+    if (storageKeyToClean) {
+      await deleteStoredPdfFile(storageKeyToClean);
+    }
+
     return failure("PDF upload could not be completed.", 500);
   }
 }
