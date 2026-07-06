@@ -108,12 +108,14 @@ export function PdfPageReader({
   const [textRuns, setTextRuns] = useState<TextRun[]>([]);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [isLoading, setIsLoading] = useState(false);
+  const [documentLoadKey, setDocumentLoadKey] = useState(0);
 
   useEffect(() => {
     let isCancelled = false;
 
     async function loadDocument() {
       setIsLoading(true);
+      setTextRuns([]);
       try {
         const loadingTask = pdfjsLib.getDocument(fileUrl);
         const pdfDocument = (await loadingTask.promise) as PdfDocument;
@@ -129,6 +131,7 @@ export function PdfPageReader({
 
         documentRef.current = pdfDocument;
         onPageCountChange(pdfDocument.numPages);
+        setDocumentLoadKey((value) => value + 1);
         onStatusChange(`PDF.js loaded ${pdfDocument.numPages} page${pdfDocument.numPages === 1 ? "" : "s"}.`);
       } catch {
         onStatusChange("PDF.js could not load this PDF.");
@@ -177,7 +180,7 @@ export function PdfPageReader({
     return () => {
       isCancelled = true;
     };
-  }, [pageNumber, onStatusChange]);
+  }, [pageNumber, documentLoadKey, onStatusChange]);
 
   function captureSelection() {
     const selection = window.getSelection();
