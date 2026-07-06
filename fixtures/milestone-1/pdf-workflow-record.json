@@ -1,0 +1,50 @@
+{
+  "document": {
+    "title": "Demonstration Source",
+    "filename": "demonstration-source.pdf",
+    "mediaType": "application/pdf",
+    "size": 2048,
+    "source": {
+      "author": "Jane Scholar",
+      "title": "Demonstration Source",
+      "place": "New York",
+      "publisher": "Scriptorium Press",
+      "year": "2026"
+    },
+    "pageMap": {
+      "basePdfPageIndex": 7,
+      "baseBookPage": 1,
+      "currentPdfPageIndex": 42,
+      "bookPageLabel": "36"
+    }
+  },
+  "annotation": {
+    "colorKey": "argument",
+    "selectedText": "The durable scholarly object joins source, locator, annotation, citation, and retrieval.",
+    "note": "This fixture verifies the minimum recoverable scholarly record.",
+    "pdfPageIndex": 42,
+    "bookPageLabel": "36",
+    "citationStyle": "sbl-note",
+    "citationText": "Jane Scholar, Demonstration Source (New York: Scriptorium Press, 2026), 36.",
+    "anchor": {
+      "selectedText": "The durable scholarly object joins source, locator, annotation, citation, and retrieval.",
+      "pageNumber": 42,
+      "beforeContext": "Before the marked sentence, the author defines the reader workflow.",
+      "afterContext": "After the marked sentence, the author explains recovery after reload.",
+      "rects": [
+        {
+          "left": 96,
+          "top": 144,
+          "width": 420,
+          "height": 18
+        },
+        {
+          "left": 96,
+          "top": 164,
+          "width": 318,
+          "height": 18
+        }
+      ]
+    }
+  }
+}
