@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
 import type { MilestoneOneDocumentInput } from "../../../../lib/milestone-one-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function cslJsonFor(input: MilestoneOneDocumentInput) {
-  const cslItem: Record<string, unknown> = {
+function cslJsonFor(input: MilestoneOneDocumentInput): Prisma.InputJsonObject {
+  const cslItem: Prisma.InputJsonObject = {
     type: "book",
     title: input.source.title || input.title
   };
