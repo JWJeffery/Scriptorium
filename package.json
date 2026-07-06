@@ -9,9 +9,11 @@
     "lint": "pnpm --filter @scriptorium/web lint",
     "typecheck": "pnpm --filter @scriptorium/web typecheck",
     "prisma:validate": "prisma validate --schema prisma/schema.prisma",
-    "prisma:generate": "prisma generate --schema prisma/schema.prisma"
+    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
   },
   "devDependencies": {
+    "@prisma/client": "^6.0.0",
     "prisma": "^6.0.0",
     "typescript": "^5.7.2"
   },
