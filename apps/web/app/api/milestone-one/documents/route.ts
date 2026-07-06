@@ -13,9 +13,9 @@ function cslJsonFor(input: MilestoneOneDocumentInput): Prisma.InputJsonObject {
     title: input.source.title || input.title,
     author: input.source.author ? [{ literal: input.source.author }] : undefined,
     publisher: input.source.publisher || undefined,
-    place: input.source.place || undefined,
+    "publisher-place": input.source.place || undefined,
     issued: input.source.year
-      ? { dateParts: [[Number.isFinite(numericYear) ? numericYear : input.source.year]] }
+      ? { "date-parts": [[Number.isFinite(numericYear) ? numericYear : input.source.year]] }
       : undefined
   };
 
