@@ -1,26 +1,25 @@
 # Next Engineering Step
 
-The next engineering step is to replace the native browser PDF embed with a PDF.js-backed reader.
+The next engineering step is to harden PDF.js selection anchoring.
 
-## Why
+## What is now in place
 
-The current first-pass workflow displays the PDF and persists scholarly records, but it requires the user to paste selected passage text manually. A PDF.js-backed reader is needed for:
+The native browser PDF embed has been replaced with a PDF.js-backed page reader for the current page. It renders the PDF page to canvas, overlays selectable text runs, captures selected text, and sends that captured text into the existing annotation/citation workflow.
 
-- selectable text layer,
-- page-aware selection capture,
-- highlight overlays,
-- bounding rectangles,
-- stable annotation anchors,
-- better recovery when the document is reopened.
+## Why the next slice matters
+
+Captured text alone is not a durable scholarly anchor. A serious annotation needs enough location data to recover the mark after reload, after zoom changes, and after later rendering improvements.
 
 ## Desired next slice
 
-Implement direct text selection capture for one rendered PDF page:
+Persist durable selection anchors for one rendered PDF page:
 
-1. Render a PDF page through PDF.js.
-2. Render the text layer.
-3. Capture a text selection.
-4. Bind the selected text to the current PDF page and mapped book page.
-5. Save the annotation with selected text, note, color, page locator, and citation.
+1. Capture selected text from the PDF.js text layer.
+2. Store the current PDF page and mapped book page.
+3. Store surrounding context before and after the selection.
+4. Store approximate text-run indexes touched by the selection.
+5. Store bounding rectangle data where available.
+6. Render a visible highlight overlay from the saved anchor.
+7. Confirm the highlight, note, locator, and citation survive reload.
 
-Do not expand to Office files or semantic interrogation until this slice works.
+Do not expand to Office files, cloud integrations, semantic interrogation, or export systems until this slice works.
