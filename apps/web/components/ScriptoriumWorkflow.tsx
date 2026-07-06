@@ -1,7 +1,8 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { highlightColors } from "../lib/highlights";
+import { PdfPageReader } from "./PdfPageReader";
 
 type CitationStyle = "chicago-note" | "sbl-note";
 
@@ -167,12 +168,26 @@ function buildCitation(document: StoredDocument, bookPageLabel: string, style: C
 export function ScriptoriumWorkflow() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pageCount, setPageCount] = useState(0);
   const [annotations, setAnnotations] = useState<AnnotationRecord[]>([]);
   const [selectedColor, setSelectedColor] = useState(highlightColors[0].key);
   const [selectedText, setSelectedText] = useState("");
   const [note, setNote] = useState("");
   const [citationStyle, setCitationStyle] = useState<CitationStyle>("sbl-note");
   const [status, setStatus] = useState("Load or register a PDF to begin.");
+
+  const handleStatusChange = useCallback((message: string) => {
+    setStatus(message);
+  }, []);
+
+  const handlePageCountChange = useCallback((nextPageCount: number) => {
+    setPageCount(nextPageCount);
+  }, []);
+
+  const handleSelectionCapture = useCallback((capturedText: string) => {
+    setSelectedText(capturedText);
+    setStatus("Captured selected text from the PDF page. Add a note, verify the locator, and save.");
+  }, []);
 
   useEffect(() => {
     const storedDocument = readStoredDocument();
@@ -243,8 +258,9 @@ export function ScriptoriumWorkflow() {
     writeAnnotations([]);
     setDocumentRecord(nextDocument);
     setAnnotations([]);
+    setPageCount(0);
     setPdfUrl(URL.createObjectURL(file));
-    setStatus("PDF registered, stored in IndexedDB, and ready for page mapping and annotation.");
+    setStatus("PDF registered, stored in IndexedDB, and ready for PDF.js rendering.");
   }
 
   function updateDocument(nextDocument: StoredDocument) {
@@ -276,6 +292,13 @@ export function ScriptoriumWorkflow() {
     });
   }
 
+  function goToPdfPage(nextPage: number) {
+    if (!documentRecord) return;
+    const upperBound = pageCount > 0 ? pageCount : nextPage;
+    const safePage = Math.min(Math.max(nextPage, 1), upperBound);
+    updatePageMap("currentPdfPageIndex", safePage);
+  }
+
   function createAnnotation() {
     if (!documentRecord) {
       setStatus("Register a PDF before creating an annotation.");
@@ -283,7 +306,7 @@ export function ScriptoriumWorkflow() {
     }
 
     if (!selectedText.trim()) {
-      setStatus("Paste or type the selected passage before saving the annotation.");
+      setStatus("Select text from the PDF.js text layer, or paste a passage before saving the annotation.");
       return;
     }
 
@@ -316,10 +339,13 @@ export function ScriptoriumWorkflow() {
     setAnnotations([]);
     setSelectedText("");
     setNote("");
+    setPageCount(0);
     if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     setPdfUrl(null);
     setStatus("Local workspace metadata cleared. IndexedDB PDF blobs are left in place for now.");
   }
+
+  const currentPdfPage = documentRecord?.pageMap.currentPdfPageIndex ?? 1;
 
   return (
     <section className="workflow" aria-label="Scriptorium milestone 1 workflow">
@@ -328,8 +354,8 @@ export function ScriptoriumWorkflow() {
           <p className="eyebrow">Milestone 1</p>
           <h2>PDF scholarly workflow</h2>
           <p>
-            Register one PDF, map its book page, save a highlight note, and generate a citation
-            that survives browser reload.
+            Register one PDF, map its book page, capture a text-layer selection, save a highlight note,
+            and generate a citation that survives browser reload.
           </p>
         </div>
         <label className="uploadButton">
@@ -398,8 +424,9 @@ export function ScriptoriumWorkflow() {
               <input
                 type="number"
                 min="1"
-                value={documentRecord?.pageMap.currentPdfPageIndex ?? 1}
-                onChange={(event) => updatePageMap("currentPdfPageIndex", Number(event.target.value))}
+                max={pageCount || undefined}
+                value={currentPdfPage}
+                onChange={(event) => goToPdfPage(Number(event.target.value))}
                 disabled={!documentRecord}
               />
             </label>
@@ -407,6 +434,15 @@ export function ScriptoriumWorkflow() {
               Book page
               <input value={bookPageLabel} readOnly />
             </label>
+          </div>
+          <div className="pageStepper">
+            <button type="button" onClick={() => goToPdfPage(currentPdfPage - 1)} disabled={!documentRecord || currentPdfPage <= 1}>
+              Previous page
+            </button>
+            <span>{pageCount ? `${currentPdfPage} / ${pageCount}` : "No page count yet"}</span>
+            <button type="button" onClick={() => goToPdfPage(currentPdfPage + 1)} disabled={!documentRecord || (pageCount > 0 && currentPdfPage >= pageCount)}>
+              Next page
+            </button>
           </div>
           <div className="mappingFormula">
             <span>Mapping rule</span>
@@ -449,12 +485,13 @@ export function ScriptoriumWorkflow() {
 
         <section className="pdfPanel" aria-label="PDF display">
           {pdfUrl ? (
-            <object className="pdfObject" data={pdfUrl} type="application/pdf">
-              <p>
-                This browser could not display the PDF inline. The document remains registered,
-                and annotations can still be created from copied text.
-              </p>
-            </object>
+            <PdfPageReader
+              fileUrl={pdfUrl}
+              pageNumber={currentPdfPage}
+              onPageCountChange={handlePageCountChange}
+              onSelectionCapture={handleSelectionCapture}
+              onStatusChange={handleStatusChange}
+            />
           ) : (
             <div className="emptyPdfState">
               <strong>No PDF registered yet.</strong>
@@ -466,13 +503,13 @@ export function ScriptoriumWorkflow() {
         <aside className="panel annotationPanel">
           <h3>Annotation</h3>
           <p>
-            Select or copy a passage from the PDF, then paste it here until text-layer capture is
-            implemented directly over PDF.js.
+            Select text directly from the rendered PDF page. The captured text remains editable here
+            before it is saved as a scholarly annotation.
           </p>
           <textarea
             value={selectedText}
             onChange={(event) => setSelectedText(event.target.value)}
-            placeholder="Paste selected passage here."
+            placeholder="Selected PDF text appears here."
             rows={5}
             disabled={!documentRecord}
           />
