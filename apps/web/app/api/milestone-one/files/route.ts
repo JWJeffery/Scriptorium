@@ -25,23 +25,17 @@ function parsePositivePage(value: string, fallback: number) {
 }
 
 function cslJsonFor(source: ParsedSource): Prisma.InputJsonObject {
-  const cslItem: Prisma.InputJsonObject = {
+  const numericYear = source.year ? Number(source.year) : undefined;
+  const json = {
     type: "book",
-    title: source.title
+    title: source.title,
+    author: source.author ? [{ literal: source.author }] : undefined,
+    publisher: source.publisher || undefined,
+    place: source.place || undefined,
+    issued: source.year ? { dateParts: [[Number.isFinite(numericYear) ? numericYear : source.year]] } : undefined
   };
 
-  if (source.author) cslItem.author = [{ literal: source.author }];
-  if (source.publisher) cslItem.publisher = source.publisher;
-  if (source.place) cslItem["publisher-place"] = source.place;
-
-  if (source.year) {
-    const numericYear = Number(source.year);
-    cslItem.issued = {
-      "date-parts": [[Number.isFinite(numericYear) ? numericYear : source.year]]
-    };
-  }
-
-  return cslItem;
+  return JSON.parse(JSON.stringify(json)) as Prisma.InputJsonObject;
 }
 
 function failure(message: string, status: number) {
