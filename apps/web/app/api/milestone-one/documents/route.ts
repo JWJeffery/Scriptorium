@@ -3,14 +3,31 @@ import { prisma } from "../../../../lib/prisma";
 import type { MilestoneOneDocumentInput } from "../../../../lib/milestone-one-types";
 
 function cslJsonFor(input: MilestoneOneDocumentInput) {
-  return {
+  const cslItem: Record<string, unknown> = {
     type: "book",
-    title: input.source.title || input.title,
-    author: input.source.author ? [{ literal: input.source.author }] : undefined,
-    publisher: input.source.publisher || undefined,
-    "publisher-place": input.source.place || undefined,
-    issued: input.source.year ? { "date-parts": [[Number(input.source.year) || input.source.year]] } : undefined
+    title: input.source.title || input.title
   };
+
+  if (input.source.author) {
+    cslItem.author = [{ literal: input.source.author }];
+  }
+
+  if (input.source.publisher) {
+    cslItem.publisher = input.source.publisher;
+  }
+
+  if (input.source.place) {
+    cslItem["publisher-place"] = input.source.place;
+  }
+
+  if (input.source.year) {
+    const numericYear = Number(input.source.year);
+    cslItem.issued = {
+      "date-parts": [[Number.isFinite(numericYear) ? numericYear : input.source.year]]
+    };
+  }
+
+  return cslItem;
 }
 
 function isValidInput(value: unknown): value is MilestoneOneDocumentInput {
