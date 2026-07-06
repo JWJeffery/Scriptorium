@@ -19,6 +19,11 @@ function readText(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function parsePositivePage(value: string, fallback: number) {
+  const parsed = Number(value || String(fallback));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
 function cslJsonFor(source: ParsedSource): Prisma.InputJsonObject {
   const cslItem: Prisma.InputJsonObject = {
     type: "book",
@@ -47,6 +52,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "PDF file is required." }, { status: 400 });
   }
 
+  if (file.type !== "application/pdf") {
+    return NextResponse.json({ error: "Only PDF files are accepted for Milestone 1." }, { status: 400 });
+  }
+
   const title = readText(formData, "title") || file.name.replace(/\.pdf$/i, "");
   const source: ParsedSource = {
     title,
@@ -56,9 +65,9 @@ export async function POST(request: NextRequest) {
     year: readText(formData, "year") || undefined
   };
 
-  const basePdfPageIndex = Number(readText(formData, "basePdfPageIndex") || "1");
-  const baseBookPage = Number(readText(formData, "baseBookPage") || "1");
-  const currentPdfPageIndex = Number(readText(formData, "currentPdfPageIndex") || "1");
+  const basePdfPageIndex = parsePositivePage(readText(formData, "basePdfPageIndex"), 1);
+  const baseBookPage = parsePositivePage(readText(formData, "baseBookPage"), 1);
+  const currentPdfPageIndex = parsePositivePage(readText(formData, "currentPdfPageIndex"), 1);
   const bookPageLabel = readText(formData, "bookPageLabel") || String(baseBookPage + currentPdfPageIndex - basePdfPageIndex);
 
   const result = await prisma.$transaction(async (tx) => {
