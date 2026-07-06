@@ -16,12 +16,18 @@ function isValidInput(value: unknown): value is MilestoneOneAnnotationInput {
   );
 }
 
+function cleanTags(tags: string[] | undefined) {
+  return Array.from(new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean))).slice(0, 50);
+}
+
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as unknown;
 
   if (!isValidInput(body)) {
     return NextResponse.json({ error: "Invalid annotation payload." }, { status: 400 });
   }
+
+  const tagValues = cleanTags(body.tags);
 
   const result = await prisma.$transaction(async (tx) => {
     const annotation = await tx.annotation.create({
@@ -32,9 +38,10 @@ export async function POST(request: NextRequest) {
         colorKey: body.colorKey,
         selectedText: body.selectedText,
         note: body.note ?? null,
-        tags: body.tags ?? [],
-        anchor: body.anchor ?? undefined
-      }
+        anchor: body.anchor ?? undefined,
+        tags: tagValues.length ? { create: tagValues.map((value) => ({ value })) } : undefined
+      },
+      include: { tags: true }
     });
 
     const citation = await tx.citation.create({
