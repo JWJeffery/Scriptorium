@@ -8,8 +8,43 @@ on:
     branches: [main]
 
 jobs:
-  verify:
-    name: Build and typecheck
+  typecheck:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: mysql://scriptorium:scriptorium@127.0.0.1:3306/scriptorium
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Prepare environment
+        run: cp .env.example .env
+
+      - name: Validate Prisma schema
+        run: pnpm prisma:validate
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Typecheck web app
+        run: pnpm typecheck
+
+      - name: Build web app
+        run: pnpm build
+
+  mysql-migration:
+    name: MySQL migration deploy
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: mysql://scriptorium:scriptorium@127.0.0.1:3306/scriptorium
@@ -54,9 +89,3 @@ jobs:
 
       - name: Deploy MySQL migration
         run: pnpm prisma:migrate:deploy
-
-      - name: Typecheck web app
-        run: pnpm typecheck
-
-      - name: Build web app
-        run: pnpm build
