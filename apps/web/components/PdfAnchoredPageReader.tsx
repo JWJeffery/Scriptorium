@@ -101,7 +101,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     async function loadDocument() {
       setIsLoading(true);
       try {
-        const pdfDocument = (await pdfjsLib.getDocument(fileUrl).promise) as PdfDocument;
+        const pdfDocument = (await pdfjsLib.getDocument(fileUrl).promise) as unknown as PdfDocument;
         if (cancelled) return;
         if (documentRef.current) await documentRef.current.destroy();
         documentRef.current = pdfDocument;
