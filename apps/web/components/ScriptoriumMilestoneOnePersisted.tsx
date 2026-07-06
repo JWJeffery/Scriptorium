@@ -7,7 +7,7 @@ import { PdfAnchoredPageReader, type PdfPageHighlight, type PdfSelectionAnchor }
 type CitationStyle = "sbl-note" | "chicago-note";
 type SourceRecord = { author: string; title: string; place: string; publisher: string; year: string };
 type PageMap = { basePdfPageIndex: number; baseBookPage: number; currentPdfPageIndex: number };
-type ServerIds = { documentId: string; versionId: string; sourceId: string; pageMapId: string };
+type ServerIds = { documentId: string; versionId: string; sourceId: string; pageMapId: string; storageKey?: string };
 type StoredDocument = { id: string; title: string; filename: string; mediaType: string; size: number; source: SourceRecord; pageMap: PageMap; server?: ServerIds };
 type SavedAnnotation = { id: string; documentId: string; colorKey: string; selectedText: string; note: string; pdfPageIndex: number; bookPageLabel: string; citationStyle: CitationStyle; citationText: string; anchor?: PdfSelectionAnchor; createdAt: string; serverAnnotationId?: string; serverCitationId?: string };
 
@@ -88,6 +88,25 @@ async function persistDocument(document: StoredDocument, locator: string) {
   return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id } satisfies ServerIds;
 }
 
+async function persistPdfFile(file: File, document: StoredDocument, locator: string) {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("title", document.title);
+  formData.set("author", document.source.author);
+  formData.set("place", document.source.place);
+  formData.set("publisher", document.source.publisher);
+  formData.set("year", document.source.year);
+  formData.set("basePdfPageIndex", String(document.pageMap.basePdfPageIndex));
+  formData.set("baseBookPage", String(document.pageMap.baseBookPage));
+  formData.set("currentPdfPageIndex", String(document.pageMap.currentPdfPageIndex));
+  formData.set("bookPageLabel", locator);
+
+  const response = await fetch("/api/milestone-one/files", { method: "POST", body: formData });
+  if (!response.ok) throw new Error("PDF upload persistence failed.");
+  const body = await response.json() as { document: { id: string; storageKey?: string | null }; version: { id: string }; source: { id: string }; pageMap: { id: string }; storedFile?: { storageKey: string } };
+  return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id, storageKey: body.storedFile?.storageKey ?? body.document.storageKey ?? undefined } satisfies ServerIds;
+}
+
 async function persistAnnotation(document: StoredDocument, record: SavedAnnotation) {
   if (!document.server) throw new Error("Document has no server ids.");
   const response = await fetch("/api/milestone-one/annotations", {
@@ -131,9 +150,9 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (!storedDocument) return;
     setDocumentRecord(storedDocument);
     getPdf(storedDocument.id).then((blob) => {
-      if (!blob) { setStatus("Recovered records, but no PDF blob was found."); return; }
+      if (!blob) { setStatus("Recovered records, but no PDF blob was found in browser storage."); return; }
       setPdfUrl(URL.createObjectURL(blob));
-      setStatus(storedDocument.server ? "Recovered browser files and database ids." : "Recovered browser-local prototype records.");
+      setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
     });
   }, []);
 
@@ -163,11 +182,17 @@ export function ScriptoriumMilestoneOnePersisted() {
     let nextDocument: StoredDocument = { id: documentId, title, filename: file.name, mediaType: file.type, size: file.size, source: { ...EMPTY_SOURCE, title }, pageMap: DEFAULT_PAGE_MAP };
     await putPdf(documentId, file);
     try {
-      const server = await persistDocument(nextDocument, bookPage(nextDocument.pageMap));
+      const server = await persistPdfFile(file, nextDocument, bookPage(nextDocument.pageMap));
       nextDocument = { ...nextDocument, server };
-      setStatus("PDF registered locally and document metadata persisted to the database.");
+      setStatus("PDF registered locally, uploaded to server storage, and database metadata persisted.");
     } catch {
-      setStatus("PDF registered locally. Database persistence is unavailable in this environment.");
+      try {
+        const server = await persistDocument(nextDocument, bookPage(nextDocument.pageMap));
+        nextDocument = { ...nextDocument, server };
+        setStatus("PDF registered locally and document metadata persisted to the database. Server file storage is unavailable.");
+      } catch {
+        setStatus("PDF registered locally. Database persistence is unavailable in this environment.");
+      }
     }
     saveDocument(nextDocument);
     saveAnnotations([]);
@@ -216,7 +241,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         <section className="pdfPanel" aria-label="PDF display">{pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} highlights={visibleHighlights} onPageCountChange={setPageCount} onSelectionCapture={captureAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No PDF registered yet.</strong><span>Use Register PDF to load the first source document.</span></div>}</section>
         <aside className="panel annotationPanel"><h3>Annotation</h3><p>Select text directly from the rendered PDF page, then verify the captured passage before saving.</p><textarea value={selectedText} onChange={(event) => setSelectedText(event.target.value)} placeholder="Selected PDF text appears here." rows={5} disabled={!documentRecord} /><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add your note." rows={5} disabled={!documentRecord} /><label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option></select></label><div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>{anchor ? <p className="anchorSummary">Anchor captured: {anchor.rects.length} rectangle{anchor.rects.length === 1 ? "" : "s"} on PDF page {anchor.pageNumber}.</p> : null}<button className="primaryButton" onClick={saveRecord} type="button">Save annotation + citation</button><button className="secondaryButton" onClick={clearRecords} type="button">Clear saved annotations</button></aside>
       </div>
-      <section className="annotationList" aria-label="Saved annotations"><div className="sectionHeading"><h3>Saved scholarly records</h3><span>{annotations.length} saved</span></div>{documentRecord ? <div className="documentSummary"><strong>{documentRecord.title}</strong><span>{documentRecord.filename} · {bytes(documentRecord.size)} {documentRecord.server ? "· database-linked" : "· local only"}</span></div> : null}{annotations.length === 0 ? <p className="emptyAnnotationState">No annotations saved yet.</p> : <div className="recordsStack">{annotations.map((record) => { const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0]; return <article className="annotationRecord" key={record.id}><div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>PDF page {record.pdfPageIndex} · book page {record.bookPageLabel} {record.serverAnnotationId ? "· database" : "· local"}</span></div><blockquote>{record.selectedText}</blockquote>{record.note ? <p>{record.note}</p> : null}<div className="recordCitation">{record.citationText}</div></article>; })}</div>}</section>
+      <section className="annotationList" aria-label="Saved annotations"><div className="sectionHeading"><h3>Saved scholarly records</h3><span>{annotations.length} saved</span></div>{documentRecord ? <div className="documentSummary"><strong>{documentRecord.title}</strong><span>{documentRecord.filename} · {bytes(documentRecord.size)} {documentRecord.server?.storageKey ? "· server file" : documentRecord.server ? "· database-linked" : "· local only"}</span></div> : null}{annotations.length === 0 ? <p className="emptyAnnotationState">No annotations saved yet.</p> : <div className="recordsStack">{annotations.map((record) => { const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0]; return <article className="annotationRecord" key={record.id}><div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>PDF page {record.pdfPageIndex} · book page {record.bookPageLabel} {record.serverAnnotationId ? "· database" : "· local"}</span></div><blockquote>{record.selectedText}</blockquote>{record.note ? <p>{record.note}</p> : null}<div className="recordCitation">{record.citationText}</div></article>; })}</div>}</section>
     </section>
   );
 }
