@@ -9,19 +9,35 @@ export type StoredPdfFile = {
   size: number;
 };
 
+function safeSegment(value: string, fallback: string) {
+  const cleaned = value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!cleaned || cleaned === "." || cleaned === "..") return fallback;
+  return cleaned;
+}
+
 function safeFilename(filename: string) {
-  return filename.replace(/[^a-zA-Z0-9._-]+/g, "-") || "document.pdf";
+  const cleaned = safeSegment(filename, "document.pdf");
+  return cleaned.toLowerCase().endsWith(".pdf") ? cleaned : `${cleaned}.pdf`;
+}
+
+function safeDocumentId(documentId: string) {
+  return safeSegment(documentId, "document");
 }
 
 export function getStorageRoot() {
-  return process.env.SCRIPTORIUM_STORAGE_DIR || DEFAULT_STORAGE_DIR;
+  return path.resolve(process.env.SCRIPTORIUM_STORAGE_DIR || DEFAULT_STORAGE_DIR);
 }
 
 function resolveStorageKey(storageKey: string) {
-  const storageRoot = path.resolve(getStorageRoot());
-  const absolutePath = path.resolve(storageRoot, storageKey);
+  if (path.isAbsolute(storageKey)) {
+    throw new Error("Invalid storage key.");
+  }
 
-  if (!absolutePath.startsWith(storageRoot)) {
+  const storageRoot = getStorageRoot();
+  const absolutePath = path.resolve(storageRoot, storageKey);
+  const relativePath = path.relative(storageRoot, absolutePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     throw new Error("Invalid storage key.");
   }
 
@@ -38,14 +54,14 @@ export async function storePdfFile(documentId: string, file: File): Promise<Stor
   }
 
   const storageRoot = getStorageRoot();
-  const documentDirectory = path.join(storageRoot, "documents", documentId);
-  await mkdir(documentDirectory, { recursive: true });
-
+  const documentSegment = safeDocumentId(documentId);
   const filename = safeFilename(file.name);
-  const storageKey = `documents/${documentId}/${filename}`;
-  const absolutePath = path.join(storageRoot, "documents", documentId, filename);
+  const storageKey = `documents/${documentSegment}/${filename}`;
+  const documentDirectory = resolveStorageKey(`documents/${documentSegment}`);
+  const absolutePath = resolveStorageKey(storageKey);
   const buffer = Buffer.from(await file.arrayBuffer());
 
+  await mkdir(documentDirectory, { recursive: true });
   await writeFile(absolutePath, buffer);
 
   return { storageKey, size: buffer.byteLength };
