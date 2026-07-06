@@ -2,7 +2,7 @@
 
 ## Implemented
 
-The Milestone 1 workflow is implemented as a client-side prototype in `apps/web/components/ScriptoriumWorkflow.tsx`, with PDF rendering isolated in `apps/web/components/PdfPageReader.tsx`.
+The Milestone 1 workflow is implemented as a client-side prototype in `apps/web/components/ScriptoriumMilestoneOne.tsx`, with PDF rendering and anchor capture isolated in `apps/web/components/PdfAnchoredPageReader.tsx`.
 
 It currently supports:
 
@@ -13,6 +13,9 @@ It currently supports:
 - rendering the active PDF page through PDF.js,
 - rendering an approximate selectable text layer over the PDF canvas,
 - capturing selected text from that text layer into the annotation editor,
+- capturing surrounding text context for the selection,
+- capturing highlight rectangles for the selection,
+- rendering saved highlight rectangles back onto the PDF page,
 - editing source metadata,
 - defining a simple page-mapping rule,
 - calculating the current book page from the PDF page,
@@ -20,20 +23,13 @@ It currently supports:
 - selecting one of ten highlight colors,
 - entering or editing selected passage text and a note,
 - generating an SBL-style or Chicago-style note string,
-- saving and listing scholarly records with PDF page, book-page locator, note, color category, and citation.
+- saving and listing scholarly records with PDF page, book-page locator, note, color category, anchor data, and citation.
 
 ## Current limitation
 
-The PDF.js text layer is a first direct-selection implementation. It captures selected text from the rendered page, but it does not yet store bounding rectangles, normalized text offsets, or durable selection context around the passage.
+The implementation still uses browser-local storage. It proves the interaction model, but it does not yet persist through the Prisma/PostgreSQL data model.
 
-The next slice should persist richer selection anchors:
-
-- selected text,
-- page number,
-- book page label,
-- surrounding text context,
-- approximate text-run index range,
-- bounding rectangle data where available.
+The PDF.js text layer is also approximate. It captures usable selected text, context, and rectangles, but it does not yet normalize text offsets against a server-side extracted text model.
 
 ## Storage boundary
 
@@ -49,6 +45,7 @@ The Prisma schema already defines the persistent database model. Server-backed p
 Milestone 1 should remain open until the implementation has:
 
 - a build/typecheck run,
-- durable text-selection anchors beyond selected text alone,
 - database-backed persistence,
-- tests or fixtures for reload recovery and citation generation.
+- tests or fixtures for reload recovery,
+- tests or fixtures for citation generation,
+- tests or fixtures for anchor recovery and highlight re-rendering.
