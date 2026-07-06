@@ -17,3 +17,16 @@ Non-goals:
 - semantic interrogation,
 - export systems,
 - deployment to Spaceship/cPanel.
+
+## Verification
+
+PR-triggered Scriptorium CI run `28820387682` completed successfully.
+
+That run verifies:
+
+- Milestone 1 fixture coherence,
+- TypeScript typecheck,
+- Next.js build,
+- Prisma validation,
+- Prisma Client generation,
+- MySQL migration deploy against a real MySQL service.
