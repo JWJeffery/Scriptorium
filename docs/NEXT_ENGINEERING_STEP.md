@@ -1,25 +1,25 @@
 # Next Engineering Step
 
-The next engineering step is to harden PDF.js selection anchoring.
+The next engineering step is to move the proven browser-local Milestone 1 workflow toward verifiable persistence.
 
 ## What is now in place
 
-The native browser PDF embed has been replaced with a PDF.js-backed page reader for the current page. It renders the PDF page to canvas, overlays selectable text runs, captures selected text, and sends that captured text into the existing annotation/citation workflow.
+The app has a focused Milestone 1 workflow. It registers a local PDF, stores the PDF blob in IndexedDB, renders the active page through PDF.js, overlays selectable text, captures selected text, stores surrounding context and highlight rectangles, maps the PDF page to the book page, generates a citation, saves the record, and re-renders saved highlight overlays from the stored anchor.
 
 ## Why the next slice matters
 
-Captured text alone is not a durable scholarly anchor. A serious annotation needs enough location data to recover the mark after reload, after zoom changes, and after later rendering improvements.
+The current browser-local prototype proves the interaction model, but it is not yet a durable scholarly storage system. The Prisma schema exists; the workflow now needs to use it.
 
 ## Desired next slice
 
-Persist durable selection anchors for one rendered PDF page:
+Move one saved annotation path from browser-local storage into the database:
 
-1. Capture selected text from the PDF.js text layer.
-2. Store the current PDF page and mapped book page.
-3. Store surrounding context before and after the selection.
-4. Store approximate text-run indexes touched by the selection.
-5. Store bounding rectangle data where available.
-6. Render a visible highlight overlay from the saved anchor.
-7. Confirm the highlight, note, locator, and citation survive reload.
+1. Add a server action or API route for document registration metadata.
+2. Add a server action or API route for page-map persistence.
+3. Add a server action or API route for annotation persistence.
+4. Add a server action or API route for citation persistence.
+5. Keep the PDF blob strategy explicit: local-only for prototype or object storage for durable use.
+6. Add a test fixture proving that highlight, note, locator, citation, and anchor data reload from persistent storage.
+7. Run build/typecheck.
 
 Do not expand to Office files, cloud integrations, semantic interrogation, or export systems until this slice works.
