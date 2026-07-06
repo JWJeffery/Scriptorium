@@ -7,31 +7,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function cslJsonFor(input: MilestoneOneDocumentInput): Prisma.InputJsonObject {
-  const cslItem: Prisma.InputJsonObject = {
+  const numericYear = input.source.year ? Number(input.source.year) : undefined;
+  const json = {
     type: "book",
-    title: input.source.title || input.title
+    title: input.source.title || input.title,
+    author: input.source.author ? [{ literal: input.source.author }] : undefined,
+    publisher: input.source.publisher || undefined,
+    place: input.source.place || undefined,
+    issued: input.source.year
+      ? { dateParts: [[Number.isFinite(numericYear) ? numericYear : input.source.year]] }
+      : undefined
   };
 
-  if (input.source.author) {
-    cslItem.author = [{ literal: input.source.author }];
-  }
-
-  if (input.source.publisher) {
-    cslItem.publisher = input.source.publisher;
-  }
-
-  if (input.source.place) {
-    cslItem["publisher-place"] = input.source.place;
-  }
-
-  if (input.source.year) {
-    const numericYear = Number(input.source.year);
-    cslItem.issued = {
-      "date-parts": [[Number.isFinite(numericYear) ? numericYear : input.source.year]]
-    };
-  }
-
-  return cslItem;
+  return JSON.parse(JSON.stringify(json)) as Prisma.InputJsonObject;
 }
 
 function isValidInput(value: unknown): value is MilestoneOneDocumentInput {
