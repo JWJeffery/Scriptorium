@@ -1,14 +1,20 @@
 services:
-  postgres:
-    image: postgres:16
+  mysql:
+    image: mysql:8.4
     environment:
-      POSTGRES_USER: scriptorium
-      POSTGRES_PASSWORD: scriptorium
-      POSTGRES_DB: scriptorium
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: scriptorium
+      MYSQL_USER: scriptorium
+      MYSQL_PASSWORD: scriptorium
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pscriptorium"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
-  postgres-data:
+  mysql-data:
