@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const DEFAULT_STORAGE_DIR = path.join(process.cwd(), "storage");
@@ -53,7 +53,6 @@ export async function storePdfFile(documentId: string, file: File): Promise<Stor
     throw new Error("PDF exceeds the Milestone 1 upload size limit.");
   }
 
-  const storageRoot = getStorageRoot();
   const documentSegment = safeDocumentId(documentId);
   const filename = safeFilename(file.name);
   const storageKey = `documents/${documentSegment}/${filename}`;
@@ -70,4 +69,9 @@ export async function storePdfFile(documentId: string, file: File): Promise<Stor
 export async function readStoredPdfFile(storageKey: string) {
   const absolutePath = resolveStorageKey(storageKey);
   return await readFile(absolutePath);
+}
+
+export async function deleteStoredPdfFile(storageKey: string) {
+  const absolutePath = resolveStorageKey(storageKey);
+  await unlink(absolutePath).catch(() => undefined);
 }
