@@ -28,12 +28,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 
   const fileBuffer = await readStoredPdfFile(document.storageKey);
-  const filename = document.originalFilename || `${document.title}.pdf`;
 
-  return new NextResponse(fileBuffer, {
+  return new NextResponse(new Uint8Array(fileBuffer), {
     headers: {
-      "content-type": document.mediaType || "application/pdf",
-      "content-disposition": `inline; filename="${filename.replaceAll('"', '')}"`
+      "content-type": document.mediaType || "application/pdf"
     }
   });
 }
