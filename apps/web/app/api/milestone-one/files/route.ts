@@ -31,8 +31,8 @@ function cslJsonFor(source: ParsedSource): Prisma.InputJsonObject {
     title: source.title,
     author: source.author ? [{ literal: source.author }] : undefined,
     publisher: source.publisher || undefined,
-    place: source.place || undefined,
-    issued: source.year ? { dateParts: [[Number.isFinite(numericYear) ? numericYear : source.year]] } : undefined
+    "publisher-place": source.place || undefined,
+    issued: source.year ? { "date-parts": [[Number.isFinite(numericYear) ? numericYear : source.year]] } : undefined
   };
 
   return JSON.parse(JSON.stringify(json)) as Prisma.InputJsonObject;
