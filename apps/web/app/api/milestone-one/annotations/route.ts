@@ -2,18 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import type { MilestoneOneAnnotationInput } from "../../../../lib/milestone-one-types";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 function isValidInput(value: unknown): value is MilestoneOneAnnotationInput {
   if (typeof value !== "object" || value === null) return false;
   const input = value as Partial<MilestoneOneAnnotationInput>;
-  return Boolean(
-    input.documentId &&
-    input.versionId &&
-    input.sourceId &&
-    input.colorKey &&
-    input.selectedText &&
-    input.citationStyle &&
-    input.citationText
-  );
+  return Boolean(input.documentId && input.versionId && input.sourceId && input.colorKey && input.selectedText && input.citationStyle && input.citationText);
 }
 
 function cleanTags(tags: string[] | undefined) {
@@ -24,7 +19,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json()) as unknown;
 
   if (!isValidInput(body)) {
-    return NextResponse.json({ error: "Invalid annotation payload." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
   }
 
   const tagValues = cleanTags(body.tags);
