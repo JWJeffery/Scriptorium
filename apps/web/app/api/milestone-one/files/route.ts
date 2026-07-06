@@ -44,16 +44,20 @@ function cslJsonFor(source: ParsedSource): Prisma.InputJsonObject {
   return cslItem;
 }
 
+function failure(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
+}
+
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file");
 
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "PDF file is required." }, { status: 400 });
+    return failure("PDF file is required.", 400);
   }
 
   if (file.type !== "application/pdf") {
-    return NextResponse.json({ error: "Only PDF files are accepted for Milestone 1." }, { status: 400 });
+    return failure("Only PDF files are accepted for Milestone 1.", 400);
   }
 
   const title = readText(formData, "title") || file.name.replace(/\.pdf$/i, "");
@@ -70,54 +74,58 @@ export async function POST(request: NextRequest) {
   const currentPdfPageIndex = parsePositivePage(readText(formData, "currentPdfPageIndex"), 1);
   const bookPageLabel = readText(formData, "bookPageLabel") || String(baseBookPage + currentPdfPageIndex - basePdfPageIndex);
 
-  const result = await prisma.$transaction(async (tx) => {
-    const document = await tx.document.create({
-      data: {
-        title,
-        originalFilename: file.name,
-        kind: "PDF",
-        mediaType: file.type,
-        storageKey: null
-      }
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const document = await tx.document.create({
+        data: {
+          title,
+          originalFilename: file.name,
+          kind: "PDF",
+          mediaType: file.type,
+          storageKey: null
+        }
+      });
+
+      const storedFile = await storePdfFile(document.id, file);
+
+      const updatedDocument = await tx.document.update({
+        where: { id: document.id },
+        data: { storageKey: storedFile.storageKey }
+      });
+
+      const version = await tx.documentVersion.create({
+        data: {
+          documentId: document.id,
+          snapshotKind: "PDF_RENDERING",
+          snapshotKey: storedFile.storageKey,
+          extractionState: "browser-local-pdfjs"
+        }
+      });
+
+      const sourceRecord = await tx.source.create({
+        data: {
+          documentId: document.id,
+          shortTitle: source.title,
+          cslJson: cslJsonFor(source)
+        }
+      });
+
+      const pageMap = await tx.pageMap.create({
+        data: {
+          versionId: version.id,
+          pdfPageIndex: currentPdfPageIndex,
+          bookPageLabel,
+          numberingSystem: "ARABIC",
+          confidence: "USER_CONFIRMED",
+          note: `Mapping rule: PDF page ${basePdfPageIndex} = book page ${baseBookPage}`
+        }
+      });
+
+      return { document: updatedDocument, version, source: sourceRecord, pageMap, storedFile };
     });
 
-    const storedFile = await storePdfFile(document.id, file);
-
-    const updatedDocument = await tx.document.update({
-      where: { id: document.id },
-      data: { storageKey: storedFile.storageKey }
-    });
-
-    const version = await tx.documentVersion.create({
-      data: {
-        documentId: document.id,
-        snapshotKind: "PDF_RENDERING",
-        snapshotKey: storedFile.storageKey,
-        extractionState: "browser-local-pdfjs"
-      }
-    });
-
-    const sourceRecord = await tx.source.create({
-      data: {
-        documentId: document.id,
-        shortTitle: source.title,
-        cslJson: cslJsonFor(source)
-      }
-    });
-
-    const pageMap = await tx.pageMap.create({
-      data: {
-        versionId: version.id,
-        pdfPageIndex: currentPdfPageIndex,
-        bookPageLabel,
-        numberingSystem: "ARABIC",
-        confidence: "USER_CONFIRMED",
-        note: `Mapping rule: PDF page ${basePdfPageIndex} = book page ${baseBookPage}`
-      }
-    });
-
-    return { document: updatedDocument, version, source: sourceRecord, pageMap, storedFile };
-  });
-
-  return NextResponse.json(result, { status: 201 });
+    return NextResponse.json(result, { status: 201 });
+  } catch {
+    return failure("PDF upload could not be completed.", 500);
+  }
 }
