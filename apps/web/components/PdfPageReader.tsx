@@ -2,12 +2,34 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import type { PDFDocumentProxy, PDFPageProxy, TextItem } from "pdfjs-dist/types/src/display/api";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
+
+type PdfViewport = {
+  width: number;
+  height: number;
+  transform: number[];
+};
+
+type PdfPage = {
+  getViewport: (args: { scale: number }) => PdfViewport;
+  getTextContent: () => Promise<{ items: unknown[] }>;
+  render: (args: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<void> };
+};
+
+type PdfDocument = {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PdfPage>;
+  destroy: () => Promise<void> | void;
+};
+
+type TextItemLike = {
+  str: string;
+  transform: number[];
+};
 
 type TextRun = {
   id: string;
@@ -25,11 +47,18 @@ type PdfPageReaderProps = {
   onStatusChange: (status: string) => void;
 };
 
-function isTextItem(item: unknown): item is TextItem {
-  return typeof item === "object" && item !== null && "str" in item && "transform" in item;
+function isTextItem(item: unknown): item is TextItemLike {
+  return (
+    typeof item === "object" &&
+    item !== null &&
+    "str" in item &&
+    "transform" in item &&
+    typeof (item as { str?: unknown }).str === "string" &&
+    Array.isArray((item as { transform?: unknown }).transform)
+  );
 }
 
-async function renderCanvas(page: PDFPageProxy, canvas: HTMLCanvasElement, scale: number) {
+async function renderCanvas(page: PdfPage, canvas: HTMLCanvasElement, scale: number) {
   const viewport = page.getViewport({ scale });
   const canvasContext = canvas.getContext("2d");
 
@@ -47,7 +76,7 @@ async function renderCanvas(page: PDFPageProxy, canvas: HTMLCanvasElement, scale
   return viewport;
 }
 
-async function buildTextRuns(page: PDFPageProxy, scale: number) {
+async function buildTextRuns(page: PdfPage, scale: number) {
   const viewport = page.getViewport({ scale });
   const textContent = await page.getTextContent();
 
@@ -75,7 +104,7 @@ export function PdfPageReader({
   onStatusChange
 }: PdfPageReaderProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const documentRef = useRef<PDFDocumentProxy | null>(null);
+  const documentRef = useRef<PdfDocument | null>(null);
   const [textRuns, setTextRuns] = useState<TextRun[]>([]);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [isLoading, setIsLoading] = useState(false);
@@ -87,7 +116,7 @@ export function PdfPageReader({
       setIsLoading(true);
       try {
         const loadingTask = pdfjsLib.getDocument(fileUrl);
-        const pdfDocument = await loadingTask.promise;
+        const pdfDocument = (await loadingTask.promise) as PdfDocument;
 
         if (isCancelled) {
           await pdfDocument.destroy();
