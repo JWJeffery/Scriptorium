@@ -8,11 +8,12 @@
     "build": "pnpm --filter @scriptorium/web build",
     "lint": "pnpm --filter @scriptorium/web lint",
     "typecheck": "pnpm --filter @scriptorium/web typecheck",
-    "prisma:validate": "prisma validate --schema prisma/schema.prisma"
+    "prisma:validate": "prisma validate --schema prisma/schema.prisma",
+    "prisma:generate": "prisma generate --schema prisma/schema.prisma"
   },
   "devDependencies": {
-    "prisma": "latest",
-    "typescript": "latest"
+    "prisma": "^6.0.0",
+    "typescript": "^5.7.2"
   },
-  "packageManager": "pnpm@latest"
+  "packageManager": "pnpm@9.15.4"
 }
