@@ -1,1 +1,1 @@
-export { ScriptoriumMilestoneOne as ScriptoriumWorkflow } from "./ScriptoriumMilestoneOne";
+export { ScriptoriumMilestoneOnePersisted as ScriptoriumWorkflow } from "./ScriptoriumMilestoneOnePersisted";
