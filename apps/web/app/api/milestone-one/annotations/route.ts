@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
-import type { MilestoneOneAnnotationInput } from "../../../../lib/milestone-one-types";
+import type { MilestoneOneAnchorInput, MilestoneOneAnnotationInput } from "../../../../lib/milestone-one-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,18 @@ function cleanTags(tags: string[] | undefined) {
   return Array.from(new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean))).slice(0, 50);
 }
 
+function anchorJsonFor(anchor: MilestoneOneAnchorInput | undefined): Prisma.InputJsonObject | undefined {
+  if (!anchor) return undefined;
+
+  return {
+    selectedText: anchor.selectedText,
+    pageNumber: anchor.pageNumber,
+    beforeContext: anchor.beforeContext ?? "",
+    afterContext: anchor.afterContext ?? "",
+    rects: anchor.rects ?? []
+  };
+}
+
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as unknown;
 
@@ -23,6 +36,7 @@ export async function POST(request: NextRequest) {
   }
 
   const tagValues = cleanTags(body.tags);
+  const anchorJson = anchorJsonFor(body.anchor);
 
   const result = await prisma.$transaction(async (tx) => {
     const annotation = await tx.annotation.create({
@@ -33,7 +47,7 @@ export async function POST(request: NextRequest) {
         colorKey: body.colorKey,
         selectedText: body.selectedText,
         note: body.note ?? null,
-        anchor: body.anchor ?? undefined,
+        anchor: anchorJson,
         tags: tagValues.length ? { create: tagValues.map((value) => ({ value })) } : undefined
       },
       include: { tags: true }
