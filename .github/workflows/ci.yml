@@ -10,8 +10,6 @@ jobs:
   verify:
     name: Build and typecheck
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: mysql://scriptorium:scriptorium@localhost:3306/scriptorium
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,8 +26,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
 
+      - name: Prepare environment
+        run: cp .env.example .env
+
       - name: Validate Prisma schema
         run: pnpm prisma:validate
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
 
       - name: Typecheck web app
         run: pnpm typecheck
