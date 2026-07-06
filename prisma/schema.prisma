@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -53,11 +53,11 @@ enum ResearchThreadItemType {
 
 model Document {
   id               String            @id @default(cuid())
-  title            String
-  originalFilename String?
+  title            String            @db.VarChar(512)
+  originalFilename String?           @db.VarChar(512)
   kind             DocumentKind
-  mediaType        String?
-  storageKey       String?
+  mediaType        String?           @db.VarChar(255)
+  storageKey       String?           @db.VarChar(1024)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   versions         DocumentVersion[]
@@ -71,10 +71,10 @@ model DocumentVersion {
   id              String       @id @default(cuid())
   documentId      String
   document        Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  sourceChecksum  String?
+  sourceChecksum  String?      @db.VarChar(255)
   snapshotKind    SnapshotKind
-  snapshotKey     String?
-  extractionState String       @default("pending")
+  snapshotKey     String?      @db.VarChar(1024)
+  extractionState String       @default("pending") @db.VarChar(255)
   createdAt       DateTime     @default(now())
   pages           PageMap[]
   textSpans       TextSpan[]
@@ -87,7 +87,7 @@ model Source {
   id          String     @id @default(cuid())
   documentId  String?
   document    Document?  @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  shortTitle  String?
+  shortTitle  String?    @db.VarChar(512)
   cslJson     Json
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
@@ -101,11 +101,11 @@ model PageMap {
   versionId       String
   version         DocumentVersion     @relation(fields: [versionId], references: [id], onDelete: Cascade)
   pdfPageIndex    Int
-  visibleLabel    String?
-  bookPageLabel   String?
+  visibleLabel    String?             @db.VarChar(64)
+  bookPageLabel   String?             @db.VarChar(64)
   numberingSystem PageNumberingSystem @default(ARABIC)
   confidence      MappingConfidence   @default(UNCERTAIN)
-  note            String?
+  note            String?             @db.Text
   annotations     Annotation[]
   textSpans       TextSpan[]
 
@@ -119,7 +119,7 @@ model TextSpan {
   version   DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   pageMapId String?
   pageMap   PageMap?        @relation(fields: [pageMapId], references: [id], onDelete: SetNull)
-  text      String
+  text      String          @db.LongText
   anchor    Json?
   createdAt DateTime        @default(now())
 
@@ -128,21 +128,21 @@ model TextSpan {
 }
 
 model Annotation {
-  id          String          @id @default(cuid())
-  documentId  String
-  document    Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  versionId   String
-  version     DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
-  pageMapId   String?
-  pageMap     PageMap?        @relation(fields: [pageMapId], references: [id], onDelete: SetNull)
-  colorKey    String
-  selectedText String
-  note        String?
-  tags        String[]
-  anchor      Json?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  citations   Citation[]
+  id           String          @id @default(cuid())
+  documentId   String
+  document     Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionId    String
+  version      DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  pageMapId    String?
+  pageMap      PageMap?        @relation(fields: [pageMapId], references: [id], onDelete: SetNull)
+  colorKey     String          @db.VarChar(64)
+  selectedText String          @db.LongText
+  note         String?         @db.LongText
+  anchor       Json?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  citations    Citation[]
+  tags         AnnotationTag[]
 
   @@index([documentId])
   @@index([versionId])
@@ -150,20 +150,30 @@ model Annotation {
   @@index([colorKey])
 }
 
+model AnnotationTag {
+  id           String     @id @default(cuid())
+  annotationId String
+  annotation   Annotation @relation(fields: [annotationId], references: [id], onDelete: Cascade)
+  value        String     @db.VarChar(128)
+
+  @@unique([annotationId, value])
+  @@index([value])
+}
+
 model Citation {
-  id           String      @id @default(cuid())
-  sourceId     String
-  source       Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  annotationId String?
-  annotation   Annotation? @relation(fields: [annotationId], references: [id], onDelete: SetNull)
-  styleId      String
-  locale       String      @default("en-US")
-  locatorType  String      @default("page")
-  locatorValue String?
-  prefix       String?
-  suffix       String?
-  generatedText String
-  createdAt    DateTime   @default(now())
+  id            String      @id @default(cuid())
+  sourceId      String
+  source        Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  annotationId  String?
+  annotation    Annotation? @relation(fields: [annotationId], references: [id], onDelete: SetNull)
+  styleId       String      @db.VarChar(128)
+  locale        String      @default("en-US") @db.VarChar(32)
+  locatorType   String      @default("page") @db.VarChar(64)
+  locatorValue  String?     @db.VarChar(255)
+  prefix        String?     @db.Text
+  suffix        String?     @db.Text
+  generatedText String      @db.LongText
+  createdAt     DateTime    @default(now())
 
   @@index([sourceId])
   @@index([annotationId])
@@ -172,12 +182,22 @@ model Citation {
 
 model ResearchThread {
   id          String               @id @default(cuid())
-  title       String
-  description String?
-  tags        String[]
+  title       String               @db.VarChar(512)
+  description String?              @db.LongText
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
   items       ResearchThreadItem[]
+  tags        ResearchThreadTag[]
+}
+
+model ResearchThreadTag {
+  id               String         @id @default(cuid())
+  researchThreadId String
+  researchThread   ResearchThread @relation(fields: [researchThreadId], references: [id], onDelete: Cascade)
+  value            String         @db.VarChar(128)
+
+  @@unique([researchThreadId, value])
+  @@index([value])
 }
 
 model ResearchThreadItem {
@@ -186,7 +206,7 @@ model ResearchThreadItem {
   researchThread   ResearchThread         @relation(fields: [researchThreadId], references: [id], onDelete: Cascade)
   itemType         ResearchThreadItemType
   itemId           String
-  note             String?
+  note             String?                @db.LongText
   orderIndex       Int                    @default(0)
 
   @@index([researchThreadId])
@@ -195,8 +215,8 @@ model ResearchThreadItem {
 
 model QueryLog {
   id        String   @id @default(cuid())
-  query     String
-  mode      String
+  query     String   @db.LongText
+  mode      String   @db.VarChar(128)
   filters   Json?
   resultIds Json?
   createdAt DateTime @default(now())
