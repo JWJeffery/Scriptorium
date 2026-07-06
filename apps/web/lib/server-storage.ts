@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const DEFAULT_STORAGE_DIR = path.join(process.cwd(), "storage");
@@ -15,6 +15,17 @@ function safeFilename(filename: string) {
 
 export function getStorageRoot() {
   return process.env.SCRIPTORIUM_STORAGE_DIR || DEFAULT_STORAGE_DIR;
+}
+
+function resolveStorageKey(storageKey: string) {
+  const storageRoot = path.resolve(getStorageRoot());
+  const absolutePath = path.resolve(storageRoot, storageKey);
+
+  if (!absolutePath.startsWith(storageRoot)) {
+    throw new Error("Invalid storage key.");
+  }
+
+  return absolutePath;
 }
 
 export async function storePdfFile(documentId: string, file: File): Promise<StoredPdfFile> {
@@ -38,4 +49,9 @@ export async function storePdfFile(documentId: string, file: File): Promise<Stor
   await writeFile(absolutePath, buffer);
 
   return { storageKey, size: buffer.byteLength };
+}
+
+export async function readStoredPdfFile(storageKey: string) {
+  const absolutePath = resolveStorageKey(storageKey);
+  return await readFile(absolutePath);
 }
