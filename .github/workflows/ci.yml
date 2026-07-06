@@ -11,6 +11,23 @@ jobs:
   verify:
     name: Build and typecheck
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: mysql://scriptorium:scriptorium@127.0.0.1:3306/scriptorium
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: scriptorium
+          MYSQL_USER: scriptorium
+          MYSQL_PASSWORD: scriptorium
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uscriptorium -pscriptorium"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,7 +39,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -35,6 +51,9 @@ jobs:
 
       - name: Generate Prisma client
         run: pnpm prisma:generate
+
+      - name: Deploy MySQL migration
+        run: pnpm prisma:migrate:deploy
 
       - name: Typecheck web app
         run: pnpm typecheck
