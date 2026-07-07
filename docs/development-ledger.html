@@ -145,14 +145,14 @@
         <p><strong>Rationale:</strong> First complete proof of source metadata, page mapping, text selection, highlights, notes, citations, persistence, and reload recovery.</p>
         <p><strong>Evidence:</strong> Issue #1 closed; PR #2 merged; CI run <code>28820801620</code>; merge <code>67890ac</code>.</p>
       </article>
-      <article class="gate status-red" data-ledger-id="txt-markdown-ingestion" data-active="true">
-        <div class="sequence">03</div><h3><span class="stamp"></span>TXT + Markdown scholarly ingestion <span class="active-pill">active gate</span></h3>
+      <article class="gate status-green" data-ledger-id="txt-markdown-ingestion" data-active="false">
+        <div class="sequence">03</div><h3><span class="stamp"></span>TXT + Markdown scholarly ingestion</h3>
         <p><strong>Rationale:</strong> Safest expansion beyond PDF because it validates non-PDF text snapshots and locator rules before DOCX complexity.</p>
-        <p><strong>Current truth:</strong> Active next gate, but not started. Red until implementation exists and passes audit.</p>
+        <p><strong>Evidence:</strong> Issue #6; PR #7; CI run <code>28835427347</code> verified TXT/Markdown fixtures, typecheck, build, and MySQL migration.</p>
       </article>
-      <article class="gate status-red" data-ledger-id="snapshot-policy" data-active="false">
-        <div class="sequence">04</div><h3><span class="stamp"></span>Snapshot policy for text formats</h3>
-        <p>Not started. Needed so annotations survive edits, reimports, and future format expansion.</p>
+      <article class="gate status-red" data-ledger-id="snapshot-policy" data-active="true">
+        <div class="sequence">04</div><h3><span class="stamp"></span>Snapshot policy for text formats <span class="active-pill">active gate</span></h3>
+        <p><strong>Current truth:</strong> Active next gate, but not started. Red until implementation exists and passes audit.</p>
       </article>
       <article class="gate status-red" data-ledger-id="docx-ingestion" data-active="false">
         <div class="sequence">05</div><h3><span class="stamp"></span>DOCX ingestion path</h3>
@@ -200,6 +200,7 @@
       <div class="history-item status-green"><span class="stamp"></span>Durable scholarly object thesis recorded.</div>
       <div class="history-item status-green"><span class="stamp"></span>Roadmap created from PDF workflow through interrogation.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #1 and PR #2 closed the PDF scholarly workflow with CI verification.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #6 and PR #7 added TXT/Markdown ingestion with line/offset anchors, citation persistence, and CI fixture verification.</div>
     </div>
   </section>
 </main>
