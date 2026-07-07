@@ -65,8 +65,8 @@
         "anchor": {
           "selectedText": "The annotation must survive reload with its locator.",
           "pageNumber": 1,
-          "startOffset": 66,
-          "endOffset": 117,
+          "startOffset": 62,
+          "endOffset": 114,
           "lineStart": 5,
           "lineEnd": 5,
           "locatorKind": "line",
