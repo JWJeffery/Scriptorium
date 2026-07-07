@@ -1,0 +1,23 @@
+{
+  "csl": {
+    "type": "book",
+    "title": "Citation Exchange Demonstration",
+    "author": [
+      { "literal": "Clara Bibliographer" }
+    ],
+    "publisher": "Scriptorium House",
+    "publisher-place": "Oxford",
+    "issued": {
+      "date-parts": [[2026]]
+    }
+  },
+  "bibtex": "@book{Bibliographer-2026-Citation,\n  author = {Clara Bibliographer},\n  title = {Citation Exchange Demonstration},\n  publisher = {Scriptorium House},\n  address = {Oxford},\n  year = {2026}\n}\n",
+  "biblatex": "@book{Bibliographer-2026-Citation,\n  author = {Clara Bibliographer},\n  title = {Citation Exchange Demonstration},\n  publisher = {Scriptorium House},\n  location = {Oxford},\n  year = {2026}\n}\n",
+  "expected": {
+    "title": "Citation Exchange Demonstration",
+    "author": "Clara Bibliographer",
+    "publisher": "Scriptorium House",
+    "publisher-place": "Oxford",
+    "year": "2026"
+  }
+}
