@@ -13,7 +13,7 @@ const requiredRouteTerms = [
   "snapshotKey",
   "documentVersion.count",
   "TEXT_EXTRACTION",
-  "TextSpan"
+  "textSpan.create"
 ];
 
 assert.ok(pkg.includes("mammoth"), "DOCX extraction dependency must be declared");
