@@ -9,7 +9,7 @@
   },
   "integratedDeliverable": "A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.",
   "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.",
-  "activeGateId": "research-threads",
+  "activeGateId": "thread-export",
   "gates": [
     {
       "id": "foundation",
@@ -135,21 +135,26 @@
       "id": "research-threads",
       "sequence": 9,
       "title": "Research threads",
-      "status": "red",
-      "active": true,
+      "status": "green",
+      "active": false,
       "rationale": "Annotations become scholarship when grouped into questions, arguments, and reusable research trails.",
       "completionStandard": "A thread can contain ordered annotations, citations, source references, notes, and tags, then persist and reload.",
-      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
+      "evidence": [
+        "Issue #18 implemented in PR #19.",
+        "Milestone 9 research thread verifier passed in CI run 28882426668.",
+        "Typecheck and Next.js build passed in CI run 28882426668.",
+        "MySQL migration deploy passed in CI run 28882426668."
+      ]
     },
     {
       "id": "thread-export",
       "sequence": 10,
       "title": "Thread export",
       "status": "red",
-      "active": false,
+      "active": true,
       "rationale": "Research threads should produce usable writing artifacts only after the thread model is stable.",
       "completionStandard": "Threads export to Markdown and Word-compatible format with argument order, notes, locators, and citations preserved.",
-      "note": "Not started."
+      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
     },
     {
       "id": "exact-search",
@@ -232,6 +237,11 @@
       "id": "zotero-compatible-path-closed",
       "status": "green",
       "summary": "Issue #16 and PR #17 added a bounded Zotero-shaped book item data path around CSL source records."
+    },
+    {
+      "id": "research-threads-closed",
+      "status": "green",
+      "summary": "Issue #18 and PR #19 added persistent research threads with ordered annotation, citation, source, document, note, and tag context."
     }
   ]
 }
