@@ -9,7 +9,7 @@
   },
   "integratedDeliverable": "A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.",
   "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.",
-  "activeGateId": "thread-export",
+  "activeGateId": "exact-search",
   "gates": [
     {
       "id": "foundation",
@@ -150,21 +150,26 @@
       "id": "thread-export",
       "sequence": 10,
       "title": "Thread export",
-      "status": "red",
-      "active": true,
+      "status": "green",
+      "active": false,
       "rationale": "Research threads should produce usable writing artifacts only after the thread model is stable.",
       "completionStandard": "Threads export to Markdown and Word-compatible format with argument order, notes, locators, and citations preserved.",
-      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
+      "evidence": [
+        "Issue #20 implemented in PR #21.",
+        "Milestone 10 thread export verifier passed in CI run 28884862804.",
+        "Typecheck and Next.js build passed in CI run 28884862804.",
+        "Scriptorium CI typecheck, build, and MySQL migration deploy passed in CI run 28884863079."
+      ]
     },
     {
       "id": "exact-search",
       "sequence": 11,
       "title": "Exact search",
       "status": "red",
-      "active": false,
+      "active": true,
       "rationale": "Search should begin with exact, inspectable results before semantic retrieval or generated answers.",
       "completionStandard": "Users can search documents, extracted passages, notes, tags, and citations, with results linked to source records and locators.",
-      "note": "Not started."
+      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
     },
     {
       "id": "semantic-search",
@@ -242,6 +247,11 @@
       "id": "research-threads-closed",
       "status": "green",
       "summary": "Issue #18 and PR #19 added persistent research threads with ordered annotation, citation, source, document, note, and tag context."
+    },
+    {
+      "id": "thread-export-closed",
+      "status": "green",
+      "summary": "Issue #20 and PR #21 added Markdown and RTF thread rendering with ordered item, note, locator, citation, source, and document context."
     }
   ]
 }
