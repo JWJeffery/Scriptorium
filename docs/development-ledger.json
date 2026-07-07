@@ -9,7 +9,7 @@
   },
   "integratedDeliverable": "A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.",
   "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.",
-  "activeGateId": "docx-ingestion",
+  "activeGateId": "csl-source-editor",
   "gates": [
     {
       "id": "foundation",
@@ -75,21 +75,26 @@
       "id": "docx-ingestion",
       "sequence": 5,
       "title": "DOCX ingestion path",
-      "status": "red",
-      "active": true,
+      "status": "green",
+      "active": false,
       "rationale": "DOCX matters for scholarship but should follow simpler text ingestion because Office extraction has more failure modes.",
       "completionStandard": "DOCX upload extracts readable text, creates a stable snapshot, supports annotation/citation, persists, reloads, and passes CI fixture verification.",
-      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
+      "evidence": [
+        "Issue #10 implemented in PR #11.",
+        "Milestone 5 DOCX contract verifier passed in CI run 28872109866.",
+        "Typecheck and Next.js build passed in CI run 28872109866.",
+        "MySQL migration deploy passed in CI run 28872109866."
+      ]
     },
     {
       "id": "csl-source-editor",
       "sequence": 6,
       "title": "CSL source editor",
       "status": "red",
-      "active": false,
+      "active": true,
       "rationale": "Citation metadata needs controlled editing before source import/export and larger citation workflows.",
       "completionStandard": "Users can edit source records in a CSL-compatible shape with validation and persistence.",
-      "note": "Not started."
+      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
     },
     {
       "id": "citation-import-export",
@@ -192,6 +197,11 @@
       "id": "snapshot-policy-closed",
       "status": "green",
       "summary": "Issue #8 and PR #9 added deterministic checksum-addressed text snapshots, reimport versioning, and annotation/version isolation."
+    },
+    {
+      "id": "docx-ingestion-closed",
+      "status": "green",
+      "summary": "Issue #10 and PR #11 added bounded DOCX text extraction, versioned snapshot persistence, and text-reader annotation support."
     }
   ]
 }
