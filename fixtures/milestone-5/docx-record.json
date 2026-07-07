@@ -1,0 +1,14 @@
+{
+  "kind": "DOCX",
+  "filename": "demo.docx",
+  "text": "Line one.\n\nLine two anchor.\n\nLine three.",
+  "checksum": "4f8f7cce7b42629e1394b0c582fc7842b295d0a1742d99e66a8647df0230a4dc",
+  "snapshotKey": "documents/doc-docx-demo/snapshots/4f8f7cce7b42629e1394b0c582fc7842b295d0a1742d99e66a8647df0230a4dc.txt",
+  "selectedText": "Line two anchor.",
+  "startOffset": 11,
+  "endOffset": 27,
+  "lineStart": 3,
+  "lineEnd": 3,
+  "locatorType": "line",
+  "locatorValue": "3"
+}

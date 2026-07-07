@@ -57,6 +57,9 @@ jobs:
       - name: Verify Milestone 4 text snapshot policy
         run: node scripts/verify-milestone-4-snapshot-policy.mjs
 
+      - name: Verify Milestone 5 DOCX contract
+        run: node scripts/verify-milestone-5-docx.mjs
+
       - name: Typecheck web app
         id: typecheck
         run: |

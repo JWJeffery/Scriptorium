@@ -154,13 +154,13 @@
         <div class="sequence">04</div><h3><span class="stamp"></span>Snapshot policy for text formats</h3>
         <p><strong>Evidence:</strong> Issue #8; PR #9; CI run <code>28867118718</code> verified deterministic normalization, checksum-addressed snapshots, reimport versioning, annotation isolation, typecheck, build, and MySQL migration.</p>
       </article>
-      <article class="gate status-red" data-ledger-id="docx-ingestion" data-active="true">
-        <div class="sequence">05</div><h3><span class="stamp"></span>DOCX ingestion path <span class="active-pill">active gate</span></h3>
-        <p><strong>Current truth:</strong> Active next gate, but not started. Red until implementation exists and passes audit.</p>
+      <article class="gate status-green" data-ledger-id="docx-ingestion" data-active="false">
+        <div class="sequence">05</div><h3><span class="stamp"></span>DOCX ingestion path</h3>
+        <p><strong>Evidence:</strong> Issue #10; PR #11; CI run <code>28872109866</code> verified DOCX contract, typecheck, build, and MySQL migration.</p>
       </article>
-      <article class="gate status-red" data-ledger-id="csl-source-editor" data-active="false">
-        <div class="sequence">06</div><h3><span class="stamp"></span>CSL source editor</h3>
-        <p>Not started. Citation metadata editing comes before import/export expansion.</p>
+      <article class="gate status-red" data-ledger-id="csl-source-editor" data-active="true">
+        <div class="sequence">06</div><h3><span class="stamp"></span>CSL source editor <span class="active-pill">active gate</span></h3>
+        <p><strong>Current truth:</strong> Active next gate, but not started. Red until implementation exists and passes audit.</p>
       </article>
       <article class="gate status-red" data-ledger-id="citation-import-export" data-active="false">
         <div class="sequence">07</div><h3><span class="stamp"></span>Citation import/export</h3>
@@ -202,6 +202,7 @@
       <div class="history-item status-green"><span class="stamp"></span>Issue #1 and PR #2 closed the PDF scholarly workflow with CI verification.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #6 and PR #7 added TXT/Markdown ingestion with line/offset anchors, citation persistence, and CI fixture verification.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #8 and PR #9 added deterministic checksum-addressed text snapshots, reimport versioning, and annotation/version isolation.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #10 and PR #11 added bounded DOCX text extraction, versioned snapshot persistence, and text-reader annotation support.</div>
     </div>
   </section>
 </main>

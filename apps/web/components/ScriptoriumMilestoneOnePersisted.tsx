@@ -6,7 +6,7 @@ import { PdfAnchoredPageReader, type PdfPageHighlight, type PdfSelectionAnchor }
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = "sbl-note" | "chicago-note";
-type DocumentKind = "PDF" | "TXT" | "MARKDOWN";
+type DocumentKind = "PDF" | "TXT" | "MARKDOWN" | "DOCX";
 type SourceRecord = { author: string; title: string; place: string; publisher: string; year: string };
 type PageMap = { basePdfPageIndex: number; baseBookPage: number; currentPdfPageIndex: number };
 type ServerIds = { documentId: string; versionId: string; sourceId: string; pageMapId: string; storageKey?: string; snapshotKey?: string; sourceChecksum?: string };
@@ -31,22 +31,26 @@ const TEXT_CONTENT_KEY = "scriptorium.currentTextContent";
 const ANNOTATIONS_KEY = "scriptorium.annotations";
 const EMPTY_SOURCE: SourceRecord = { author: "", title: "", place: "", publisher: "", year: "" };
 const DEFAULT_PAGE_MAP: PageMap = { basePdfPageIndex: 1, baseBookPage: 1, currentPdfPageIndex: 1 };
+const DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 function localId(prefix: string) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
 function bookPage(pageMap: PageMap) { return String(pageMap.baseBookPage + pageMap.currentPdfPageIndex - pageMap.basePdfPageIndex); }
 function bytes(size: number) { return size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`; }
 function serverPdfUrl(document: StoredDocument) { return document.server?.storageKey ? `/api/milestone-one/files/${document.server.documentId}` : null; }
 function isPdf(document: StoredDocument | null) { return document?.kind === "PDF"; }
-function isText(document: StoredDocument | null): document is StoredDocument & { kind: "TXT" | "MARKDOWN" } { return document?.kind === "TXT" || document?.kind === "MARKDOWN"; }
+function isText(document: StoredDocument | null): document is StoredDocument & { kind: "TXT" | "MARKDOWN" | "DOCX" } { return document?.kind === "TXT" || document?.kind === "MARKDOWN" || document?.kind === "DOCX"; }
 function isTextAnchor(anchor: SelectionAnchor | undefined): anchor is TextSelectionAnchor { return typeof anchor === "object" && anchor !== null && "startOffset" in anchor && "lineStart" in anchor; }
 function lineLocator(anchor: TextSelectionAnchor) { return anchor.lineStart === anchor.lineEnd ? String(anchor.lineStart) : `${anchor.lineStart}-${anchor.lineEnd}`; }
 function normalizeTextSnapshot(text: string) { return text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n"); }
+function mediaTypeFor(kind: DocumentKind, file: File) { return file.type || (kind === "PDF" ? "application/pdf" : kind === "MARKDOWN" ? "text/markdown" : kind === "DOCX" ? DOCX_MEDIA_TYPE : "text/plain"); }
+function formatFor(kind: DocumentKind) { return kind === "MARKDOWN" ? "Markdown" : kind === "TXT" ? "TXT" : kind === "DOCX" ? "DOCX" : "PDF"; }
 
 function fileKind(file: File): DocumentKind | null {
   const name = file.name.toLowerCase();
   if (file.type === "application/pdf" || name.endsWith(".pdf")) return "PDF";
   if (file.type === "text/markdown" || name.endsWith(".md") || name.endsWith(".markdown")) return "MARKDOWN";
   if (file.type === "text/plain" || name.endsWith(".txt")) return "TXT";
+  if (file.type === DOCX_MEDIA_TYPE || name.endsWith(".docx")) return "DOCX";
   return null;
 }
 
@@ -66,11 +70,7 @@ function normalizeDocument(value: unknown) {
   return { ...parsed, kind: parsed.kind ?? "PDF" } as StoredDocument;
 }
 
-function readDocument() {
-  const raw = localStorage.getItem(DOCUMENT_KEY);
-  if (!raw) return null;
-  return normalizeDocument(JSON.parse(raw));
-}
+function readDocument() { const raw = localStorage.getItem(DOCUMENT_KEY); return raw ? normalizeDocument(JSON.parse(raw)) : null; }
 function readAnnotations() { const raw = localStorage.getItem(ANNOTATIONS_KEY); return raw ? (JSON.parse(raw) as SavedAnnotation[]) : []; }
 function saveDocument(document: StoredDocument) { localStorage.setItem(DOCUMENT_KEY, JSON.stringify(document)); }
 function saveTextContent(text: string) { localStorage.setItem(TEXT_CONTENT_KEY, text); }
@@ -84,15 +84,8 @@ function currentLocator(document: StoredDocument | null, anchor: SelectionAnchor
   return bookPage(document.pageMap);
 }
 
-function locatorTypeFor(document: StoredDocument, anchor: SelectionAnchor | undefined) {
-  return isText(document) && isTextAnchor(anchor) ? "line" : "page";
-}
-
-function recordMatchesCurrentVersion(record: SavedAnnotation, document: StoredDocument | null) {
-  const currentVersionId = document?.server?.versionId;
-  if (!currentVersionId) return true;
-  return record.versionId ? record.versionId === currentVersionId : true;
-}
+function locatorTypeFor(document: StoredDocument, anchor: SelectionAnchor | undefined) { return isText(document) && isTextAnchor(anchor) ? "line" : "page"; }
+function recordMatchesCurrentVersion(record: SavedAnnotation, document: StoredDocument | null) { const currentVersionId = document?.server?.versionId; return currentVersionId ? record.versionId ? record.versionId === currentVersionId : true : true; }
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -120,7 +113,7 @@ async function getPdf(documentId: string) {
     const transaction = db.transaction(PDF_STORE, "readonly");
     const request = transaction.objectStore(PDF_STORE).get(documentId);
     request.onsuccess = () => resolve((request.result as Blob | undefined) ?? null);
-    request.onerror = () => reject(transaction.error);
+    request.onerror = () => reject(request.error);
   });
   db.close();
   return blob;
@@ -155,7 +148,7 @@ async function persistPdfFile(file: File, document: StoredDocument, locator: str
   return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id, storageKey: body.storedFile?.storageKey ?? body.document.storageKey ?? undefined } satisfies ServerIds;
 }
 
-async function persistTextFile(file: File, document: StoredDocument, locator: string, existingServerDocumentId?: string) {
+async function persistTextLikeFile(file: File, document: StoredDocument, locator: string, existingServerDocumentId?: string) {
   const formData = new FormData();
   formData.set("file", file);
   formData.set("title", document.title);
@@ -165,8 +158,9 @@ async function persistTextFile(file: File, document: StoredDocument, locator: st
   formData.set("year", document.source.year);
   formData.set("bookPageLabel", locator);
   if (existingServerDocumentId) formData.set("documentId", existingServerDocumentId);
-  const response = await fetch("/api/milestone-three/texts", { method: "POST", body: formData });
-  if (!response.ok) throw new Error("Text upload persistence failed.");
+  const endpoint = document.kind === "DOCX" ? "/api/milestone-five/docx" : "/api/milestone-three/texts";
+  const response = await fetch(endpoint, { method: "POST", body: formData });
+  if (!response.ok) throw new Error("Text-like upload persistence failed.");
   const body = await response.json() as TextPersistResponse;
   return {
     server: {
@@ -204,14 +198,13 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [anchor, setAnchor] = useState<SelectionAnchor | undefined>();
   const [note, setNote] = useState("");
   const [style, setStyle] = useState<CitationStyle>("sbl-note");
-  const [status, setStatus] = useState("Register a PDF, TXT, or Markdown file to begin.");
+  const [status, setStatus] = useState("Register a PDF, TXT, Markdown, or DOCX file to begin.");
 
   useEffect(() => {
     const storedDocument = readDocument();
     const storedAnnotations = readAnnotations();
     setAnnotations(storedAnnotations);
     if (!storedDocument) return;
-
     setDocumentRecord(storedDocument);
 
     if (storedDocument.kind === "PDF") {
@@ -221,14 +214,12 @@ export function ScriptoriumMilestoneOnePersisted() {
           setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
           return;
         }
-
         const storedServerUrl = serverPdfUrl(storedDocument);
         if (storedServerUrl) {
           setPdfUrl(storedServerUrl);
           setStatus("Recovered PDF from server file storage.");
           return;
         }
-
         setStatus("Recovered records, but no browser or server PDF was found.");
       });
       return;
@@ -292,7 +283,7 @@ export function ScriptoriumMilestoneOnePersisted() {
 
     const kind = fileKind(file);
     if (!kind) {
-      setStatus("This gate accepts PDF, TXT, and Markdown files only.");
+      setStatus("This gate accepts PDF, TXT, Markdown, and DOCX files only.");
       return;
     }
 
@@ -301,10 +292,10 @@ export function ScriptoriumMilestoneOnePersisted() {
     const textReimportDocument = kind !== "PDF" && isText(documentRecord) && documentRecord.kind === kind && documentRecord.server?.documentId ? documentRecord : null;
     const isTextReimport = Boolean(textReimportDocument);
     const documentId = textReimportDocument ? textReimportDocument.id : localId("doc");
-    const title = file.name.replace(/\.(pdf|txt|md|markdown)$/i, "");
+    const title = file.name.replace(/\.(pdf|txt|md|markdown|docx)$/i, "");
     let nextDocument: StoredDocument = textReimportDocument
-      ? { ...textReimportDocument, title, filename: file.name, mediaType: file.type || textReimportDocument.mediaType, size: file.size, source: { ...textReimportDocument.source, title: textReimportDocument.source.title || title }, pageMap: DEFAULT_PAGE_MAP }
-      : { id: documentId, title, filename: file.name, kind, mediaType: file.type || (kind === "PDF" ? "application/pdf" : kind === "MARKDOWN" ? "text/markdown" : "text/plain"), size: file.size, source: { ...EMPTY_SOURCE, title }, pageMap: DEFAULT_PAGE_MAP };
+      ? { ...textReimportDocument, title, filename: file.name, mediaType: mediaTypeFor(kind, file), size: file.size, source: { ...textReimportDocument.source, title: textReimportDocument.source.title || title }, pageMap: DEFAULT_PAGE_MAP }
+      : { id: documentId, title, filename: file.name, kind, mediaType: mediaTypeFor(kind, file), size: file.size, source: { ...EMPTY_SOURCE, title }, pageMap: DEFAULT_PAGE_MAP };
 
     if (!isTextReimport) {
       saveAnnotations([]);
@@ -336,17 +327,22 @@ export function ScriptoriumMilestoneOnePersisted() {
     } else {
       if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
       setPdfUrl(null);
-      const normalizedText = normalizeTextSnapshot(await file.text());
-      setTextContent(normalizedText);
-      saveTextContent(normalizedText);
+      if (kind === "DOCX") {
+        setTextContent("");
+        saveTextContent("");
+      } else {
+        const normalizedText = normalizeTextSnapshot(await file.text());
+        setTextContent(normalizedText);
+        saveTextContent(normalizedText);
+      }
       try {
-        const persisted = await persistTextFile(file, nextDocument, "1", textReimportDocument?.server?.documentId);
+        const persisted = await persistTextLikeFile(file, nextDocument, "1", textReimportDocument?.server?.documentId);
         nextDocument = { ...nextDocument, server: persisted.server };
         setTextContent(persisted.text);
         saveTextContent(persisted.text);
-        setStatus(`${kind === "MARKDOWN" ? "Markdown" : "TXT"} ${isTextReimport ? "reimported as a new version" : "document registered"}; checksum ${persisted.server.sourceChecksum?.slice(0, 12) ?? "pending"}; annotations remain version-specific.`);
+        setStatus(`${formatFor(kind)} ${isTextReimport ? "reimported as a new version" : "document registered"}; checksum ${persisted.server.sourceChecksum?.slice(0, 12) ?? "pending"}; annotations remain version-specific.`);
       } catch {
-        setStatus(`${kind === "MARKDOWN" ? "Markdown" : "TXT"} document registered locally. Database snapshot persistence is unavailable in this environment.`);
+        setStatus(`${formatFor(kind)} document registration failed. ${kind === "DOCX" ? "DOCX extraction requires the server route." : "Database snapshot persistence is unavailable in this environment."}`);
       }
     }
 
@@ -387,17 +383,17 @@ export function ScriptoriumMilestoneOnePersisted() {
   function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setStatus("Cleared annotation records for the current browser workspace."); }
 
   const currentPage = documentRecord?.pageMap.currentPdfPageIndex ?? 1;
-  const formatLabel = documentRecord?.kind === "MARKDOWN" ? "Markdown" : documentRecord?.kind === "TXT" ? "TXT" : "PDF";
+  const formatLabel = documentRecord ? formatFor(documentRecord.kind) : "PDF";
 
   return (
     <section className="workflow" aria-label="Scriptorium scholarly ingestion workflow">
       <div className="workflowHeader">
         <div>
           <p className="eyebrow">Current gate</p>
-          <h2>Snapshot policy for text formats</h2>
-          <p>Register PDF, TXT, or Markdown sources. TXT/Markdown imports now create deterministic versioned snapshots with checksums so annotations remain tied to the exact text version.</p>
+          <h2>DOCX ingestion path</h2>
+          <p>Register PDF, TXT, Markdown, or DOCX sources. DOCX files are extracted to deterministic text snapshots so the same line/offset annotation workflow can be used.</p>
         </div>
-        <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown" onChange={registerSource} /></label>
+        <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} /></label>
       </div>
       <p className="statusLine">{status}</p>
       <div className="milestoneGrid">
@@ -415,7 +411,7 @@ export function ScriptoriumMilestoneOnePersisted() {
               <div className="mappingFormula"><span>Mapping rule</span><label>PDF page<input type="number" min="1" value={documentRecord?.pageMap.basePdfPageIndex ?? 1} onChange={(event) => updatePageMap("basePdfPageIndex", Number(event.target.value))} disabled={!documentRecord} /></label><label>= book page<input type="number" value={documentRecord?.pageMap.baseBookPage ?? 1} onChange={(event) => updatePageMap("baseBookPage", Number(event.target.value))} disabled={!documentRecord} /></label></div>
             </>
           ) : (
-            <div className="textLocatorBox"><strong>{locator === "-" ? "No text document registered" : `Current locator: line ${locator}`}</strong><span>Text and Markdown anchors use character offsets plus line numbers. Current snapshot checksum: {documentRecord?.server?.sourceChecksum?.slice(0, 12) ?? "not persisted"}.</span></div>
+            <div className="textLocatorBox"><strong>{locator === "-" ? "No text-like document registered" : `Current locator: line ${locator}`}</strong><span>TXT, Markdown, and DOCX anchors use character offsets plus line numbers. Current snapshot checksum: {documentRecord?.server?.sourceChecksum?.slice(0, 12) ?? "not persisted"}.</span></div>
           )}
           <h3>Highlight color</h3>
           <div className="workflowPalette">{highlightColors.map((color) => <button className={selectedColor === color.key ? "workflowSwatch active" : "workflowSwatch"} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} />{color.defaultMeaning}</button>)}</div>
@@ -424,12 +420,12 @@ export function ScriptoriumMilestoneOnePersisted() {
           {isPdf(documentRecord) ? (
             pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} highlights={visiblePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
           ) : isText(documentRecord) ? (
-            textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT or Markdown file.</span></div>
-          ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, or Markdown.</span></div>}
+            textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
+          ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}
         </section>
         <aside className="panel annotationPanel">
           <h3>Annotation</h3>
-          <p>{isText(documentRecord) ? "Select text directly from the current text snapshot so Scriptorium can store line and offset anchors for this version." : "Select text directly from the rendered PDF page, then verify the captured passage before saving."}</p>
+          <p>{isText(documentRecord) ? "Select text directly from the current extracted text snapshot so Scriptorium can store line and offset anchors for this version." : "Select text directly from the rendered PDF page, then verify the captured passage before saving."}</p>
           <textarea value={selectedText} onChange={(event) => setSelectedText(event.target.value)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} />
           <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add your note." rows={5} disabled={!documentRecord} />
           <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option></select></label>
