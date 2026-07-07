@@ -9,7 +9,7 @@
   },
   "integratedDeliverable": "A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.",
   "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.",
-  "activeGateId": "snapshot-policy",
+  "activeGateId": "docx-ingestion",
   "gates": [
     {
       "id": "foundation",
@@ -60,21 +60,26 @@
       "id": "snapshot-policy",
       "sequence": 4,
       "title": "Snapshot policy for text formats",
-      "status": "red",
-      "active": true,
+      "status": "green",
+      "active": false,
       "rationale": "Non-PDF text needs stable, versioned snapshots so annotations survive edits, reimports, and future format expansion.",
       "completionStandard": "Text snapshots are stored, versioned, linked to annotations, and verified by fixture tests.",
-      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
+      "evidence": [
+        "Issue #8 implemented in PR #9.",
+        "Milestone 4 text snapshot policy verifier passed in CI run 28867118718.",
+        "Typecheck and Next.js build passed in CI run 28867118718.",
+        "MySQL migration deploy passed in CI run 28867118718."
+      ]
     },
     {
       "id": "docx-ingestion",
       "sequence": 5,
       "title": "DOCX ingestion path",
       "status": "red",
-      "active": false,
+      "active": true,
       "rationale": "DOCX matters for scholarship but should follow simpler text ingestion because Office extraction has more failure modes.",
       "completionStandard": "DOCX upload extracts readable text, creates a stable snapshot, supports annotation/citation, persists, reloads, and passes CI fixture verification.",
-      "note": "Not started."
+      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
     },
     {
       "id": "csl-source-editor",
@@ -182,6 +187,11 @@
       "id": "txt-markdown-ingestion-closed",
       "status": "green",
       "summary": "Issue #6 and PR #7 added TXT/Markdown ingestion with line/offset anchors, citation persistence, and CI fixture verification."
+    },
+    {
+      "id": "snapshot-policy-closed",
+      "status": "green",
+      "summary": "Issue #8 and PR #9 added deterministic checksum-addressed text snapshots, reimport versioning, and annotation/version isolation."
     }
   ]
 }

@@ -1,12 +1,22 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const DEFAULT_STORAGE_DIR = path.join(process.cwd(), "storage");
 const MAX_PDF_BYTES = 75 * 1024 * 1024;
+const MAX_TEXT_SNAPSHOT_BYTES = 10 * 1024 * 1024;
 
 export type StoredPdfFile = {
   storageKey: string;
   size: number;
+};
+
+export type StoredTextSnapshot = {
+  storageKey: string;
+  size: number;
+  checksum: string;
+  text: string;
+  lineCount: number;
 };
 
 function safeSegment(value: string, fallback: string) {
@@ -22,6 +32,10 @@ function safeFilename(filename: string) {
 
 function safeDocumentId(documentId: string) {
   return safeSegment(documentId, "document");
+}
+
+function safeChecksum(checksum: string) {
+  return /^[a-f0-9]{64}$/i.test(checksum) ? checksum.toLowerCase() : "snapshot";
 }
 
 export function getStorageRoot() {
@@ -42,6 +56,14 @@ function resolveStorageKey(storageKey: string) {
   }
 
   return absolutePath;
+}
+
+export function normalizeTextSnapshot(rawText: string) {
+  return rawText.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+export function textSnapshotChecksum(text: string) {
+  return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 export async function storePdfFile(documentId: string, file: File): Promise<StoredPdfFile> {
@@ -66,9 +88,45 @@ export async function storePdfFile(documentId: string, file: File): Promise<Stor
   return { storageKey, size: buffer.byteLength };
 }
 
+export async function storeTextSnapshot(documentId: string, rawText: string): Promise<StoredTextSnapshot> {
+  const text = normalizeTextSnapshot(rawText);
+  const buffer = Buffer.from(text, "utf8");
+
+  if (buffer.byteLength > MAX_TEXT_SNAPSHOT_BYTES) {
+    throw new Error("Text snapshot exceeds the upload size limit.");
+  }
+
+  if (!text.trim()) {
+    throw new Error("Text snapshot is empty.");
+  }
+
+  const checksum = textSnapshotChecksum(text);
+  const documentSegment = safeDocumentId(documentId);
+  const checksumSegment = safeChecksum(checksum);
+  const storageKey = `documents/${documentSegment}/snapshots/${checksumSegment}.txt`;
+  const snapshotDirectory = resolveStorageKey(`documents/${documentSegment}/snapshots`);
+  const absolutePath = resolveStorageKey(storageKey);
+
+  await mkdir(snapshotDirectory, { recursive: true });
+  await writeFile(absolutePath, buffer);
+
+  return {
+    storageKey,
+    size: buffer.byteLength,
+    checksum,
+    text,
+    lineCount: text.split("\n").length
+  };
+}
+
 export async function readStoredPdfFile(storageKey: string) {
   const absolutePath = resolveStorageKey(storageKey);
   return await readFile(absolutePath);
+}
+
+export async function readStoredTextSnapshot(storageKey: string) {
+  const absolutePath = resolveStorageKey(storageKey);
+  return await readFile(absolutePath, "utf8");
 }
 
 export async function deleteStoredPdfFile(storageKey: string) {
