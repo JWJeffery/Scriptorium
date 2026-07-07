@@ -1,0 +1,80 @@
+{
+  "records": [
+    {
+      "format": "TXT",
+      "document": {
+        "title": "Plain Text Demonstration",
+        "filename": "plain-text-demonstration.txt",
+        "kind": "TXT",
+        "mediaType": "text/plain",
+        "source": {
+          "author": "Jane Scholar",
+          "title": "Plain Text Demonstration",
+          "place": "New York",
+          "publisher": "Scriptorium Press",
+          "year": "2026"
+        }
+      },
+      "text": "Opening line for context.\nThe durable text anchor records offsets and line numbers.\nClosing line for recovery.",
+      "annotation": {
+        "colorKey": "green",
+        "selectedText": "The durable text anchor records offsets and line numbers.",
+        "note": "TXT fixture verifies offset and line locator recovery.",
+        "citationStyle": "sbl-note",
+        "locatorType": "line",
+        "locatorValue": "2",
+        "citationText": "Jane Scholar, Plain Text Demonstration (New York: Scriptorium Press, 2026), 2.",
+        "anchor": {
+          "selectedText": "The durable text anchor records offsets and line numbers.",
+          "pageNumber": 1,
+          "startOffset": 26,
+          "endOffset": 83,
+          "lineStart": 2,
+          "lineEnd": 2,
+          "locatorKind": "line",
+          "beforeContext": "Opening line for context.\n",
+          "afterContext": "\nClosing line for recovery.",
+          "rects": []
+        }
+      }
+    },
+    {
+      "format": "MARKDOWN",
+      "document": {
+        "title": "Markdown Demonstration",
+        "filename": "markdown-demonstration.md",
+        "kind": "MARKDOWN",
+        "mediaType": "text/markdown",
+        "source": {
+          "author": "John Researcher",
+          "title": "Markdown Demonstration",
+          "place": "London",
+          "publisher": "Ledger House",
+          "year": "2026"
+        }
+      },
+      "text": "# Demonstration\n\nMarkdown keeps readable source structure.\n\n- The annotation must survive reload with its locator.\n- The citation must remain attached.",
+      "annotation": {
+        "colorKey": "orange",
+        "selectedText": "The annotation must survive reload with its locator.",
+        "note": "Markdown fixture verifies list-item locator recovery.",
+        "citationStyle": "chicago-note",
+        "locatorType": "line",
+        "locatorValue": "5",
+        "citationText": "John Researcher, Markdown Demonstration (London: Ledger House, 2026), 5.",
+        "anchor": {
+          "selectedText": "The annotation must survive reload with its locator.",
+          "pageNumber": 1,
+          "startOffset": 62,
+          "endOffset": 114,
+          "lineStart": 5,
+          "lineEnd": 5,
+          "locatorKind": "line",
+          "beforeContext": "# Demonstration\n\nMarkdown keeps readable source structure.\n\n- ",
+          "afterContext": "\n- The citation must remain attached.",
+          "rects": []
+        }
+      }
+    }
+  ]
+}

@@ -51,6 +51,9 @@ jobs:
       - name: Verify Milestone 1 fixture
         run: node scripts/verify-milestone-1.mjs
 
+      - name: Verify Milestone 3 TXT and Markdown fixtures
+        run: node scripts/verify-milestone-3-text-markdown.mjs
+
       - name: Typecheck web app
         id: typecheck
         run: |

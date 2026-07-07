@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: "desc" },
         include: {
           pages: true,
+          textSpans: true,
           annotations: {
             orderBy: { createdAt: "desc" },
             include: { citations: true }
