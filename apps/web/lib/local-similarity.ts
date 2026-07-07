@@ -35,10 +35,10 @@ export function cosineSimilarity(query: string, candidate: string) {
   let queryMagnitude = 0;
   let candidateMagnitude = 0;
 
-  for (const value of queryVector.values()) queryMagnitude += value * value;
-  for (const value of candidateVector.values()) candidateMagnitude += value * value;
+  for (const value of Array.from(queryVector.values())) queryMagnitude += value * value;
+  for (const value of Array.from(candidateVector.values())) candidateMagnitude += value * value;
 
-  for (const [term, value] of queryVector.entries()) {
+  for (const [term, value] of Array.from(queryVector.entries())) {
     dot += value * (candidateVector.get(term) ?? 0);
   }
 
