@@ -7,251 +7,35 @@
     "yellow": "Present or claimed, but unaudited / unverified. Yellow is audit debt.",
     "red": "Not started, failed audit, known bad, blocked, or intentionally absent."
   },
-  "integratedDeliverable": "A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.",
-  "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.",
-  "activeGateId": "exact-search",
+  "integratedDeliverable": "A scholarly research workspace for ingesting texts, stable locators, annotations, citations, research threads, exact and later semantic retrieval, and source-grounded response work.",
+  "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed.",
+  "activeGateId": "semantic-search",
   "gates": [
-    {
-      "id": "foundation",
-      "sequence": 1,
-      "title": "Foundation / repo / architecture",
-      "status": "green",
-      "active": false,
-      "rationale": "The project needed a clean repository, product thesis, roadmap, app skeleton, database model, and CI base before feature delivery.",
-      "completionStandard": "Repository exists with product documentation, Next.js app skeleton, Prisma model, roadmap, and CI foundation.",
-      "evidence": [
-        "README.md defines Scriptorium as a separate scholarly platform.",
-        "ROADMAP.md defines the initial milestone sequence.",
-        "prisma/schema.prisma defines the core relational model.",
-        ".github/workflows/ci.yml runs validation, typecheck, build, and migration checks."
-      ]
-    },
-    {
-      "id": "pdf-scholarly-workflow",
-      "sequence": 2,
-      "title": "PDF scholarly workflow",
-      "status": "green",
-      "active": false,
-      "rationale": "The first complete proof of the product model had to demonstrate source metadata, page mapping, text selection, highlights, notes, citations, persistence, and reload recovery.",
-      "completionStandard": "PDF registration, metadata, reader display, page mapping, highlight, note, citation generation, persistence, reload recovery, fixture verification, typecheck, build, and MySQL migration deploy all pass.",
-      "evidence": [
-        "Issue #1 closed as completed.",
-        "PR #2 merged with Milestone 1 verification.",
-        "CI run 28820801620 passed on PR #2 head before merge.",
-        "Merge commit 67890ac27472fbdc88fd0b51ff538f1f7bc04eb3."
-      ]
-    },
-    {
-      "id": "txt-markdown-ingestion",
-      "sequence": 3,
-      "title": "TXT + Markdown scholarly ingestion",
-      "status": "green",
-      "active": false,
-      "rationale": "Plain text and Markdown are the safest next expansion beyond PDF because they validate non-PDF text snapshots and locator rules before DOCX complexity.",
-      "completionStandard": "A user can upload or register TXT/Markdown, view text, select text, highlight, add note, generate citation using a stable locator, persist, reload, recover, and pass CI fixture verification.",
-      "evidence": [
-        "Issue #6 implemented in PR #7.",
-        "TXT and Markdown fixture verifier passed in CI run 28835427347.",
-        "Typecheck and Next.js build passed in CI run 28835427347.",
-        "MySQL migration deploy passed in CI run 28835427347."
-      ]
-    },
-    {
-      "id": "snapshot-policy",
-      "sequence": 4,
-      "title": "Snapshot policy for text formats",
-      "status": "green",
-      "active": false,
-      "rationale": "Non-PDF text needs stable, versioned snapshots so annotations survive edits, reimports, and future format expansion.",
-      "completionStandard": "Text snapshots are stored, versioned, linked to annotations, and verified by fixture tests.",
-      "evidence": [
-        "Issue #8 implemented in PR #9.",
-        "Milestone 4 text snapshot policy verifier passed in CI run 28867118718.",
-        "Typecheck and Next.js build passed in CI run 28867118718.",
-        "MySQL migration deploy passed in CI run 28867118718."
-      ]
-    },
-    {
-      "id": "docx-ingestion",
-      "sequence": 5,
-      "title": "DOCX ingestion path",
-      "status": "green",
-      "active": false,
-      "rationale": "DOCX matters for scholarship but should follow simpler text ingestion because Office extraction has more failure modes.",
-      "completionStandard": "DOCX upload extracts readable text, creates a stable snapshot, supports annotation/citation, persists, reloads, and passes CI fixture verification.",
-      "evidence": [
-        "Issue #10 implemented in PR #11.",
-        "Milestone 5 DOCX contract verifier passed in CI run 28872109866.",
-        "Typecheck and Next.js build passed in CI run 28872109866.",
-        "MySQL migration deploy passed in CI run 28872109866."
-      ]
-    },
-    {
-      "id": "csl-source-editor",
-      "sequence": 6,
-      "title": "CSL source editor",
-      "status": "green",
-      "active": false,
-      "rationale": "Citation metadata needs controlled editing before source import/export and larger citation workflows.",
-      "completionStandard": "Users can edit source records in a CSL-compatible shape with validation and persistence.",
-      "evidence": [
-        "Issue #12 implemented in PR #13.",
-        "Milestone 6 CSL source editor verifier passed in CI run 28878313692.",
-        "Typecheck and Next.js build passed in CI run 28878313692.",
-        "MySQL migration deploy passed in CI run 28878313692."
-      ]
-    },
-    {
-      "id": "citation-import-export",
-      "sequence": 7,
-      "title": "Citation import/export",
-      "status": "green",
-      "active": false,
-      "rationale": "Scholarly data should move in and out of Scriptorium through standard formats after internal CSL editing is reliable.",
-      "completionStandard": "CSL JSON and BibTeX/BibLaTeX import/export paths pass round-trip fixtures without corrupting source records.",
-      "evidence": [
-        "Issue #14 implemented in PR #15.",
-        "Milestone 7 citation exchange verifier passed in CI run 28880169340.",
-        "Typecheck and Next.js build passed in CI run 28880169340.",
-        "MySQL migration deploy passed in CI run 28880169340."
-      ]
-    },
-    {
-      "id": "zotero-compatible-path",
-      "sequence": 8,
-      "title": "Zotero-compatible data path",
-      "status": "green",
-      "active": false,
-      "rationale": "Zotero compatibility should follow stable citation import/export, not precede it.",
-      "completionStandard": "Zotero-shaped source data can round-trip through Scriptorium without losing citation fields needed by annotations.",
-      "evidence": [
-        "Issue #16 implemented in PR #17.",
-        "Milestone 8 Zotero compatibility verifier passed in CI run 28880779302.",
-        "Typecheck and Next.js build passed in CI run 28880779302.",
-        "MySQL migration deploy passed in CI run 28880779302."
-      ]
-    },
-    {
-      "id": "research-threads",
-      "sequence": 9,
-      "title": "Research threads",
-      "status": "green",
-      "active": false,
-      "rationale": "Annotations become scholarship when grouped into questions, arguments, and reusable research trails.",
-      "completionStandard": "A thread can contain ordered annotations, citations, source references, notes, and tags, then persist and reload.",
-      "evidence": [
-        "Issue #18 implemented in PR #19.",
-        "Milestone 9 research thread verifier passed in CI run 28882426668.",
-        "Typecheck and Next.js build passed in CI run 28882426668.",
-        "MySQL migration deploy passed in CI run 28882426668."
-      ]
-    },
-    {
-      "id": "thread-export",
-      "sequence": 10,
-      "title": "Thread export",
-      "status": "green",
-      "active": false,
-      "rationale": "Research threads should produce usable writing artifacts only after the thread model is stable.",
-      "completionStandard": "Threads export to Markdown and Word-compatible format with argument order, notes, locators, and citations preserved.",
-      "evidence": [
-        "Issue #20 implemented in PR #21.",
-        "Milestone 10 thread export verifier passed in CI run 28884862804.",
-        "Typecheck and Next.js build passed in CI run 28884862804.",
-        "Scriptorium CI typecheck, build, and MySQL migration deploy passed in CI run 28884863079."
-      ]
-    },
-    {
-      "id": "exact-search",
-      "sequence": 11,
-      "title": "Exact search",
-      "status": "red",
-      "active": true,
-      "rationale": "Search should begin with exact, inspectable results before semantic retrieval or generated answers.",
-      "completionStandard": "Users can search documents, extracted passages, notes, tags, and citations, with results linked to source records and locators.",
-      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
-    },
-    {
-      "id": "semantic-search",
-      "sequence": 12,
-      "title": "Semantic search",
-      "status": "red",
-      "active": false,
-      "rationale": "Semantic retrieval must be built on trusted extracted passages and exact source linkage.",
-      "completionStandard": "Semantic results return grounded passage records with source metadata and stable locators.",
-      "note": "Not started."
-    },
-    {
-      "id": "grounded-answer-generation",
-      "sequence": 13,
-      "title": "Grounded answer generation",
-      "status": "red",
-      "active": false,
-      "rationale": "Generated answers are the final layer and must never outrun source-grounded retrieval.",
-      "completionStandard": "Answers cite recovered source passages only; unsupported claims are refused or marked as unsupported.",
-      "note": "Not started."
-    }
+    {"id":"foundation","sequence":1,"title":"Foundation / repo / architecture","status":"green","active":false,"rationale":"Base repository, app, schema, roadmap, and CI foundation.","completionStandard":"Repository has product docs, app skeleton, Prisma model, roadmap, and CI foundation.","evidence":["README.md, ROADMAP.md, prisma/schema.prisma, and CI foundation exist."]},
+    {"id":"pdf-scholarly-workflow","sequence":2,"title":"PDF scholarly workflow","status":"green","active":false,"rationale":"First complete proof of source metadata, page mapping, highlights, notes, citations, persistence, and reload.","completionStandard":"PDF scholarly workflow passes fixture, typecheck, build, and migration checks.","evidence":["Issue #1; PR #2; CI run 28820801620."]},
+    {"id":"txt-markdown-ingestion","sequence":3,"title":"TXT + Markdown scholarly ingestion","status":"green","active":false,"rationale":"Plain text and Markdown validate non-PDF text snapshots and locator rules before Office formats.","completionStandard":"TXT and Markdown upload, annotation, citation, persistence, and reload pass CI.","evidence":["Issue #6; PR #7; CI run 28835427347."]},
+    {"id":"snapshot-policy","sequence":4,"title":"Snapshot policy for text formats","status":"green","active":false,"rationale":"Text formats need durable versioned snapshots so annotations survive reimport.","completionStandard":"Snapshots are normalized, checksum-addressed, versioned, and verified.","evidence":["Issue #8; PR #9; CI run 28867118718."]},
+    {"id":"docx-ingestion","sequence":5,"title":"DOCX ingestion path","status":"green","active":false,"rationale":"DOCX support follows stable text snapshots because Office extraction has more failure modes.","completionStandard":"DOCX extracts readable text, snapshots it, supports annotation/citation, and passes CI.","evidence":["Issue #10; PR #11; CI run 28872109866."]},
+    {"id":"csl-source-editor","sequence":6,"title":"CSL source editor","status":"green","active":false,"rationale":"Citation metadata needs controlled editing before broader exchange workflows.","completionStandard":"CSL-compatible source records validate and persist.","evidence":["Issue #12; PR #13; CI run 28878313692."]},
+    {"id":"citation-import-export","sequence":7,"title":"Citation import/export","status":"green","active":false,"rationale":"Scholarly source data needs bounded standard-format exchange.","completionStandard":"CSL JSON, BibTeX, and BibLaTeX exchange paths pass fixtures without source corruption.","evidence":["Issue #14; PR #15; CI run 28880169340."]},
+    {"id":"zotero-compatible-path","sequence":8,"title":"Zotero-compatible data path","status":"green","active":false,"rationale":"Local Zotero-shaped data compatibility follows stable citation exchange.","completionStandard":"Zotero-shaped book item data round-trips through Source.cslJson.","evidence":["Issue #16; PR #17; CI run 28880779302."]},
+    {"id":"research-threads","sequence":9,"title":"Research threads","status":"green","active":false,"rationale":"Annotations become scholarship when grouped into ordered research trails.","completionStandard":"Threads persist ordered annotations, citations, source references, notes, and tags.","evidence":["Issue #18; PR #19; CI run 28882426668."]},
+    {"id":"thread-export","sequence":10,"title":"Thread export","status":"green","active":false,"rationale":"Stable threads should render usable writing artifacts.","completionStandard":"Threads render to Markdown and RTF with order, notes, locators, citations, and source context preserved.","evidence":["Issue #20; PR #21; CI runs 28885022542 and 28885022479."]},
+    {"id":"exact-search","sequence":11,"title":"Exact search","status":"green","active":false,"rationale":"Search begins with exact, inspectable, source-linked results.","completionStandard":"Documents, extracted passages, notes, tags, citations, and threads search with source and locator links.","evidence":["Issue #22; PR #23; CI runs 28885643588 and 28885643569."]},
+    {"id":"semantic-search","sequence":12,"title":"Semantic search","status":"red","active":true,"rationale":"Similarity retrieval must rest on trusted extracted passages and exact source linkage.","completionStandard":"Similarity results return source-linked passage records with stable locators.","note":"Active next gate, but not started. It remains red until implementation exists and passes audit."},
+    {"id":"grounded-answer-generation","sequence":13,"title":"Grounded answer generation","status":"red","active":false,"rationale":"The response layer is last and must depend on trusted retrieval.","completionStandard":"Responses cite recovered source passages only; unsupported material is refused or marked unsupported.","note":"Not started."}
   ],
   "history": [
-    {
-      "id": "repo-created",
-      "status": "green",
-      "summary": "Scriptorium was separated from Universal Office and defined as its own scholarly reading platform."
-    },
-    {
-      "id": "product-thesis-recorded",
-      "status": "green",
-      "summary": "The durable scholarly object was defined as source text, location, page system, annotation, citation, research question, and later retrieval."
-    },
-    {
-      "id": "roadmap-created",
-      "status": "green",
-      "summary": "The roadmap established the sequence from PDF workflow to text formats, citation library, research threads, and interrogation."
-    },
-    {
-      "id": "pdf-workflow-closed",
-      "status": "green",
-      "summary": "Issue #1 and PR #2 closed the PDF scholarly workflow with CI verification."
-    },
-    {
-      "id": "txt-markdown-ingestion-closed",
-      "status": "green",
-      "summary": "Issue #6 and PR #7 added TXT/Markdown ingestion with line/offset anchors, citation persistence, and CI fixture verification."
-    },
-    {
-      "id": "snapshot-policy-closed",
-      "status": "green",
-      "summary": "Issue #8 and PR #9 added deterministic checksum-addressed text snapshots, reimport versioning, and annotation/version isolation."
-    },
-    {
-      "id": "docx-ingestion-closed",
-      "status": "green",
-      "summary": "Issue #10 and PR #11 added bounded DOCX text extraction, versioned snapshot persistence, and text-reader annotation support."
-    },
-    {
-      "id": "csl-source-editor-closed",
-      "status": "green",
-      "summary": "Issue #12 and PR #13 added a controlled CSL source metadata editor with validation, persistence, and citation alignment."
-    },
-    {
-      "id": "citation-import-export-closed",
-      "status": "green",
-      "summary": "Issue #14 and PR #15 added bounded CSL JSON, BibTeX, and BibLaTeX import/export for source records."
-    },
-    {
-      "id": "zotero-compatible-path-closed",
-      "status": "green",
-      "summary": "Issue #16 and PR #17 added a bounded Zotero-shaped book item data path around CSL source records."
-    },
-    {
-      "id": "research-threads-closed",
-      "status": "green",
-      "summary": "Issue #18 and PR #19 added persistent research threads with ordered annotation, citation, source, document, note, and tag context."
-    },
-    {
-      "id": "thread-export-closed",
-      "status": "green",
-      "summary": "Issue #20 and PR #21 added Markdown and RTF thread rendering with ordered item, note, locator, citation, source, and document context."
-    }
+    {"id":"repo-created","status":"green","summary":"Scriptorium was separated from Universal Office and defined as a scholarly reading platform."},
+    {"id":"pdf-workflow-closed","status":"green","summary":"Issue #1 and PR #2 closed the PDF scholarly workflow."},
+    {"id":"txt-markdown-ingestion-closed","status":"green","summary":"Issue #6 and PR #7 added TXT/Markdown ingestion."},
+    {"id":"snapshot-policy-closed","status":"green","summary":"Issue #8 and PR #9 added checksum-addressed snapshots."},
+    {"id":"docx-ingestion-closed","status":"green","summary":"Issue #10 and PR #11 added DOCX ingestion."},
+    {"id":"csl-source-editor-closed","status":"green","summary":"Issue #12 and PR #13 added CSL source editing."},
+    {"id":"citation-import-export-closed","status":"green","summary":"Issue #14 and PR #15 added citation import/export."},
+    {"id":"zotero-compatible-path-closed","status":"green","summary":"Issue #16 and PR #17 added local Zotero-shaped compatibility."},
+    {"id":"research-threads-closed","status":"green","summary":"Issue #18 and PR #19 added persistent research threads."},
+    {"id":"thread-export-closed","status":"green","summary":"Issue #20 and PR #21 added Markdown and RTF thread rendering."},
+    {"id":"exact-search-closed","status":"green","summary":"Issue #22 and PR #23 added bounded exact search with source and locator links."}
   ]
 }
