@@ -39,7 +39,7 @@
 
   <section>
     <h2>Final integrated deliverable</h2>
-    <p>A scholarly research workspace where a user can ingest texts, read them, map stable locators, annotate passages, generate scholarly citations, organize research threads, search recovered source material, and receive source-grounded responses only when citations can be tied back to source passages.</p>
+    <p>A scholarly research workspace for ingesting texts, stable locators, annotations, citations, research threads, exact and later similarity retrieval, and source-grounded response work.</p>
     <p class="rule"><strong>Workflow rule:</strong> One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed.</p>
   </section>
 
@@ -55,9 +55,9 @@
       <article class="gate status-green" data-ledger-id="citation-import-export" data-active="false"><div class="sequence">07</div><h3><span class="stamp"></span>Citation import/export</h3><p>Issue #14; PR #15; CI <code>28880169340</code>.</p></article>
       <article class="gate status-green" data-ledger-id="zotero-compatible-path" data-active="false"><div class="sequence">08</div><h3><span class="stamp"></span>Zotero-compatible data path</h3><p>Issue #16; PR #17; CI <code>28880779302</code>.</p></article>
       <article class="gate status-green" data-ledger-id="research-threads" data-active="false"><div class="sequence">09</div><h3><span class="stamp"></span>Research threads</h3><p>Issue #18; PR #19; CI <code>28882426668</code>.</p></article>
-      <article class="gate status-green" data-ledger-id="thread-export" data-active="false"><div class="sequence">10</div><h3><span class="stamp"></span>Thread export</h3><p>Issue #20; PR #21; CI <code>28884862804</code>. Markdown and RTF rendering verified.</p></article>
-      <article class="gate status-red" data-ledger-id="exact-search" data-active="true"><div class="sequence">11</div><h3><span class="stamp"></span>Exact search <span class="active-pill">active gate</span></h3><p>Not started. Red until implementation exists and passes audit.</p></article>
-      <article class="gate status-red" data-ledger-id="semantic-search" data-active="false"><div class="sequence">12</div><h3><span class="stamp"></span>Semantic search</h3><p>Not started.</p></article>
+      <article class="gate status-green" data-ledger-id="thread-export" data-active="false"><div class="sequence">10</div><h3><span class="stamp"></span>Thread export</h3><p>Issue #20; PR #21; CI <code>28885022542</code>.</p></article>
+      <article class="gate status-green" data-ledger-id="exact-search" data-active="false"><div class="sequence">11</div><h3><span class="stamp"></span>Exact search</h3><p>Issue #22; PR #23; CI <code>28885643588</code>. Source-linked exact results verified.</p></article>
+      <article class="gate status-red" data-ledger-id="semantic-search" data-active="true"><div class="sequence">12</div><h3><span class="stamp"></span>Semantic search <span class="active-pill">active gate</span></h3><p>Not started. Red until implementation exists and passes audit.</p></article>
       <article class="gate status-red" data-ledger-id="grounded-answer-generation" data-active="false"><div class="sequence">13</div><h3><span class="stamp"></span>Grounded answer layer</h3><p>Not started.</p></article>
     </div>
   </section>
@@ -71,9 +71,10 @@
       <div class="history-item status-green"><span class="stamp"></span>Issue #10 / PR #11 added DOCX ingestion.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #12 / PR #13 added CSL source editing.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #14 / PR #15 added citation import/export.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Issue #16 / PR #17 added Zotero-shaped local compatibility.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #16 / PR #17 added local Zotero-shaped compatibility.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #18 / PR #19 added persistent research threads.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #20 / PR #21 added Markdown and RTF thread rendering.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #22 / PR #23 added bounded exact search.</div>
     </div>
   </section>
 </main>
