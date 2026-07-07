@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "title": "Scriptorium Development Ledger",
+  "generatedBy": "manual-ledger-v1",
+  "statusLegend": {
+    "green": "Audited, verified, closed.",
+    "yellow": "Present or claimed, but unaudited / unverified. Yellow is audit debt.",
+    "red": "Not started, failed audit, known bad, blocked, or intentionally absent."
+  },
+  "integratedDeliverable": "A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.",
+  "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.",
+  "activeGateId": "txt-markdown-ingestion",
+  "gates": [
+    {
+      "id": "foundation",
+      "sequence": 1,
+      "title": "Foundation / repo / architecture",
+      "status": "green",
+      "active": false,
+      "rationale": "The project needed a clean repository, product thesis, roadmap, app skeleton, database model, and CI base before feature delivery.",
+      "completionStandard": "Repository exists with product documentation, Next.js app skeleton, Prisma model, roadmap, and CI foundation.",
+      "evidence": [
+        "README.md defines Scriptorium as a separate scholarly platform.",
+        "ROADMAP.md defines the initial milestone sequence.",
+        "prisma/schema.prisma defines the core relational model.",
+        ".github/workflows/ci.yml runs validation, typecheck, build, and migration checks."
+      ]
+    },
+    {
+      "id": "pdf-scholarly-workflow",
+      "sequence": 2,
+      "title": "PDF scholarly workflow",
+      "status": "green",
+      "active": false,
+      "rationale": "The first complete proof of the product model had to demonstrate source metadata, page mapping, text selection, highlights, notes, citations, persistence, and reload recovery.",
+      "completionStandard": "PDF registration, metadata, reader display, page mapping, highlight, note, citation generation, persistence, reload recovery, fixture verification, typecheck, build, and MySQL migration deploy all pass.",
+      "evidence": [
+        "Issue #1 closed as completed.",
+        "PR #2 merged with Milestone 1 verification.",
+        "CI run 28820801620 passed on PR #2 head before merge.",
+        "Merge commit 67890ac27472fbdc88fd0b51ff538f1f7bc04eb3."
+      ]
+    },
+    {
+      "id": "txt-markdown-ingestion",
+      "sequence": 3,
+      "title": "TXT + Markdown scholarly ingestion",
+      "status": "red",
+      "active": true,
+      "rationale": "Plain text and Markdown are the safest next expansion beyond PDF because they validate non-PDF text snapshots and locator rules before DOCX complexity.",
+      "completionStandard": "A user can upload or register TXT/Markdown, view text, select text, highlight, add note, generate citation using a stable locator, persist, reload, recover, and pass CI fixture verification.",
+      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
+    },
+    {
+      "id": "snapshot-policy",
+      "sequence": 4,
+      "title": "Snapshot policy for text formats",
+      "status": "red",
+      "active": false,
+      "rationale": "Non-PDF text needs stable, versioned snapshots so annotations survive edits, reimports, and future format expansion.",
+      "completionStandard": "Text snapshots are stored, versioned, linked to annotations, and verified by fixture tests.",
+      "note": "Not started."
+    },
+    {
+      "id": "docx-ingestion",
+      "sequence": 5,
+      "title": "DOCX ingestion path",
+      "status": "red",
+      "active": false,
+      "rationale": "DOCX matters for scholarship but should follow simpler text ingestion because Office extraction has more failure modes.",
+      "completionStandard": "DOCX upload extracts readable text, creates a stable snapshot, supports annotation/citation, persists, reloads, and passes CI fixture verification.",
+      "note": "Not started."
+    },
+    {
+      "id": "csl-source-editor",
+      "sequence": 6,
+      "title": "CSL source editor",
+      "status": "red",
+      "active": false,
+      "rationale": "Citation metadata needs controlled editing before source import/export and larger citation workflows.",
+      "completionStandard": "Users can edit source records in a CSL-compatible shape with validation and persistence.",
+      "note": "Not started."
+    },
+    {
+      "id": "citation-import-export",
+      "sequence": 7,
+      "title": "Citation import/export",
+      "status": "red",
+      "active": false,
+      "rationale": "Scholarly data should move in and out of Scriptorium through standard formats after internal CSL editing is reliable.",
+      "completionStandard": "CSL JSON and BibTeX/BibLaTeX import/export paths pass round-trip fixtures without corrupting source records.",
+      "note": "Not started."
+    },
+    {
+      "id": "zotero-compatible-path",
+      "sequence": 8,
+      "title": "Zotero-compatible data path",
+      "status": "red",
+      "active": false,
+      "rationale": "Zotero compatibility should follow stable citation import/export, not precede it.",
+      "completionStandard": "Zotero-shaped source data can round-trip through Scriptorium without losing citation fields needed by annotations.",
+      "note": "Not started."
+    },
+    {
+      "id": "research-threads",
+      "sequence": 9,
+      "title": "Research threads",
+      "status": "red",
+      "active": false,
+      "rationale": "Annotations become scholarship when grouped into questions, arguments, and reusable research trails.",
+      "completionStandard": "A thread can contain ordered annotations, citations, source references, notes, and tags, then persist and reload.",
+      "note": "Not started."
+    },
+    {
+      "id": "thread-export",
+      "sequence": 10,
+      "title": "Thread export",
+      "status": "red",
+      "active": false,
+      "rationale": "Research threads should produce usable writing artifacts only after the thread model is stable.",
+      "completionStandard": "Threads export to Markdown and Word-compatible format with argument order, notes, locators, and citations preserved.",
+      "note": "Not started."
+    },
+    {
+      "id": "exact-search",
+      "sequence": 11,
+      "title": "Exact search",
+      "status": "red",
+      "active": false,
+      "rationale": "Search should begin with exact, inspectable results before semantic retrieval or generated answers.",
+      "completionStandard": "Users can search documents, extracted passages, notes, tags, and citations, with results linked to source records and locators.",
+      "note": "Not started."
+    },
+    {
+      "id": "semantic-search",
+      "sequence": 12,
+      "title": "Semantic search",
+      "status": "red",
+      "active": false,
+      "rationale": "Semantic retrieval must be built on trusted extracted passages and exact source linkage.",
+      "completionStandard": "Semantic results return grounded passage records with source metadata and stable locators.",
+      "note": "Not started."
+    },
+    {
+      "id": "grounded-answer-generation",
+      "sequence": 13,
+      "title": "Grounded answer generation",
+      "status": "red",
+      "active": false,
+      "rationale": "Generated answers are the final layer and must never outrun source-grounded retrieval.",
+      "completionStandard": "Answers cite recovered source passages only; unsupported claims are refused or marked as unsupported.",
+      "note": "Not started."
+    }
+  ],
+  "history": [
+    {
+      "id": "repo-created",
+      "status": "green",
+      "summary": "Scriptorium was separated from Universal Office and defined as its own scholarly reading platform."
+    },
+    {
+      "id": "product-thesis-recorded",
+      "status": "green",
+      "summary": "The durable scholarly object was defined as source text, location, page system, annotation, citation, research question, and later retrieval."
+    },
+    {
+      "id": "roadmap-created",
+      "status": "green",
+      "summary": "The roadmap established the sequence from PDF workflow to text formats, citation library, research threads, and interrogation."
+    },
+    {
+      "id": "pdf-workflow-closed",
+      "status": "green",
+      "summary": "Issue #1 and PR #2 closed the PDF scholarly workflow with CI verification."
+    }
+  ]
+}
