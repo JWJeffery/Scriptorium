@@ -9,7 +9,7 @@
   },
   "integratedDeliverable": "A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.",
   "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.",
-  "activeGateId": "csl-source-editor",
+  "activeGateId": "citation-import-export",
   "gates": [
     {
       "id": "foundation",
@@ -90,21 +90,26 @@
       "id": "csl-source-editor",
       "sequence": 6,
       "title": "CSL source editor",
-      "status": "red",
-      "active": true,
+      "status": "green",
+      "active": false,
       "rationale": "Citation metadata needs controlled editing before source import/export and larger citation workflows.",
       "completionStandard": "Users can edit source records in a CSL-compatible shape with validation and persistence.",
-      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
+      "evidence": [
+        "Issue #12 implemented in PR #13.",
+        "Milestone 6 CSL source editor verifier passed in CI run 28878313692.",
+        "Typecheck and Next.js build passed in CI run 28878313692.",
+        "MySQL migration deploy passed in CI run 28878313692."
+      ]
     },
     {
       "id": "citation-import-export",
       "sequence": 7,
       "title": "Citation import/export",
       "status": "red",
-      "active": false,
+      "active": true,
       "rationale": "Scholarly data should move in and out of Scriptorium through standard formats after internal CSL editing is reliable.",
       "completionStandard": "CSL JSON and BibTeX/BibLaTeX import/export paths pass round-trip fixtures without corrupting source records.",
-      "note": "Not started."
+      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
     },
     {
       "id": "zotero-compatible-path",
@@ -202,6 +207,11 @@
       "id": "docx-ingestion-closed",
       "status": "green",
       "summary": "Issue #10 and PR #11 added bounded DOCX text extraction, versioned snapshot persistence, and text-reader annotation support."
+    },
+    {
+      "id": "csl-source-editor-closed",
+      "status": "green",
+      "summary": "Issue #12 and PR #13 added a controlled CSL source metadata editor with validation, persistence, and citation alignment."
     }
   ]
 }
