@@ -20,6 +20,7 @@ type ThreadPayload = {
 };
 
 const itemTypes = new Set<ResearchThreadItemType>(["DOCUMENT", "ANNOTATION", "CITATION", "SOURCE", "NOTE"]);
+const itemOrder = { orderIndex: "asc" as const };
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -27,7 +28,7 @@ function clean(value: unknown) {
 
 function cleanTags(values: unknown) {
   if (!Array.isArray(values)) return [];
-  return [...new Set(values.map(clean).filter(Boolean))].slice(0, 25);
+  return Array.from(new Set(values.map(clean).filter(Boolean))).slice(0, 25);
 }
 
 function normalizeItems(values: unknown) {
@@ -60,7 +61,7 @@ async function buildThreadContext(threadId: string) {
     where: { id: threadId },
     include: {
       tags: { orderBy: { value: "asc" } },
-      items: { orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }] }
+      items: { orderBy: itemOrder }
     }
   });
 
@@ -157,7 +158,7 @@ export async function POST(request: NextRequest) {
     },
     include: {
       tags: { orderBy: { value: "asc" } },
-      items: { orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }] }
+      items: { orderBy: itemOrder }
     }
   });
 
