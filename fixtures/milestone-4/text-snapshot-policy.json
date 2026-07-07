@@ -1,0 +1,49 @@
+{
+  "document": {
+    "id": "doc-text-policy",
+    "kind": "TXT",
+    "title": "Snapshot Policy Demonstration"
+  },
+  "versions": [
+    {
+      "ordinal": 1,
+      "id": "version-1",
+      "rawText": "﻿First line\r\nSecond line uses CRLF.\r\nThird line.",
+      "normalizedText": "First line\nSecond line uses CRLF.\nThird line.",
+      "sourceChecksum": "7b1cc8fc3b3c7da6c29d8314103bb56d1dcdd5d0dbab61febdb13548295232b7",
+      "snapshotKey": "documents/doc-text-policy/snapshots/7b1cc8fc3b3c7da6c29d8314103bb56d1dcdd5d0dbab61febdb13548295232b7.txt",
+      "lineCount": 3
+    },
+    {
+      "ordinal": 2,
+      "id": "version-2",
+      "rawText": "First line\r\nSecond line uses CRLF and a revision.\r\nThird line.",
+      "normalizedText": "First line\nSecond line uses CRLF and a revision.\nThird line.",
+      "sourceChecksum": "9e886f18d3c24e258e57a97ba68022c2d6b07e7e2869c4a8fd63f43a8297c552",
+      "snapshotKey": "documents/doc-text-policy/snapshots/9e886f18d3c24e258e57a97ba68022c2d6b07e7e2869c4a8fd63f43a8297c552.txt",
+      "lineCount": 3
+    }
+  ],
+  "annotations": [
+    {
+      "id": "annotation-version-1",
+      "documentId": "doc-text-policy",
+      "versionId": "version-1",
+      "snapshotKey": "documents/doc-text-policy/snapshots/7b1cc8fc3b3c7da6c29d8314103bb56d1dcdd5d0dbab61febdb13548295232b7.txt",
+      "selectedText": "Second line uses CRLF.",
+      "locatorType": "line",
+      "locatorValue": "2",
+      "anchor": {
+        "selectedText": "Second line uses CRLF.",
+        "pageNumber": 1,
+        "startOffset": 11,
+        "endOffset": 33,
+        "lineStart": 2,
+        "lineEnd": 2,
+        "locatorKind": "line",
+        "rects": []
+      }
+    }
+  ],
+  "expectedCurrentVersionIdAfterReimport": "version-2"
+}
