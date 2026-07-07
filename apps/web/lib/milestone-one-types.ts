@@ -33,6 +33,11 @@ export type MilestoneOneAnchorInput = {
     width: number;
     height: number;
   }>;
+  startOffset?: number;
+  endOffset?: number;
+  lineStart?: number;
+  lineEnd?: number;
+  locatorKind?: "page" | "line";
 };
 
 export type MilestoneOneAnnotationInput = {
