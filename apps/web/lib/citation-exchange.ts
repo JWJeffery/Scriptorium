@@ -70,15 +70,15 @@ export function normalizeCslBookRecord(value: unknown): CslBookRecord {
   return JSON.parse(JSON.stringify(normalized)) as CslBookRecord;
 }
 
-export function cslToInputJson(record: CslBookRecord): Prisma.InputJsonObject {
+export function cslToInputJson(record: unknown): Prisma.InputJsonObject {
   return JSON.parse(JSON.stringify(normalizeCslBookRecord(record))) as Prisma.InputJsonObject;
 }
 
-export function exportCslJson(record: CslBookRecord) {
+export function exportCslJson(record: unknown) {
   return `${JSON.stringify(normalizeCslBookRecord(record), null, 2)}\n`;
 }
 
-export function exportBib(record: CslBookRecord, format: Extract<CitationExchangeFormat, "bibtex" | "biblatex">) {
+export function exportBib(record: unknown, format: Extract<CitationExchangeFormat, "bibtex" | "biblatex">) {
   const normalized = normalizeCslBookRecord(record);
   const fields: Array<[string, string]> = [];
   const author = firstAuthorLiteral(normalized);
@@ -144,7 +144,7 @@ export function importCitationRecord(format: CitationExchangeFormat, content: st
   return importBib(content);
 }
 
-export function exportCitationRecord(format: CitationExchangeFormat, record: CslBookRecord) {
+export function exportCitationRecord(format: CitationExchangeFormat, record: unknown) {
   if (format === "csl-json") return exportCslJson(record);
   return exportBib(record, format);
 }
