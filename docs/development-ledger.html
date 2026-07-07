@@ -87,10 +87,6 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.9rem;
     }
-    .status-line {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      margin: 0.75rem 0;
-    }
     .active-pill {
       display: inline-block;
       margin-left: 0.5rem;
@@ -102,13 +98,10 @@
       text-transform: uppercase;
     }
     .muted { color: var(--muted); }
-    ul { padding-left: 1.2rem; }
+    code { color: #f8d86a; }
     .history {
       display: grid;
       gap: 0.75rem;
-    }
-    code {
-      color: #f8d86a;
     }
   </style>
 </head>
@@ -158,13 +151,13 @@
         <div class="sequence">05</div><h3><span class="stamp"></span>DOCX ingestion path</h3>
         <p><strong>Evidence:</strong> Issue #10; PR #11; CI run <code>28872109866</code> verified DOCX contract, typecheck, build, and MySQL migration.</p>
       </article>
-      <article class="gate status-red" data-ledger-id="csl-source-editor" data-active="true">
-        <div class="sequence">06</div><h3><span class="stamp"></span>CSL source editor <span class="active-pill">active gate</span></h3>
-        <p><strong>Current truth:</strong> Active next gate, but not started. Red until implementation exists and passes audit.</p>
+      <article class="gate status-green" data-ledger-id="csl-source-editor" data-active="false">
+        <div class="sequence">06</div><h3><span class="stamp"></span>CSL source editor</h3>
+        <p><strong>Evidence:</strong> Issue #12; PR #13; CI run <code>28878313692</code> verified CSL source metadata validation, persistence route, editor action, generated citation alignment, typecheck, build, and MySQL migration.</p>
       </article>
-      <article class="gate status-red" data-ledger-id="citation-import-export" data-active="false">
-        <div class="sequence">07</div><h3><span class="stamp"></span>Citation import/export</h3>
-        <p>Not started. CSL JSON and BibTeX/BibLaTeX paths come after internal source editing is reliable.</p>
+      <article class="gate status-red" data-ledger-id="citation-import-export" data-active="true">
+        <div class="sequence">07</div><h3><span class="stamp"></span>Citation import/export <span class="active-pill">active gate</span></h3>
+        <p><strong>Current truth:</strong> Active next gate, but not started. Red until implementation exists and passes audit.</p>
       </article>
       <article class="gate status-red" data-ledger-id="zotero-compatible-path" data-active="false">
         <div class="sequence">08</div><h3><span class="stamp"></span>Zotero-compatible data path</h3>
@@ -203,6 +196,7 @@
       <div class="history-item status-green"><span class="stamp"></span>Issue #6 and PR #7 added TXT/Markdown ingestion with line/offset anchors, citation persistence, and CI fixture verification.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #8 and PR #9 added deterministic checksum-addressed text snapshots, reimport versioning, and annotation/version isolation.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #10 and PR #11 added bounded DOCX text extraction, versioned snapshot persistence, and text-reader annotation support.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #12 and PR #13 added a controlled CSL source metadata editor with validation, persistence, and citation alignment.</div>
     </div>
   </section>
 </main>
