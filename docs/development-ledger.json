@@ -9,7 +9,7 @@
   },
   "integratedDeliverable": "A scholarly workspace for texts, locators, annotations, citations, threads, search, and cited retrieval output.",
   "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed.",
-  "activeGateId": "grounded-answer-generation",
+  "activeGateId": null,
   "gates": [
     {"id":"foundation","sequence":1,"title":"Foundation / repo / architecture","status":"green","active":false,"rationale":"Base repository, app, schema, roadmap, and CI foundation.","completionStandard":"Repository has product docs, app skeleton, Prisma model, roadmap, and CI foundation.","evidence":["README.md, ROADMAP.md, prisma/schema.prisma, and CI foundation exist."]},
     {"id":"pdf-scholarly-workflow","sequence":2,"title":"PDF scholarly workflow","status":"green","active":false,"rationale":"First complete proof of source metadata, page mapping, highlights, notes, citations, persistence, and reload.","completionStandard":"PDF scholarly workflow passes fixture, typecheck, build, and migration checks.","evidence":["Issue #1; PR #2; CI run 28820801620."]},
@@ -23,7 +23,7 @@
     {"id":"thread-export","sequence":10,"title":"Thread export","status":"green","active":false,"rationale":"Stable threads should render usable writing artifacts.","completionStandard":"Threads render to Markdown and RTF with order, notes, locators, citations, and source context preserved.","evidence":["Issue #20; PR #21; CI runs 28885022542 and 28885022479."]},
     {"id":"exact-search","sequence":11,"title":"Exact search","status":"green","active":false,"rationale":"Search begins with exact, inspectable, source-linked results.","completionStandard":"Documents, extracted passages, notes, tags, citations, and threads search with source and locator links.","evidence":["Issue #22; PR #23; CI runs 28885643588 and 28885643569."]},
     {"id":"semantic-search","sequence":12,"title":"Semantic search","status":"green","active":false,"rationale":"Similarity retrieval must rest on trusted extracted passages and exact source linkage.","completionStandard":"Similarity results return source-linked passage records with stable locators.","evidence":["Issue #24; PR #25; CI runs 28888669168 and 28888669201."]},
-    {"id":"grounded-answer-generation","sequence":13,"title":"Grounded answer generation","status":"red","active":true,"rationale":"The final layer must use trusted retrieval.","completionStandard":"Outputs cite recovered source passages only.","note":"Active final gate, but not started. It remains red until implementation exists and passes audit."}
+    {"id":"grounded-answer-generation","sequence":13,"title":"Grounded answer generation","status":"green","active":false,"rationale":"The final layer must use trusted retrieval.","completionStandard":"Outputs cite recovered source passages only.","evidence":["Issue #26; PR #27; CI runs 28893324439 and 28893323389."]}
   ],
   "history": [
     {"id":"repo-created","status":"green","summary":"Scriptorium was separated from Universal Office and defined as a scholarly reading platform."},
@@ -37,6 +37,7 @@
     {"id":"research-threads-closed","status":"green","summary":"Issue #18 and PR #19 added persistent research threads."},
     {"id":"thread-export-closed","status":"green","summary":"Issue #20 and PR #21 added Markdown and RTF thread rendering."},
     {"id":"exact-search-closed","status":"green","summary":"Issue #22 and PR #23 added bounded exact search with source and locator links."},
-    {"id":"semantic-search-closed","status":"green","summary":"Issue #24 and PR #25 added local deterministic source-linked similarity retrieval over trusted passages."}
+    {"id":"semantic-search-closed","status":"green","summary":"Issue #24 and PR #25 added local deterministic source-linked similarity retrieval over trusted passages."},
+    {"id":"grounded-answer-generation-closed","status":"green","summary":"Issue #26 and PR #27 added cited output with passage evidence and unsupported-case refusal."}
   ]
 }
