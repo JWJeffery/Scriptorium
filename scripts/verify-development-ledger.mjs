@@ -49,11 +49,20 @@ for (const gate of ledger.gates) {
   assert.ok(dashboard.includes(`status-${gate.status}`), `dashboard missing status class for ${gate.status}`);
 }
 
-assert.equal(activeGates.length, 1, "exactly one gate must be active");
-assert.equal(activeGates[0].id, ledger.activeGateId, "activeGateId must match the active gate");
-assert.notEqual(activeGates[0].status, "green", "active gate must not already be green/closed");
+const allGatesGreen = ledger.gates.every((gate) => gate.status === "green" && gate.active === false);
+
+if (allGatesGreen) {
+  assert.equal(activeGates.length, 0, "completed ledger must not have an active gate");
+  assert.equal(ledger.activeGateId, null, "completed ledger activeGateId must be null");
+  assert.ok(dashboard.includes("All gates are green"), "completed dashboard must state that all gates are green");
+} else {
+  assert.equal(activeGates.length, 1, "exactly one gate must be active");
+  assert.equal(activeGates[0].id, ledger.activeGateId, "activeGateId must match the active gate");
+  assert.notEqual(activeGates[0].status, "green", "active gate must not already be green/closed");
+  assert.ok(dashboard.includes(`data-ledger-id="${ledger.activeGateId}" data-active="true"`), "dashboard must mark the active gate");
+}
+
 assert.ok(dashboard.includes("Every yellow is audit debt"), "dashboard must state the yellow/audit-debt rule");
-assert.ok(dashboard.includes(`data-ledger-id="${ledger.activeGateId}" data-active="true"`), "dashboard must mark the active gate");
 
 assert.ok(Array.isArray(ledger.history), "ledger.history must be an array");
 assert.ok(ledger.history.length >= 4, "ledger history must include the backward path to current state");
@@ -63,4 +72,4 @@ for (const item of ledger.history) {
   assert.ok(item.summary, `${item.id} must have summary`);
 }
 
-console.log("Development ledger verified: statuses, active gate, evidence, audit-debt rules, and dashboard sync are coherent.");
+console.log("Development ledger verified: statuses, active/completed state, evidence, audit-debt rules, and dashboard sync are coherent.");
