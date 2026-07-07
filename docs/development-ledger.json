@@ -9,7 +9,7 @@
   },
   "integratedDeliverable": "A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.",
   "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.",
-  "activeGateId": "zotero-compatible-path",
+  "activeGateId": "research-threads",
   "gates": [
     {
       "id": "foundation",
@@ -120,21 +120,26 @@
       "id": "zotero-compatible-path",
       "sequence": 8,
       "title": "Zotero-compatible data path",
-      "status": "red",
-      "active": true,
+      "status": "green",
+      "active": false,
       "rationale": "Zotero compatibility should follow stable citation import/export, not precede it.",
       "completionStandard": "Zotero-shaped source data can round-trip through Scriptorium without losing citation fields needed by annotations.",
-      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
+      "evidence": [
+        "Issue #16 implemented in PR #17.",
+        "Milestone 8 Zotero compatibility verifier passed in CI run 28880779302.",
+        "Typecheck and Next.js build passed in CI run 28880779302.",
+        "MySQL migration deploy passed in CI run 28880779302."
+      ]
     },
     {
       "id": "research-threads",
       "sequence": 9,
       "title": "Research threads",
       "status": "red",
-      "active": false,
+      "active": true,
       "rationale": "Annotations become scholarship when grouped into questions, arguments, and reusable research trails.",
       "completionStandard": "A thread can contain ordered annotations, citations, source references, notes, and tags, then persist and reload.",
-      "note": "Not started."
+      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
     },
     {
       "id": "thread-export",
@@ -222,6 +227,11 @@
       "id": "citation-import-export-closed",
       "status": "green",
       "summary": "Issue #14 and PR #15 added bounded CSL JSON, BibTeX, and BibLaTeX import/export for source records."
+    },
+    {
+      "id": "zotero-compatible-path-closed",
+      "status": "green",
+      "summary": "Issue #16 and PR #17 added a bounded Zotero-shaped book item data path around CSL source records."
     }
   ]
 }
