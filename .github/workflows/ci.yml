@@ -69,6 +69,9 @@ jobs:
       - name: Verify Milestone 8 Zotero compatibility
         run: node scripts/verify-milestone-8-zotero-compat.mjs
 
+      - name: Verify Milestone 9 research threads
+        run: node scripts/verify-milestone-9-research-threads.mjs
+
       - name: Typecheck web app
         id: typecheck
         run: |
