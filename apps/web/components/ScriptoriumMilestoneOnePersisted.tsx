@@ -23,6 +23,14 @@ type TextPersistResponse = {
   storedSnapshot?: { storageKey: string; checksum: string };
 };
 
+type SourceUpdateResponse = {
+  source: {
+    id: string;
+    shortTitle?: string | null;
+    cslJson?: unknown;
+  };
+};
+
 const DB_NAME = "scriptorium-file-store";
 const DB_VERSION = 1;
 const PDF_STORE = "pdf-blobs";
@@ -68,6 +76,12 @@ function normalizeDocument(value: unknown) {
   const parsed = value as Partial<StoredDocument> | null;
   if (!parsed?.id || !parsed.title || !parsed.filename || !parsed.mediaType || !parsed.source || !parsed.pageMap) return null;
   return { ...parsed, kind: parsed.kind ?? "PDF" } as StoredDocument;
+}
+
+function validateSource(source: SourceRecord) {
+  if (!source.title.trim()) return "A source title is required before saving CSL metadata.";
+  if (source.year.trim() && !/^\d{1,4}$/.test(source.year.trim())) return "Year must be a 1-4 digit year.";
+  return null;
 }
 
 function readDocument() { const raw = localStorage.getItem(DOCUMENT_KEY); return raw ? normalizeDocument(JSON.parse(raw)) : null; }
@@ -174,6 +188,17 @@ async function persistTextLikeFile(file: File, document: StoredDocument, locator
     } satisfies ServerIds,
     text: body.textSpan.text
   };
+}
+
+async function persistSourceMetadata(document: StoredDocument) {
+  if (!document.server?.sourceId) throw new Error("Document has no persisted source id.");
+  const response = await fetch("/api/milestone-six/sources", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sourceId: document.server.sourceId, ...document.source })
+  });
+  if (!response.ok) throw new Error("Source metadata persistence failed.");
+  return await response.json() as SourceUpdateResponse;
 }
 
 async function persistAnnotation(document: StoredDocument, record: SavedAnnotation) {
@@ -355,6 +380,22 @@ export function ScriptoriumMilestoneOnePersisted() {
   function updatePageMap(field: keyof PageMap, value: number) { if (documentRecord) updateDocument({ ...documentRecord, pageMap: { ...documentRecord.pageMap, [field]: Number.isFinite(value) ? value : 1 } }); }
   function goToPage(page: number) { if (!documentRecord || documentRecord.kind !== "PDF") return; const upper = pageCount > 0 ? pageCount : page; setAnchor(undefined); updatePageMap("currentPdfPageIndex", Math.min(Math.max(page, 1), upper)); }
 
+  async function saveSourceRecord() {
+    if (!documentRecord) { setStatus("Register a document before saving CSL source metadata."); return; }
+    const validationMessage = validateSource(documentRecord.source);
+    if (validationMessage) { setStatus(validationMessage); return; }
+    const nextDocument = { ...documentRecord, title: documentRecord.source.title.trim() || documentRecord.title, source: { ...documentRecord.source, title: documentRecord.source.title.trim(), author: documentRecord.source.author.trim(), place: documentRecord.source.place.trim(), publisher: documentRecord.source.publisher.trim(), year: documentRecord.source.year.trim() } };
+
+    try {
+      await persistSourceMetadata(nextDocument);
+      updateDocument(nextDocument);
+      setStatus("Saved CSL-compatible source metadata to the database.");
+    } catch {
+      updateDocument(nextDocument);
+      setStatus("Saved source metadata locally. Database source persistence is unavailable for this record.");
+    }
+  }
+
   async function saveRecord() {
     if (!documentRecord) { setStatus("Register a document before saving an annotation."); return; }
     const normalizedSelectedText = selectedText.trim();
@@ -390,19 +431,20 @@ export function ScriptoriumMilestoneOnePersisted() {
       <div className="workflowHeader">
         <div>
           <p className="eyebrow">Current gate</p>
-          <h2>DOCX ingestion path</h2>
-          <p>Register PDF, TXT, Markdown, or DOCX sources. DOCX files are extracted to deterministic text snapshots so the same line/offset annotation workflow can be used.</p>
+          <h2>CSL source editor</h2>
+          <p>Register PDF, TXT, Markdown, or DOCX sources. The source metadata panel now saves a controlled CSL-compatible source record used by generated citations.</p>
         </div>
         <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} /></label>
       </div>
       <p className="statusLine">{status}</p>
       <div className="milestoneGrid">
         <aside className="panel controlsPanel">
-          <h3>Source metadata</h3>
+          <h3>CSL source metadata</h3>
           <label>Title<input value={documentRecord?.source.title ?? ""} onChange={(event) => updateSource("title", event.target.value)} disabled={!documentRecord} /></label>
           <label>Author / editor<input value={documentRecord?.source.author ?? ""} onChange={(event) => updateSource("author", event.target.value)} disabled={!documentRecord} /></label>
           <div className="twoColumnInputs"><label>Place<input value={documentRecord?.source.place ?? ""} onChange={(event) => updateSource("place", event.target.value)} disabled={!documentRecord} /></label><label>Year<input value={documentRecord?.source.year ?? ""} onChange={(event) => updateSource("year", event.target.value)} disabled={!documentRecord} /></label></div>
           <label>Publisher<input value={documentRecord?.source.publisher ?? ""} onChange={(event) => updateSource("publisher", event.target.value)} disabled={!documentRecord} /></label>
+          <button className="secondaryButton" onClick={saveSourceRecord} type="button" disabled={!documentRecord}>Save CSL source metadata</button>
           <h3>{isPdf(documentRecord) ? "Page map" : "Text locator"}</h3>
           {isPdf(documentRecord) ? (
             <>
