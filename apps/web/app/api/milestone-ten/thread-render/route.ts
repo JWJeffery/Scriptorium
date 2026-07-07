@@ -22,8 +22,10 @@ async function loadThread(threadId: string) {
 
   const annotationIds = thread.items.filter((item) => item.itemType === "ANNOTATION").map((item) => item.itemId);
   const citationIds = thread.items.filter((item) => item.itemType === "CITATION").map((item) => item.itemId);
+  const sourceIds = thread.items.filter((item) => item.itemType === "SOURCE").map((item) => item.itemId);
+  const documentIds = thread.items.filter((item) => item.itemType === "DOCUMENT").map((item) => item.itemId);
 
-  const [annotations, citations] = await Promise.all([
+  const [annotations, citations, sources, documents] = await Promise.all([
     annotationIds.length ? prisma.annotation.findMany({
       where: { id: { in: annotationIds } },
       include: { document: true, pageMap: true, citations: { include: { source: true } } }
@@ -31,11 +33,15 @@ async function loadThread(threadId: string) {
     citationIds.length ? prisma.citation.findMany({
       where: { id: { in: citationIds } },
       include: { source: true, annotation: { include: { document: true, pageMap: true } } }
-    }) : []
+    }) : [],
+    sourceIds.length ? prisma.source.findMany({ where: { id: { in: sourceIds } }, include: { document: true } }) : [],
+    documentIds.length ? prisma.document.findMany({ where: { id: { in: documentIds } }, include: { sources: true } }) : []
   ]);
 
   const annotationMap = new Map(annotations.map((value) => [value.id, value]));
   const citationMap = new Map(citations.map((value) => [value.id, value]));
+  const sourceMap = new Map(sources.map((value) => [value.id, value]));
+  const documentMap = new Map(documents.map((value) => [value.id, value]));
 
   return {
     ...thread,
@@ -44,6 +50,8 @@ async function loadThread(threadId: string) {
       context:
         item.itemType === "ANNOTATION" ? annotationMap.get(item.itemId) ?? null :
         item.itemType === "CITATION" ? citationMap.get(item.itemId) ?? null :
+        item.itemType === "SOURCE" ? sourceMap.get(item.itemId) ?? null :
+        item.itemType === "DOCUMENT" ? documentMap.get(item.itemId) ?? null :
         null
     }))
   };
