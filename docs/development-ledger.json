@@ -9,7 +9,7 @@
   },
   "integratedDeliverable": "A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.",
   "workflowRule": "Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.",
-  "activeGateId": "citation-import-export",
+  "activeGateId": "zotero-compatible-path",
   "gates": [
     {
       "id": "foundation",
@@ -105,21 +105,26 @@
       "id": "citation-import-export",
       "sequence": 7,
       "title": "Citation import/export",
-      "status": "red",
-      "active": true,
+      "status": "green",
+      "active": false,
       "rationale": "Scholarly data should move in and out of Scriptorium through standard formats after internal CSL editing is reliable.",
       "completionStandard": "CSL JSON and BibTeX/BibLaTeX import/export paths pass round-trip fixtures without corrupting source records.",
-      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
+      "evidence": [
+        "Issue #14 implemented in PR #15.",
+        "Milestone 7 citation exchange verifier passed in CI run 28880169340.",
+        "Typecheck and Next.js build passed in CI run 28880169340.",
+        "MySQL migration deploy passed in CI run 28880169340."
+      ]
     },
     {
       "id": "zotero-compatible-path",
       "sequence": 8,
       "title": "Zotero-compatible data path",
       "status": "red",
-      "active": false,
+      "active": true,
       "rationale": "Zotero compatibility should follow stable citation import/export, not precede it.",
       "completionStandard": "Zotero-shaped source data can round-trip through Scriptorium without losing citation fields needed by annotations.",
-      "note": "Not started."
+      "note": "Active next gate, but not started. It remains red until implementation exists and passes audit."
     },
     {
       "id": "research-threads",
@@ -212,6 +217,11 @@
       "id": "csl-source-editor-closed",
       "status": "green",
       "summary": "Issue #12 and PR #13 added a controlled CSL source metadata editor with validation, persistence, and citation alignment."
+    },
+    {
+      "id": "citation-import-export-closed",
+      "status": "green",
+      "summary": "Issue #14 and PR #15 added bounded CSL JSON, BibTeX, and BibLaTeX import/export for source records."
     }
   ]
 }

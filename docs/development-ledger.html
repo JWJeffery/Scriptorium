@@ -155,13 +155,13 @@
         <div class="sequence">06</div><h3><span class="stamp"></span>CSL source editor</h3>
         <p><strong>Evidence:</strong> Issue #12; PR #13; CI run <code>28878313692</code> verified CSL source metadata validation, persistence route, editor action, generated citation alignment, typecheck, build, and MySQL migration.</p>
       </article>
-      <article class="gate status-red" data-ledger-id="citation-import-export" data-active="true">
-        <div class="sequence">07</div><h3><span class="stamp"></span>Citation import/export <span class="active-pill">active gate</span></h3>
-        <p><strong>Current truth:</strong> Active next gate, but not started. Red until implementation exists and passes audit.</p>
+      <article class="gate status-green" data-ledger-id="citation-import-export" data-active="false">
+        <div class="sequence">07</div><h3><span class="stamp"></span>Citation import/export</h3>
+        <p><strong>Evidence:</strong> Issue #14; PR #15; CI run <code>28880169340</code> verified CSL JSON, BibTeX, and BibLaTeX import/export contract, typecheck, build, and MySQL migration.</p>
       </article>
-      <article class="gate status-red" data-ledger-id="zotero-compatible-path" data-active="false">
-        <div class="sequence">08</div><h3><span class="stamp"></span>Zotero-compatible data path</h3>
-        <p>Not started. Compatibility follows stable citation import/export.</p>
+      <article class="gate status-red" data-ledger-id="zotero-compatible-path" data-active="true">
+        <div class="sequence">08</div><h3><span class="stamp"></span>Zotero-compatible data path <span class="active-pill">active gate</span></h3>
+        <p><strong>Current truth:</strong> Active next gate, but not started. Red until implementation exists and passes audit.</p>
       </article>
       <article class="gate status-red" data-ledger-id="research-threads" data-active="false">
         <div class="sequence">09</div><h3><span class="stamp"></span>Research threads</h3>
@@ -197,6 +197,7 @@
       <div class="history-item status-green"><span class="stamp"></span>Issue #8 and PR #9 added deterministic checksum-addressed text snapshots, reimport versioning, and annotation/version isolation.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #10 and PR #11 added bounded DOCX text extraction, versioned snapshot persistence, and text-reader annotation support.</div>
       <div class="history-item status-green"><span class="stamp"></span>Issue #12 and PR #13 added a controlled CSL source metadata editor with validation, persistence, and citation alignment.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #14 and PR #15 added bounded CSL JSON, BibTeX, and BibLaTeX import/export for source records.</div>
     </div>
   </section>
 </main>
