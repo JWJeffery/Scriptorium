@@ -31,7 +31,7 @@ for (const term of [
   "researchThread.create",
   "researchThread.findUnique",
   "researchThread.findMany",
-  "orderBy: [{ orderIndex: \"asc\" }, { createdAt: \"asc\" }]",
+  "const itemOrder = { orderIndex: \"asc\" as const }",
   "annotation.findMany",
   "citation.findMany",
   "source.findMany",
@@ -59,7 +59,7 @@ const sample = {
     { itemType: "ANNOTATION", itemId: "annotation-1", orderIndex: 0, note: "Primary passage." },
     { itemType: "CITATION", itemId: "citation-1", orderIndex: 1, note: "Citation supporting the passage." },
     { itemType: "SOURCE", itemId: "source-1", orderIndex: 2, note: "Source context." },
-    { itemType: "NOTE", itemId: "note-1", orderIndex: 3, note: "Working synthesis note, not generated answer." }
+    { itemType: "NOTE", itemId: "note-1", orderIndex: 3, note: "Working synthesis note." }
   ]
 };
 
