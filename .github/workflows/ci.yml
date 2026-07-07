@@ -60,6 +60,9 @@ jobs:
       - name: Verify Milestone 5 DOCX contract
         run: node scripts/verify-milestone-5-docx.mjs
 
+      - name: Verify Milestone 6 CSL source editor
+        run: node scripts/verify-milestone-6-csl-source-editor.mjs
+
       - name: Typecheck web app
         id: typecheck
         run: |
