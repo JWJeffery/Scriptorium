@@ -9,10 +9,10 @@ type CitationStyle = "sbl-note" | "chicago-note";
 type DocumentKind = "PDF" | "TXT" | "MARKDOWN";
 type SourceRecord = { author: string; title: string; place: string; publisher: string; year: string };
 type PageMap = { basePdfPageIndex: number; baseBookPage: number; currentPdfPageIndex: number };
-type ServerIds = { documentId: string; versionId: string; sourceId: string; pageMapId: string; storageKey?: string };
+type ServerIds = { documentId: string; versionId: string; sourceId: string; pageMapId: string; storageKey?: string; snapshotKey?: string; sourceChecksum?: string };
 type StoredDocument = { id: string; title: string; filename: string; kind: DocumentKind; mediaType: string; size: number; source: SourceRecord; pageMap: PageMap; server?: ServerIds };
 type SelectionAnchor = PdfSelectionAnchor | TextSelectionAnchor;
-type SavedAnnotation = { id: string; documentId: string; colorKey: string; selectedText: string; note: string; pdfPageIndex: number; bookPageLabel: string; citationStyle: CitationStyle; citationText: string; anchor?: SelectionAnchor; createdAt: string; serverAnnotationId?: string; serverCitationId?: string };
+type SavedAnnotation = { id: string; documentId: string; versionId?: string; snapshotKey?: string; colorKey: string; selectedText: string; note: string; pdfPageIndex: number; bookPageLabel: string; citationStyle: CitationStyle; citationText: string; anchor?: SelectionAnchor; createdAt: string; serverAnnotationId?: string; serverCitationId?: string };
 
 const DB_NAME = "scriptorium-file-store";
 const DB_VERSION = 1;
@@ -31,6 +31,7 @@ function isPdf(document: StoredDocument | null) { return document?.kind === "PDF
 function isText(document: StoredDocument | null) { return document?.kind === "TXT" || document?.kind === "MARKDOWN"; }
 function isTextAnchor(anchor: SelectionAnchor | undefined): anchor is TextSelectionAnchor { return typeof anchor === "object" && anchor !== null && "startOffset" in anchor && "lineStart" in anchor; }
 function lineLocator(anchor: TextSelectionAnchor) { return anchor.lineStart === anchor.lineEnd ? String(anchor.lineStart) : `${anchor.lineStart}-${anchor.lineEnd}`; }
+function normalizeTextSnapshot(text: string) { return text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n"); }
 function fileKind(file: File): DocumentKind | null {
   const name = file.name.toLowerCase();
   if (file.type === "application/pdf" || name.endsWith(".pdf")) return "PDF";
@@ -75,6 +76,12 @@ function currentLocator(document: StoredDocument | null, anchor: SelectionAnchor
 
 function locatorTypeFor(document: StoredDocument, anchor: SelectionAnchor | undefined) {
   return isText(document) && isTextAnchor(anchor) ? "line" : "page";
+}
+
+function recordMatchesCurrentVersion(record: SavedAnnotation, document: StoredDocument | null) {
+  const currentVersionId = document?.server?.versionId;
+  if (!currentVersionId) return true;
+  return record.versionId ? record.versionId === currentVersionId : true;
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -138,7 +145,7 @@ async function persistPdfFile(file: File, document: StoredDocument, locator: str
   return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id, storageKey: body.storedFile?.storageKey ?? body.document.storageKey ?? undefined } satisfies ServerIds;
 }
 
-async function persistTextFile(file: File, document: StoredDocument, locator: string) {
+async function persistTextFile(file: File, document: StoredDocument, locator: string, existingServerDocumentId?: string) {
   const formData = new FormData();
   formData.set("file", file);
   formData.set("title", document.title);
@@ -147,10 +154,22 @@ async function persistTextFile(file: File, document: StoredDocument, locator: st
   formData.set("publisher", document.source.publisher);
   formData.set("year", document.source.year);
   formData.set("bookPageLabel", locator);
+  if (existingServerDocumentId) formData.set("documentId", existingServerDocumentId);
   const response = await fetch("/api/milestone-three/texts", { method: "POST", body: formData });
   if (!response.ok) throw new Error("Text upload persistence failed.");
-  const body = await response.json() as { document: { id: string }; version: { id: string }; source: { id: string }; pageMap: { id: string } };
-  return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id } satisfies ServerIds;
+  const body = await response.json() as { document: { id: string; storageKey?: string | null }; version: { id: string; sourceChecksum?: string | null; snapshotKey?: string | null }; source: { id: string }; pageMap: { id: string }; textSpan: { text: string }; storedSnapshot?: { storageKey: string; checksum: string } };
+  return {
+    server: {
+      documentId: body.document.id,
+      versionId: body.version.id,
+      sourceId: body.source.id,
+      pageMapId: body.pageMap.id,
+      storageKey: body.document.storageKey ?? undefined,
+      snapshotKey: body.version.snapshotKey ?? body.storedSnapshot?.storageKey ?? undefined,
+      sourceChecksum: body.version.sourceChecksum ?? body.storedSnapshot?.checksum ?? undefined
+    } satisfies ServerIds,
+    text: body.textSpan.text
+  };
 }
 
 async function persistAnnotation(document: StoredDocument, record: SavedAnnotation) {
@@ -208,19 +227,20 @@ export function ScriptoriumMilestoneOnePersisted() {
     const localText = readTextContent();
     if (localText) {
       setTextContent(localText);
-      setStatus(storedDocument.server ? "Recovered text document and database ids." : "Recovered browser-local text document.");
+      setStatus(storedDocument.server?.sourceChecksum ? "Recovered versioned text snapshot and database ids." : storedDocument.server ? "Recovered text document and database ids." : "Recovered browser-local text document.");
       return;
     }
 
     if (storedDocument.server) {
       fetch(`/api/milestone-one/workspace?documentId=${storedDocument.server.documentId}`)
         .then((response) => response.ok ? response.json() : null)
-        .then((body: { document?: { versions?: Array<{ textSpans?: Array<{ text: string }> }> } } | null) => {
-          const text = body?.document?.versions?.[0]?.textSpans?.[0]?.text ?? "";
+        .then((body: { document?: { versions?: Array<{ id: string; textSpans?: Array<{ text: string }> }> } } | null) => {
+          const currentVersion = body?.document?.versions?.find((version) => version.id === storedDocument.server?.versionId) ?? body?.document?.versions?.[0];
+          const text = currentVersion?.textSpans?.[0]?.text ?? "";
           if (text) {
             saveTextContent(text);
             setTextContent(text);
-            setStatus("Recovered text document from database text snapshot.");
+            setStatus("Recovered text document from versioned database text snapshot.");
           } else {
             setStatus("Recovered text metadata, but no text snapshot was found.");
           }
@@ -232,16 +252,17 @@ export function ScriptoriumMilestoneOnePersisted() {
 
   const locator = useMemo(() => currentLocator(documentRecord, anchor), [documentRecord, anchor]);
   const generatedCitation = useMemo(() => documentRecord ? citation(documentRecord, locator, style) : "Register a document before generating a citation.", [documentRecord, locator, style]);
-  const visiblePdfHighlights = useMemo<PdfPageHighlight[]>(() => annotations.flatMap((record) => {
+  const currentSnapshotRecords = useMemo(() => annotations.filter((record) => recordMatchesCurrentVersion(record, documentRecord)), [annotations, documentRecord]);
+  const visiblePdfHighlights = useMemo<PdfPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
     if (!record.anchor || isTextAnchor(record.anchor)) return [];
     const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
     return [{ id: record.id, color: color.color, anchor: record.anchor }];
-  }), [annotations]);
-  const visibleTextHighlights = useMemo<TextPageHighlight[]>(() => annotations.flatMap((record) => {
+  }), [currentSnapshotRecords]);
+  const visibleTextHighlights = useMemo<TextPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
     if (!record.anchor || !isTextAnchor(record.anchor)) return [];
     const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
     return [{ id: record.id, color: color.color, anchor: record.anchor }];
-  }), [annotations]);
+  }), [currentSnapshotRecords]);
 
   const capturePdfAnchor = useCallback((nextAnchor: PdfSelectionAnchor) => {
     setAnchor(nextAnchor);
@@ -267,12 +288,17 @@ export function ScriptoriumMilestoneOnePersisted() {
 
     if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
 
-    const documentId = localId("doc");
+    const isTextReimport = kind !== "PDF" && isText(documentRecord) && documentRecord.kind === kind && Boolean(documentRecord.server?.documentId);
+    const documentId = isTextReimport && documentRecord ? documentRecord.id : localId("doc");
     const title = file.name.replace(/\.(pdf|txt|md|markdown)$/i, "");
-    let nextDocument: StoredDocument = { id: documentId, title, filename: file.name, kind, mediaType: file.type || (kind === "PDF" ? "application/pdf" : kind === "MARKDOWN" ? "text/markdown" : "text/plain"), size: file.size, source: { ...EMPTY_SOURCE, title }, pageMap: DEFAULT_PAGE_MAP };
+    let nextDocument: StoredDocument = isTextReimport && documentRecord
+      ? { ...documentRecord, title, filename: file.name, mediaType: file.type || documentRecord.mediaType, size: file.size, source: { ...documentRecord.source, title: documentRecord.source.title || title }, pageMap: DEFAULT_PAGE_MAP }
+      : { id: documentId, title, filename: file.name, kind, mediaType: file.type || (kind === "PDF" ? "application/pdf" : kind === "MARKDOWN" ? "text/markdown" : "text/plain"), size: file.size, source: { ...EMPTY_SOURCE, title }, pageMap: DEFAULT_PAGE_MAP };
 
-    saveAnnotations([]);
-    setAnnotations([]);
+    if (!isTextReimport) {
+      saveAnnotations([]);
+      setAnnotations([]);
+    }
     setSelectedText("");
     setAnchor(undefined);
     setNote("");
@@ -299,15 +325,17 @@ export function ScriptoriumMilestoneOnePersisted() {
     } else {
       if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
       setPdfUrl(null);
-      const text = await file.text();
-      setTextContent(text);
-      saveTextContent(text);
+      const normalizedText = normalizeTextSnapshot(await file.text());
+      setTextContent(normalizedText);
+      saveTextContent(normalizedText);
       try {
-        const server = await persistTextFile(file, nextDocument, "1");
-        nextDocument = { ...nextDocument, server };
-        setStatus(`${kind === "MARKDOWN" ? "Markdown" : "TXT"} document registered, text snapshot persisted, and database metadata linked.`);
+        const persisted = await persistTextFile(file, nextDocument, "1", isTextReimport ? documentRecord?.server?.documentId : undefined);
+        nextDocument = { ...nextDocument, server: persisted.server };
+        setTextContent(persisted.text);
+        saveTextContent(persisted.text);
+        setStatus(`${kind === "MARKDOWN" ? "Markdown" : "TXT"} ${isTextReimport ? "reimported as a new version" : "document registered"}; checksum ${persisted.server.sourceChecksum?.slice(0, 12) ?? "pending"}; annotations remain version-specific.`);
       } catch {
-        setStatus(`${kind === "MARKDOWN" ? "Markdown" : "TXT"} document registered locally. Database persistence is unavailable in this environment.`);
+        setStatus(`${kind === "MARKDOWN" ? "Markdown" : "TXT"} document registered locally. Database snapshot persistence is unavailable in this environment.`);
       }
     }
 
@@ -327,7 +355,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (isText(documentRecord) && !isTextAnchor(anchor)) { setStatus("Select text directly in the text reader so the annotation has a stable line/offset anchor."); return; }
 
     const normalizedAnchor = anchor ? { ...anchor, selectedText: normalizedSelectedText } as SelectionAnchor : undefined;
-    let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, colorKey: selectedColor, selectedText: normalizedSelectedText, note: note.trim(), pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor), style), anchor: normalizedAnchor, createdAt: new Date().toISOString() };
+    let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: note.trim(), pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor), style), anchor: normalizedAnchor, createdAt: new Date().toISOString() };
 
     try {
       const serverRecord = await persistAnnotation(documentRecord, record);
@@ -355,8 +383,8 @@ export function ScriptoriumMilestoneOnePersisted() {
       <div className="workflowHeader">
         <div>
           <p className="eyebrow">Current gate</p>
-          <h2>TXT + Markdown scholarly ingestion</h2>
-          <p>Register PDF, TXT, or Markdown sources, capture stable anchors, save highlight notes, and persist the scholarly record.</p>
+          <h2>Snapshot policy for text formats</h2>
+          <p>Register PDF, TXT, or Markdown sources. TXT/Markdown imports now create deterministic versioned snapshots with checksums so annotations remain tied to the exact text version.</p>
         </div>
         <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown" onChange={registerSource} /></label>
       </div>
@@ -376,7 +404,7 @@ export function ScriptoriumMilestoneOnePersisted() {
               <div className="mappingFormula"><span>Mapping rule</span><label>PDF page<input type="number" min="1" value={documentRecord?.pageMap.basePdfPageIndex ?? 1} onChange={(event) => updatePageMap("basePdfPageIndex", Number(event.target.value))} disabled={!documentRecord} /></label><label>= book page<input type="number" value={documentRecord?.pageMap.baseBookPage ?? 1} onChange={(event) => updatePageMap("baseBookPage", Number(event.target.value))} disabled={!documentRecord} /></label></div>
             </>
           ) : (
-            <div className="textLocatorBox"><strong>{locator === "-" ? "No text document registered" : `Current locator: line ${locator}`}</strong><span>Text and Markdown anchors use character offsets plus line numbers. Select text in the reader before saving.</span></div>
+            <div className="textLocatorBox"><strong>{locator === "-" ? "No text document registered" : `Current locator: line ${locator}`}</strong><span>Text and Markdown anchors use character offsets plus line numbers. Current snapshot checksum: {documentRecord?.server?.sourceChecksum?.slice(0, 12) ?? "not persisted"}.</span></div>
           )}
           <h3>Highlight color</h3>
           <div className="workflowPalette">{highlightColors.map((color) => <button className={selectedColor === color.key ? "workflowSwatch active" : "workflowSwatch"} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} />{color.defaultMeaning}</button>)}</div>
@@ -390,7 +418,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         </section>
         <aside className="panel annotationPanel">
           <h3>Annotation</h3>
-          <p>{isText(documentRecord) ? "Select text directly from the text reader so Scriptorium can store line and offset anchors." : "Select text directly from the rendered PDF page, then verify the captured passage before saving."}</p>
+          <p>{isText(documentRecord) ? "Select text directly from the current text snapshot so Scriptorium can store line and offset anchors for this version." : "Select text directly from the rendered PDF page, then verify the captured passage before saving."}</p>
           <textarea value={selectedText} onChange={(event) => setSelectedText(event.target.value)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} />
           <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add your note." rows={5} disabled={!documentRecord} />
           <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option></select></label>
@@ -400,7 +428,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           <button className="secondaryButton" onClick={clearRecords} type="button">Clear saved annotations</button>
         </aside>
       </div>
-      <section className="annotationList" aria-label="Saved annotations"><div className="sectionHeading"><h3>Saved scholarly records</h3><span>{annotations.length} saved</span></div>{documentRecord ? <div className="documentSummary"><strong>{documentRecord.title}</strong><span>{formatLabel} · {documentRecord.filename} · {bytes(documentRecord.size)} {documentRecord.server?.storageKey ? "· server file" : documentRecord.server ? "· database-linked" : "· local only"}</span></div> : null}{annotations.length === 0 ? <p className="emptyAnnotationState">No annotations saved yet.</p> : <div className="recordsStack">{annotations.map((record) => { const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0]; return <article className="annotationRecord" key={record.id}><div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book page"} {record.bookPageLabel} {record.serverAnnotationId ? "· database" : "· local"}</span></div><blockquote>{record.selectedText}</blockquote>{record.note ? <p>{record.note}</p> : null}<div className="recordCitation">{record.citationText}</div></article>; })}</div>}</section>
+      <section className="annotationList" aria-label="Saved annotations"><div className="sectionHeading"><h3>Saved scholarly records</h3><span>{annotations.length} saved · {currentSnapshotRecords.length} current snapshot</span></div>{documentRecord ? <div className="documentSummary"><strong>{documentRecord.title}</strong><span>{formatLabel} · {documentRecord.filename} · {bytes(documentRecord.size)} {documentRecord.server?.sourceChecksum ? `· checksum ${documentRecord.server.sourceChecksum.slice(0, 12)}` : documentRecord.server?.storageKey ? "· server file" : documentRecord.server ? "· database-linked" : "· local only"}</span></div> : null}{annotations.length === 0 ? <p className="emptyAnnotationState">No annotations saved yet.</p> : <div className="recordsStack">{annotations.map((record) => { const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0]; const current = recordMatchesCurrentVersion(record, documentRecord); return <article className="annotationRecord" key={record.id}><div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book page"} {record.bookPageLabel} {current ? "· current snapshot" : "· prior snapshot"} {record.serverAnnotationId ? "· database" : "· local"}</span></div><blockquote>{record.selectedText}</blockquote>{record.note ? <p>{record.note}</p> : null}<div className="recordCitation">{record.citationText}</div></article>; })}</div>}</section>
     </section>
   );
 }
