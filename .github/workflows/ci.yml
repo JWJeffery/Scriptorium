@@ -63,6 +63,9 @@ jobs:
       - name: Verify Milestone 6 CSL source editor
         run: node scripts/verify-milestone-6-csl-source-editor.mjs
 
+      - name: Verify Milestone 7 citation exchange
+        run: node scripts/verify-milestone-7-citation-exchange.mjs
+
       - name: Typecheck web app
         id: typecheck
         run: |
