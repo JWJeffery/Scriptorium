@@ -5,104 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Scriptorium — Development Ledger</title>
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: #17130e;
-      --panel: #211b14;
-      --ink: #f4e8bf;
-      --muted: #c8b681;
-      --line: #655333;
-      --green: #92c56f;
-      --yellow: #e2bd43;
-      --red: #e56b62;
-    }
-    body {
-      margin: 0;
-      background: radial-gradient(circle at top left, #2b2117, var(--bg) 38rem);
-      color: var(--ink);
-      font-family: Georgia, "Times New Roman", serif;
-      line-height: 1.45;
-    }
-    main {
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 2.5rem 1.5rem 4rem;
-    }
-    h1, h2, h3 { letter-spacing: 0.04em; }
-    h1 {
-      font-size: clamp(2rem, 5vw, 4rem);
-      margin: 0 0 0.5rem;
-      border-bottom: 3px double var(--line);
-      padding-bottom: 1rem;
-    }
-    h2 {
-      margin-top: 3rem;
-      border-bottom: 2px solid var(--line);
-      padding-bottom: 0.5rem;
-      text-transform: uppercase;
-    }
-    .lede, .rule {
-      color: var(--muted);
-      font-style: italic;
-      font-size: 1.15rem;
-    }
-    .legend, .summary {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 1rem;
-      margin: 1.5rem 0;
-    }
-    .box, .gate, .history-item {
-      background: color-mix(in srgb, var(--panel) 88%, black);
-      border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-      border-radius: 0.75rem;
-      padding: 1rem;
-    }
-    .dot, .stamp {
-      display: inline-block;
-      width: 1rem;
-      height: 1rem;
-      border-radius: 999px;
-      margin-right: 0.5rem;
-      vertical-align: -0.1rem;
-    }
-    .status-green .stamp, .green { background: var(--green); }
-    .status-yellow .stamp, .yellow { background: var(--yellow); }
-    .status-red .stamp, .red { background: var(--red); }
-    .gate-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1rem;
-    }
-    .gate {
-      min-height: 18rem;
-      position: relative;
-    }
-    .gate[data-active="true"] {
-      outline: 3px solid var(--yellow);
-      box-shadow: 0 0 0 4px rgba(226, 189, 67, 0.15);
-    }
-    .sequence {
-      color: var(--muted);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.9rem;
-    }
-    .active-pill {
-      display: inline-block;
-      margin-left: 0.5rem;
-      padding: 0.1rem 0.45rem;
-      border: 1px solid var(--yellow);
-      border-radius: 999px;
-      color: var(--yellow);
-      font-size: 0.8rem;
-      text-transform: uppercase;
-    }
-    .muted { color: var(--muted); }
-    code { color: #f8d86a; }
-    .history {
-      display: grid;
-      gap: 0.75rem;
-    }
+    :root { color-scheme: dark; --bg:#17130e; --panel:#211b14; --ink:#f4e8bf; --muted:#c8b681; --line:#655333; --green:#92c56f; --yellow:#e2bd43; --red:#e56b62; }
+    body { margin:0; background:radial-gradient(circle at top left,#2b2117,var(--bg) 38rem); color:var(--ink); font-family:Georgia,"Times New Roman",serif; line-height:1.45; }
+    main { max-width:1180px; margin:0 auto; padding:2.5rem 1.5rem 4rem; }
+    h1 { font-size:clamp(2rem,5vw,4rem); margin:0 0 .5rem; border-bottom:3px double var(--line); padding-bottom:1rem; }
+    h2 { margin-top:3rem; border-bottom:2px solid var(--line); padding-bottom:.5rem; text-transform:uppercase; }
+    .lede,.rule { color:var(--muted); font-style:italic; font-size:1.15rem; }
+    .legend,.gate-grid,.history { display:grid; gap:1rem; }
+    .legend { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin:1.5rem 0; }
+    .gate-grid { grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+    .box,.gate,.history-item { background:color-mix(in srgb,var(--panel) 88%,black); border:1px solid color-mix(in srgb,var(--line) 70%,transparent); border-radius:.75rem; padding:1rem; }
+    .dot,.stamp { display:inline-block; width:1rem; height:1rem; border-radius:999px; margin-right:.5rem; vertical-align:-.1rem; }
+    .green,.status-green .stamp { background:var(--green); } .yellow { background:var(--yellow); } .red,.status-red .stamp { background:var(--red); }
+    .gate[data-active="true"] { outline:3px solid var(--yellow); box-shadow:0 0 0 4px rgba(226,189,67,.15); }
+    .sequence, code { color:#f8d86a; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .active-pill { display:inline-block; margin-left:.5rem; padding:.1rem .45rem; border:1px solid var(--yellow); border-radius:999px; color:var(--yellow); font-size:.8rem; text-transform:uppercase; }
+    .muted { color:var(--muted); }
   </style>
 </head>
 <body>
@@ -110,95 +28,51 @@
   <h1>Scriptorium — Development Ledger</h1>
   <p class="lede">Every yellow is audit debt, not progress. Build, audit, classify, then advance.</p>
 
-  <section aria-labelledby="legend-heading">
-    <h2 id="legend-heading">Legend</h2>
+  <section>
+    <h2>Legend</h2>
     <div class="legend">
       <div class="box"><span class="dot green"></span><strong>Green</strong><br><span class="muted">Audited, verified, closed.</span></div>
-      <div class="box"><span class="dot yellow"></span><strong>Yellow</strong><br><span class="muted">Present or claimed, but unaudited / unverified. Yellow is audit debt.</span></div>
+      <div class="box"><span class="dot yellow"></span><strong>Yellow</strong><br><span class="muted">Present or claimed, but unaudited / unverified.</span></div>
       <div class="box"><span class="dot red"></span><strong>Red</strong><br><span class="muted">Not started, failed audit, known bad, blocked, or intentionally absent.</span></div>
     </div>
   </section>
 
-  <section aria-labelledby="deliverable-heading">
-    <h2 id="deliverable-heading">Final integrated deliverable</h2>
-    <p>A scholarly research workspace where a user can ingest texts, read them, map stable locators, highlight and annotate passages, generate scholarly citations, organize annotations into research threads, search across recovered source material, and receive grounded answers only when citations can be tied back to source passages.</p>
-    <p class="rule"><strong>Workflow rule:</strong> Move sequentially. One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed. Revisit green gates only for bugs, regressions, or necessary refactors.</p>
+  <section>
+    <h2>Final integrated deliverable</h2>
+    <p>A scholarly research workspace where a user can ingest texts, read them, map stable locators, annotate passages, generate scholarly citations, organize research threads, search recovered source material, and receive source-grounded responses only when citations can be tied back to source passages.</p>
+    <p class="rule"><strong>Workflow rule:</strong> One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed.</p>
   </section>
 
-  <section aria-labelledby="dashboard-heading">
-    <h2 id="dashboard-heading">Gated dashboard</h2>
+  <section>
+    <h2>Gated dashboard</h2>
     <div class="gate-grid">
-      <article class="gate status-green" data-ledger-id="foundation" data-active="false">
-        <div class="sequence">01</div><h3><span class="stamp"></span>Foundation / repo / architecture</h3>
-        <p><strong>Rationale:</strong> Clean repo, product thesis, roadmap, app skeleton, database model, and CI base before feature delivery.</p>
-        <p><strong>Gate:</strong> Repository exists with product documentation, Next.js app skeleton, Prisma model, roadmap, and CI foundation.</p>
-      </article>
-      <article class="gate status-green" data-ledger-id="pdf-scholarly-workflow" data-active="false">
-        <div class="sequence">02</div><h3><span class="stamp"></span>PDF scholarly workflow</h3>
-        <p><strong>Rationale:</strong> First complete proof of source metadata, page mapping, text selection, highlights, notes, citations, persistence, and reload recovery.</p>
-        <p><strong>Evidence:</strong> Issue #1 closed; PR #2 merged; CI run <code>28820801620</code>; merge <code>67890ac</code>.</p>
-      </article>
-      <article class="gate status-green" data-ledger-id="txt-markdown-ingestion" data-active="false">
-        <div class="sequence">03</div><h3><span class="stamp"></span>TXT + Markdown scholarly ingestion</h3>
-        <p><strong>Rationale:</strong> Safest expansion beyond PDF because it validates non-PDF text snapshots and locator rules before DOCX complexity.</p>
-        <p><strong>Evidence:</strong> Issue #6; PR #7; CI run <code>28835427347</code> verified TXT/Markdown fixtures, typecheck, build, and MySQL migration.</p>
-      </article>
-      <article class="gate status-green" data-ledger-id="snapshot-policy" data-active="false">
-        <div class="sequence">04</div><h3><span class="stamp"></span>Snapshot policy for text formats</h3>
-        <p><strong>Evidence:</strong> Issue #8; PR #9; CI run <code>28867118718</code> verified deterministic normalization, checksum-addressed snapshots, reimport versioning, annotation isolation, typecheck, build, and MySQL migration.</p>
-      </article>
-      <article class="gate status-green" data-ledger-id="docx-ingestion" data-active="false">
-        <div class="sequence">05</div><h3><span class="stamp"></span>DOCX ingestion path</h3>
-        <p><strong>Evidence:</strong> Issue #10; PR #11; CI run <code>28872109866</code> verified DOCX contract, typecheck, build, and MySQL migration.</p>
-      </article>
-      <article class="gate status-green" data-ledger-id="csl-source-editor" data-active="false">
-        <div class="sequence">06</div><h3><span class="stamp"></span>CSL source editor</h3>
-        <p><strong>Evidence:</strong> Issue #12; PR #13; CI run <code>28878313692</code> verified CSL source metadata validation, persistence route, editor action, generated citation alignment, typecheck, build, and MySQL migration.</p>
-      </article>
-      <article class="gate status-green" data-ledger-id="citation-import-export" data-active="false">
-        <div class="sequence">07</div><h3><span class="stamp"></span>Citation import/export</h3>
-        <p><strong>Evidence:</strong> Issue #14; PR #15; CI run <code>28880169340</code> verified CSL JSON, BibTeX, and BibLaTeX import/export contract, typecheck, build, and MySQL migration.</p>
-      </article>
-      <article class="gate status-green" data-ledger-id="zotero-compatible-path" data-active="false">
-        <div class="sequence">08</div><h3><span class="stamp"></span>Zotero-compatible data path</h3>
-        <p><strong>Evidence:</strong> Issue #16; PR #17; CI run <code>28880779302</code> verified Zotero-shaped book item export/import, typecheck, build, and MySQL migration.</p>
-      </article>
-      <article class="gate status-red" data-ledger-id="research-threads" data-active="true">
-        <div class="sequence">09</div><h3><span class="stamp"></span>Research threads <span class="active-pill">active gate</span></h3>
-        <p><strong>Current truth:</strong> Active next gate, but not started. Red until implementation exists and passes audit.</p>
-      </article>
-      <article class="gate status-red" data-ledger-id="thread-export" data-active="false">
-        <div class="sequence">10</div><h3><span class="stamp"></span>Thread export</h3>
-        <p>Not started. Export follows a stable thread model.</p>
-      </article>
-      <article class="gate status-red" data-ledger-id="exact-search" data-active="false">
-        <div class="sequence">11</div><h3><span class="stamp"></span>Exact search</h3>
-        <p>Not started. Search begins with exact, inspectable source-linked results.</p>
-      </article>
-      <article class="gate status-red" data-ledger-id="semantic-search" data-active="false">
-        <div class="sequence">12</div><h3><span class="stamp"></span>Semantic search</h3>
-        <p>Not started. Semantic retrieval must rest on trusted extracted passages.</p>
-      </article>
-      <article class="gate status-red" data-ledger-id="grounded-answer-generation" data-active="false">
-        <div class="sequence">13</div><h3><span class="stamp"></span>Grounded answer generation</h3>
-        <p>Not started. Generated answers are the final layer and must cite recovered source passages only.</p>
-      </article>
+      <article class="gate status-green" data-active="false"><div class="sequence">01</div><h3><span class="stamp"></span>Foundation / repo / architecture</h3><p>Audited complete.</p></article>
+      <article class="gate status-green" data-active="false"><div class="sequence">02</div><h3><span class="stamp"></span>PDF scholarly workflow</h3><p>Issue #1; PR #2; CI <code>28820801620</code>.</p></article>
+      <article class="gate status-green" data-active="false"><div class="sequence">03</div><h3><span class="stamp"></span>TXT + Markdown scholarly ingestion</h3><p>Issue #6; PR #7; CI <code>28835427347</code>.</p></article>
+      <article class="gate status-green" data-active="false"><div class="sequence">04</div><h3><span class="stamp"></span>Snapshot policy for text formats</h3><p>Issue #8; PR #9; CI <code>28867118718</code>.</p></article>
+      <article class="gate status-green" data-active="false"><div class="sequence">05</div><h3><span class="stamp"></span>DOCX ingestion path</h3><p>Issue #10; PR #11; CI <code>28872109866</code>.</p></article>
+      <article class="gate status-green" data-active="false"><div class="sequence">06</div><h3><span class="stamp"></span>CSL source editor</h3><p>Issue #12; PR #13; CI <code>28878313692</code>.</p></article>
+      <article class="gate status-green" data-active="false"><div class="sequence">07</div><h3><span class="stamp"></span>Citation import/export</h3><p>Issue #14; PR #15; CI <code>28880169340</code>.</p></article>
+      <article class="gate status-green" data-active="false"><div class="sequence">08</div><h3><span class="stamp"></span>Zotero-compatible data path</h3><p>Issue #16; PR #17; CI <code>28880779302</code>.</p></article>
+      <article class="gate status-green" data-active="false"><div class="sequence">09</div><h3><span class="stamp"></span>Research threads</h3><p>Issue #18; PR #19; CI <code>28882426668</code>. Ordered thread items, tags, and context reload verified.</p></article>
+      <article class="gate status-red" data-active="true"><div class="sequence">10</div><h3><span class="stamp"></span>Thread export <span class="active-pill">active gate</span></h3><p>Not started. Red until implementation exists and passes audit.</p></article>
+      <article class="gate status-red" data-active="false"><div class="sequence">11</div><h3><span class="stamp"></span>Exact search</h3><p>Not started.</p></article>
+      <article class="gate status-red" data-active="false"><div class="sequence">12</div><h3><span class="stamp"></span>Semantic search</h3><p>Not started.</p></article>
+      <article class="gate status-red" data-active="false"><div class="sequence">13</div><h3><span class="stamp"></span>Grounded answer layer</h3><p>Not started.</p></article>
     </div>
   </section>
 
-  <section aria-labelledby="history-heading">
-    <h2 id="history-heading">Backward history</h2>
+  <section>
+    <h2>Backward history</h2>
     <div class="history">
-      <div class="history-item status-green"><span class="stamp"></span>Scriptorium separated from Universal Office and defined as its own scholarly reading platform.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Durable scholarly object thesis recorded.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Roadmap created from PDF workflow through interrogation.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Issue #1 and PR #2 closed the PDF scholarly workflow with CI verification.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Issue #6 and PR #7 added TXT/Markdown ingestion with line/offset anchors, citation persistence, and CI fixture verification.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Issue #8 and PR #9 added deterministic checksum-addressed text snapshots, reimport versioning, and annotation/version isolation.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Issue #10 and PR #11 added bounded DOCX text extraction, versioned snapshot persistence, and text-reader annotation support.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Issue #12 and PR #13 added a controlled CSL source metadata editor with validation, persistence, and citation alignment.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Issue #14 and PR #15 added bounded CSL JSON, BibTeX, and BibLaTeX import/export for source records.</div>
-      <div class="history-item status-green"><span class="stamp"></span>Issue #16 and PR #17 added a bounded Zotero-shaped book item data path around CSL source records.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #1 / PR #2 closed the PDF workflow.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #6 / PR #7 added TXT and Markdown.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #8 / PR #9 added snapshot policy.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #10 / PR #11 added DOCX ingestion.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #12 / PR #13 added CSL source editing.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #14 / PR #15 added citation import/export.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #16 / PR #17 added Zotero-shaped local compatibility.</div>
+      <div class="history-item status-green"><span class="stamp"></span>Issue #18 / PR #19 added persistent research threads.</div>
     </div>
   </section>
 </main>
