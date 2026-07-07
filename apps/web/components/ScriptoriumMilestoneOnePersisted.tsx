@@ -14,6 +14,15 @@ type StoredDocument = { id: string; title: string; filename: string; kind: Docum
 type SelectionAnchor = PdfSelectionAnchor | TextSelectionAnchor;
 type SavedAnnotation = { id: string; documentId: string; versionId?: string; snapshotKey?: string; colorKey: string; selectedText: string; note: string; pdfPageIndex: number; bookPageLabel: string; citationStyle: CitationStyle; citationText: string; anchor?: SelectionAnchor; createdAt: string; serverAnnotationId?: string; serverCitationId?: string };
 
+type TextPersistResponse = {
+  document: { id: string; storageKey?: string | null };
+  version: { id: string; sourceChecksum?: string | null; snapshotKey?: string | null };
+  source: { id: string };
+  pageMap: { id: string };
+  textSpan: { text: string };
+  storedSnapshot?: { storageKey: string; checksum: string };
+};
+
 const DB_NAME = "scriptorium-file-store";
 const DB_VERSION = 1;
 const PDF_STORE = "pdf-blobs";
@@ -28,10 +37,11 @@ function bookPage(pageMap: PageMap) { return String(pageMap.baseBookPage + pageM
 function bytes(size: number) { return size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`; }
 function serverPdfUrl(document: StoredDocument) { return document.server?.storageKey ? `/api/milestone-one/files/${document.server.documentId}` : null; }
 function isPdf(document: StoredDocument | null) { return document?.kind === "PDF"; }
-function isText(document: StoredDocument | null) { return document?.kind === "TXT" || document?.kind === "MARKDOWN"; }
+function isText(document: StoredDocument | null): document is StoredDocument & { kind: "TXT" | "MARKDOWN" } { return document?.kind === "TXT" || document?.kind === "MARKDOWN"; }
 function isTextAnchor(anchor: SelectionAnchor | undefined): anchor is TextSelectionAnchor { return typeof anchor === "object" && anchor !== null && "startOffset" in anchor && "lineStart" in anchor; }
 function lineLocator(anchor: TextSelectionAnchor) { return anchor.lineStart === anchor.lineEnd ? String(anchor.lineStart) : `${anchor.lineStart}-${anchor.lineEnd}`; }
 function normalizeTextSnapshot(text: string) { return text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n"); }
+
 function fileKind(file: File): DocumentKind | null {
   const name = file.name.toLowerCase();
   if (file.type === "application/pdf" || name.endsWith(".pdf")) return "PDF";
@@ -110,7 +120,7 @@ async function getPdf(documentId: string) {
     const transaction = db.transaction(PDF_STORE, "readonly");
     const request = transaction.objectStore(PDF_STORE).get(documentId);
     request.onsuccess = () => resolve((request.result as Blob | undefined) ?? null);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(transaction.error);
   });
   db.close();
   return blob;
@@ -157,7 +167,7 @@ async function persistTextFile(file: File, document: StoredDocument, locator: st
   if (existingServerDocumentId) formData.set("documentId", existingServerDocumentId);
   const response = await fetch("/api/milestone-three/texts", { method: "POST", body: formData });
   if (!response.ok) throw new Error("Text upload persistence failed.");
-  const body = await response.json() as { document: { id: string; storageKey?: string | null }; version: { id: string; sourceChecksum?: string | null; snapshotKey?: string | null }; source: { id: string }; pageMap: { id: string }; textSpan: { text: string }; storedSnapshot?: { storageKey: string; checksum: string } };
+  const body = await response.json() as TextPersistResponse;
   return {
     server: {
       documentId: body.document.id,
@@ -288,11 +298,12 @@ export function ScriptoriumMilestoneOnePersisted() {
 
     if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
 
-    const isTextReimport = kind !== "PDF" && isText(documentRecord) && documentRecord.kind === kind && Boolean(documentRecord.server?.documentId);
-    const documentId = isTextReimport && documentRecord ? documentRecord.id : localId("doc");
+    const textReimportDocument = kind !== "PDF" && isText(documentRecord) && documentRecord.kind === kind && documentRecord.server?.documentId ? documentRecord : null;
+    const isTextReimport = Boolean(textReimportDocument);
+    const documentId = textReimportDocument ? textReimportDocument.id : localId("doc");
     const title = file.name.replace(/\.(pdf|txt|md|markdown)$/i, "");
-    let nextDocument: StoredDocument = isTextReimport && documentRecord
-      ? { ...documentRecord, title, filename: file.name, mediaType: file.type || documentRecord.mediaType, size: file.size, source: { ...documentRecord.source, title: documentRecord.source.title || title }, pageMap: DEFAULT_PAGE_MAP }
+    let nextDocument: StoredDocument = textReimportDocument
+      ? { ...textReimportDocument, title, filename: file.name, mediaType: file.type || textReimportDocument.mediaType, size: file.size, source: { ...textReimportDocument.source, title: textReimportDocument.source.title || title }, pageMap: DEFAULT_PAGE_MAP }
       : { id: documentId, title, filename: file.name, kind, mediaType: file.type || (kind === "PDF" ? "application/pdf" : kind === "MARKDOWN" ? "text/markdown" : "text/plain"), size: file.size, source: { ...EMPTY_SOURCE, title }, pageMap: DEFAULT_PAGE_MAP };
 
     if (!isTextReimport) {
@@ -329,7 +340,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       setTextContent(normalizedText);
       saveTextContent(normalizedText);
       try {
-        const persisted = await persistTextFile(file, nextDocument, "1", isTextReimport ? documentRecord?.server?.documentId : undefined);
+        const persisted = await persistTextFile(file, nextDocument, "1", textReimportDocument?.server?.documentId);
         nextDocument = { ...nextDocument, server: persisted.server };
         setTextContent(persisted.text);
         saveTextContent(persisted.text);
