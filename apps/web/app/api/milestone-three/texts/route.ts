@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { DocumentKind, Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
+import { storeTextSnapshot } from "../../../../lib/server-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,19 @@ function failure(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
+async function findReusableDocument(documentId: string, kind: DocumentKind) {
+  if (!documentId) return null;
+
+  const document = await prisma.document.findUnique({
+    where: { id: documentId },
+    include: { sources: { orderBy: { createdAt: "asc" }, take: 1 } }
+  });
+
+  if (!document || (document.kind !== "TXT" && document.kind !== "MARKDOWN")) return null;
+  if (document.kind !== kind) return null;
+  return document;
+}
+
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file");
@@ -57,13 +71,14 @@ export async function POST(request: NextRequest) {
     return failure("Only .txt and .md/.markdown files are accepted for this gate.", 400);
   }
 
-  const text = await file.text();
-  if (!text.trim()) {
+  const rawText = await file.text();
+  if (!rawText.trim()) {
     return failure("Text file is empty.", 400);
   }
 
   const title = readText(formData, "title") || file.name.replace(/\.(txt|md|markdown)$/i, "");
   const locatorValue = readText(formData, "bookPageLabel") || "1";
+  const requestedDocumentId = readText(formData, "documentId");
   const source: ParsedSource = {
     title,
     author: readText(formData, "author") || undefined,
@@ -72,42 +87,72 @@ export async function POST(request: NextRequest) {
     year: readText(formData, "year") || undefined
   };
 
+  const reusableDocument = await findReusableDocument(requestedDocumentId, kind);
+
   const result = await prisma.$transaction(async (tx) => {
-    const document = await tx.document.create({
-      data: {
-        title,
-        originalFilename: file.name,
-        kind,
-        mediaType: file.type || (kind === "MARKDOWN" ? "text/markdown" : "text/plain"),
-        storageKey: null
-      }
+    const document = reusableDocument
+      ? await tx.document.update({
+          where: { id: reusableDocument.id },
+          data: {
+            title,
+            originalFilename: file.name,
+            mediaType: file.type || (kind === "MARKDOWN" ? "text/markdown" : "text/plain")
+          }
+        })
+      : await tx.document.create({
+          data: {
+            title,
+            originalFilename: file.name,
+            kind,
+            mediaType: file.type || (kind === "MARKDOWN" ? "text/markdown" : "text/plain"),
+            storageKey: null
+          }
+        });
+
+    const storedSnapshot = await storeTextSnapshot(document.id, rawText);
+
+    const updatedDocument = await tx.document.update({
+      where: { id: document.id },
+      data: { storageKey: storedSnapshot.storageKey }
     });
+
+    const versionCount = await tx.documentVersion.count({ where: { documentId: document.id } });
 
     const version = await tx.documentVersion.create({
       data: {
         documentId: document.id,
+        sourceChecksum: storedSnapshot.checksum,
         snapshotKind: "TEXT_EXTRACTION",
-        extractionState: kind === "MARKDOWN" ? "markdown-text-snapshot" : "plain-text-snapshot"
+        snapshotKey: storedSnapshot.storageKey,
+        extractionState: `${kind === "MARKDOWN" ? "markdown" : "plain-text"}-snapshot-v${versionCount + 1}`
       }
     });
 
-    const sourceRecord = await tx.source.create({
-      data: {
-        documentId: document.id,
-        shortTitle: source.title,
-        cslJson: cslJsonFor(source)
-      }
-    });
+    const sourceRecord = reusableDocument?.sources[0]
+      ? await tx.source.update({
+          where: { id: reusableDocument.sources[0].id },
+          data: {
+            shortTitle: source.title,
+            cslJson: cslJsonFor(source)
+          }
+        })
+      : await tx.source.create({
+          data: {
+            documentId: document.id,
+            shortTitle: source.title,
+            cslJson: cslJsonFor(source)
+          }
+        });
 
     const pageMap = await tx.pageMap.create({
       data: {
         versionId: version.id,
         pdfPageIndex: 1,
-        visibleLabel: "text",
+        visibleLabel: `snapshot ${versionCount + 1}`,
         bookPageLabel: locatorValue,
         numberingSystem: "CUSTOM",
         confidence: "USER_CONFIRMED",
-        note: "Text-format snapshot uses line locators captured from normalized text offsets."
+        note: `Text-format snapshot v${versionCount + 1}: checksum ${storedSnapshot.checksum}; line locators derive from normalized text offsets.`
       }
     });
 
@@ -115,18 +160,21 @@ export async function POST(request: NextRequest) {
       data: {
         versionId: version.id,
         pageMapId: pageMap.id,
-        text,
+        text: storedSnapshot.text,
         anchor: {
           kind,
           locatorKind: "line",
-          textLength: text.length,
-          lineCount: text.split("\n").length
+          sourceChecksum: storedSnapshot.checksum,
+          snapshotKey: storedSnapshot.storageKey,
+          textLength: storedSnapshot.text.length,
+          lineCount: storedSnapshot.lineCount,
+          versionOrdinal: versionCount + 1
         }
       }
     });
 
-    return { document, version, source: sourceRecord, pageMap, textSpan };
+    return { document: updatedDocument, version, source: sourceRecord, pageMap, textSpan, storedSnapshot };
   });
 
-  return NextResponse.json(result, { status: 201 });
+  return NextResponse.json(result, { status: reusableDocument ? 200 : 201 });
 }
