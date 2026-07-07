@@ -19,13 +19,18 @@ function cleanTags(tags: string[] | undefined) {
 function anchorJsonFor(anchor: MilestoneOneAnchorInput | undefined): Prisma.InputJsonObject | undefined {
   if (!anchor) return undefined;
 
-  return {
+  return JSON.parse(JSON.stringify({
     selectedText: anchor.selectedText,
     pageNumber: anchor.pageNumber,
     beforeContext: anchor.beforeContext ?? "",
     afterContext: anchor.afterContext ?? "",
-    rects: anchor.rects ?? []
-  };
+    rects: anchor.rects ?? [],
+    startOffset: anchor.startOffset,
+    endOffset: anchor.endOffset,
+    lineStart: anchor.lineStart,
+    lineEnd: anchor.lineEnd,
+    locatorKind: anchor.locatorKind
+  })) as Prisma.InputJsonObject;
 }
 
 export async function POST(request: NextRequest) {
