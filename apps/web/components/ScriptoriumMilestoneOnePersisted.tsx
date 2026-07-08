@@ -225,6 +225,8 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [note, setNote] = useState("");
   const [style, setStyle] = useState<CitationStyle>("sbl-note");
   const [status, setStatus] = useState("Register a PDF, TXT, Markdown, or DOCX file to begin.");
+  const [sourceSaveMessage, setSourceSaveMessage] = useState("");
+  const [recentAnnotationId, setRecentAnnotationId] = useState<string | undefined>();
 
   useEffect(() => {
     const storedDocument = readDocument();
@@ -280,6 +282,8 @@ export function ScriptoriumMilestoneOnePersisted() {
   const locator = useMemo(() => currentLocator(documentRecord, anchor), [documentRecord, anchor]);
   const generatedCitation = useMemo(() => documentRecord ? citation(documentRecord, locator, style) : "Register a document before generating a citation.", [documentRecord, locator, style]);
   const currentSnapshotRecords = useMemo(() => annotations.filter((record) => recordMatchesCurrentVersion(record, documentRecord)), [annotations, documentRecord]);
+  const recentSavedRecord = useMemo(() => recentAnnotationId ? annotations.find((record) => record.id === recentAnnotationId) : undefined, [annotations, recentAnnotationId]);
+  const recentSavedColor = recentSavedRecord ? highlightColors.find((item) => item.key === recentSavedRecord.colorKey) ?? highlightColors[0] : undefined;
   const visiblePdfHighlights = useMemo<PdfPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
     if (!record.anchor || isTextAnchor(record.anchor)) return [];
     const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
@@ -354,6 +358,8 @@ export function ScriptoriumMilestoneOnePersisted() {
     setAnchor(undefined);
     setNote("");
     setPageCount(0);
+    setSourceSaveMessage("");
+    setRecentAnnotationId(undefined);
 
     if (kind === "PDF") {
       setTextContent("");
@@ -399,22 +405,29 @@ export function ScriptoriumMilestoneOnePersisted() {
   }
 
   function updateDocument(nextDocument: StoredDocument) { setDocumentRecord(nextDocument); saveDocument(nextDocument); }
-  function updateSource(field: keyof SourceRecord, value: string) { if (documentRecord) updateDocument({ ...documentRecord, title: field === "title" ? value : documentRecord.title, source: { ...documentRecord.source, [field]: value } }); }
+  function updateSource(field: keyof SourceRecord, value: string) {
+    if (!documentRecord) return;
+    setSourceSaveMessage("Unsaved source metadata changes.");
+    updateDocument({ ...documentRecord, title: field === "title" ? value : documentRecord.title, source: { ...documentRecord.source, [field]: value } });
+  }
   function updatePageMap(field: keyof PageMap, value: number) { if (documentRecord) updateDocument({ ...documentRecord, pageMap: { ...documentRecord.pageMap, [field]: Number.isFinite(value) ? value : 1 } }); }
   function goToPage(page: number) { if (!documentRecord || documentRecord.kind !== "PDF") return; const upper = pageCount > 0 ? pageCount : page; setAnchor(undefined); setSelectedText(""); updatePageMap("currentPdfPageIndex", Math.min(Math.max(page, 1), upper)); }
 
   async function saveSourceRecord() {
     if (!documentRecord) { setStatus("Register a document before saving CSL source metadata."); return; }
     const validationMessage = validateSource(documentRecord.source);
-    if (validationMessage) { setStatus(validationMessage); return; }
+    if (validationMessage) { setStatus(validationMessage); setSourceSaveMessage(validationMessage); return; }
     const nextDocument = { ...documentRecord, title: documentRecord.source.title.trim() || documentRecord.title, source: { ...documentRecord.source, title: documentRecord.source.title.trim(), author: documentRecord.source.author.trim(), place: documentRecord.source.place.trim(), publisher: documentRecord.source.publisher.trim(), year: documentRecord.source.year.trim() } };
 
+    setSourceSaveMessage("Saving CSL source metadata…");
     try {
       await persistSourceMetadata(nextDocument);
       updateDocument(nextDocument);
+      setSourceSaveMessage("CSL source metadata saved to database.");
       setStatus("Saved CSL-compatible source metadata to the database.");
     } catch {
       updateDocument(nextDocument);
+      setSourceSaveMessage("Source metadata saved locally; database source persistence is unavailable for this record.");
       setStatus("Saved source metadata locally. Database source persistence is unavailable for this record.");
     }
   }
@@ -431,9 +444,9 @@ export function ScriptoriumMilestoneOnePersisted() {
     try {
       const serverRecord = await persistAnnotation(documentRecord, record);
       record = { ...record, serverAnnotationId: serverRecord.annotation.id, serverCitationId: serverRecord.citation.id };
-      setStatus("Saved annotation locally and in the database.");
+      setStatus("Saved annotation locally and in the database. The latest saved record is shown in the annotation panel.");
     } catch {
-      setStatus("Saved annotation locally. Database persistence is unavailable for this record.");
+      setStatus("Saved annotation locally. The latest saved record is shown in the annotation panel; database persistence is unavailable for this record.");
     }
 
     setAnnotations((previous) => {
@@ -441,12 +454,13 @@ export function ScriptoriumMilestoneOnePersisted() {
       saveAnnotations(next);
       return next;
     });
+    setRecentAnnotationId(record.id);
     setSelectedText("");
     setAnchor(undefined);
     setNote("");
   }
 
-  function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setStatus("Cleared annotation records for the current browser workspace."); }
+  function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setRecentAnnotationId(undefined); setStatus("Cleared annotation records for the current browser workspace."); }
 
   const currentPage = documentRecord?.pageMap.currentPdfPageIndex ?? 1;
   const formatLabel = documentRecord ? formatFor(documentRecord.kind) : "PDF";
@@ -470,6 +484,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           <div className="twoColumnInputs"><label>Place<input value={documentRecord?.source.place ?? ""} onChange={(event) => updateSource("place", event.target.value)} disabled={!documentRecord} /></label><label>Year<input value={documentRecord?.source.year ?? ""} onChange={(event) => updateSource("year", event.target.value)} disabled={!documentRecord} /></label></div>
           <label>Publisher<input value={documentRecord?.source.publisher ?? ""} onChange={(event) => updateSource("publisher", event.target.value)} disabled={!documentRecord} /></label>
           <button className="secondaryButton" onClick={saveSourceRecord} type="button" disabled={!documentRecord}>Save CSL source metadata</button>
+          {sourceSaveMessage ? <p className="inlineSaveNotice">{sourceSaveMessage}</p> : null}
           <h3>{isPdf(documentRecord) ? "Page map" : "Text locator"}</h3>
           {isPdf(documentRecord) ? (
             <>
@@ -499,6 +514,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           <div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>
           {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
           <button className="primaryButton" onClick={saveRecord} type="button">Save annotation + citation</button>
+          {recentSavedRecord && recentSavedColor ? <div className="recentSavedRecord"><div><span className="recordColor" style={{ background: recentSavedColor.color }} /><strong>Latest saved record</strong></div><blockquote>{recentSavedRecord.selectedText}</blockquote>{recentSavedRecord.note ? <p>{recentSavedRecord.note}</p> : null}<small>{isText(documentRecord) ? "line" : "book page"} {recentSavedRecord.bookPageLabel} · {recentSavedRecord.serverAnnotationId ? "database" : "local"}</small></div> : null}
           <button className="secondaryButton" onClick={clearRecords} type="button">Clear saved annotations</button>
         </aside>
       </div>
