@@ -36,9 +36,13 @@
 
 .pdfReaderShell {
   position: relative;
-  min-height: 760px;
+  height: min(78vh, 860px);
+  min-height: 620px;
   overflow: auto;
-  padding: 24px;
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
 }
 
 .pdfLoading {
@@ -56,6 +60,7 @@
 
 .pdfPageFrame {
   position: relative;
+  flex: 0 0 auto;
   margin: 0 auto;
   background: #fff;
   box-shadow: 0 18px 35px rgb(0 0 0 / 12%);
@@ -109,12 +114,18 @@
 
 @media (max-width: 1250px) {
   .pdfReaderShell {
-    min-height: 620px;
+    min-height: 560px;
   }
 }
 
 @media (max-width: 720px) {
   .pageStepper {
     grid-template-columns: 1fr;
+  }
+
+  .pdfReaderShell {
+    height: 70vh;
+    min-height: 460px;
+    justify-content: flex-start;
   }
 }
