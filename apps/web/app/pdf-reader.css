@@ -34,6 +34,45 @@
   line-height: 1.45;
 }
 
+.inlineSaveNotice {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdf8;
+  color: var(--accent-strong);
+  line-height: 1.35;
+}
+
+.recentSavedRecord {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+.recentSavedRecord > div {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.recentSavedRecord blockquote {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--line);
+  line-height: 1.45;
+}
+
+.recentSavedRecord p,
+.recentSavedRecord small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 .pdfReaderShell {
   position: relative;
   height: min(78vh, 860px);
@@ -94,20 +133,21 @@
   z-index: 3;
   overflow: hidden;
   line-height: 1;
-  opacity: 1;
+  opacity: 0;
   user-select: text;
+  cursor: text;
 }
 
 .pdfTextLayer::selection,
 .pdfTextRun::selection {
-  background: rgb(255 243 163 / 85%);
+  background: transparent;
   color: transparent;
 }
 
 .pdfTextRun {
   position: absolute;
   white-space: pre;
-  color: transparent;
+  color: #000;
   transform-origin: 0 0;
   user-select: text;
 }
