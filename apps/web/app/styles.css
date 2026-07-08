@@ -171,12 +171,16 @@ h2 {
 }
 
 .statusLine {
+  position: sticky;
+  top: 8px;
+  z-index: 30;
   margin: 0 0 18px;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--soft);
   color: var(--muted);
+  box-shadow: 0 8px 24px rgb(33 31 27 / 10%);
 }
 
 .milestoneGrid {
@@ -191,6 +195,13 @@ h2 {
   display: grid;
   gap: 14px;
   align-content: start;
+}
+
+.annotationPanel {
+  position: sticky;
+  top: 72px;
+  max-height: calc(100vh - 96px);
+  overflow: auto;
 }
 
 .twoColumnInputs {
@@ -356,6 +367,7 @@ h2 {
 .annotationList {
   margin-top: 18px;
   padding: 18px;
+  scroll-margin-top: 96px;
 }
 
 .sectionHeading,
@@ -430,152 +442,14 @@ h2 {
   align-items: start;
 }
 
-.sideStack {
-  display: grid;
-  gap: 18px;
-}
-
-.documentList {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.documentCard {
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-}
-
-.documentCard strong {
-  display: block;
-}
-
-.documentCard span {
-  display: block;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.reader {
-  min-height: 720px;
-  padding: 24px;
-}
-
-.readerToolbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 16px;
-  margin-bottom: 24px;
-}
-
-.pageCanvas {
-  max-width: 650px;
-  min-height: 560px;
-  margin: 0 auto;
-  padding: 54px;
-  background: #fff;
-  border: 1px solid #dedede;
-  box-shadow: 0 18px 35px rgb(0 0 0 / 10%);
-  line-height: 1.7;
-}
-
-.annotationCallout {
-  display: inline;
-  background: #fff3a3;
-  border-bottom: 2px solid #c5a300;
-}
-
-.palette {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.swatch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-}
-
-.swatchMark {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  border: 1px solid rgb(0 0 0 / 15%);
-}
-
-.metaGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.metaBox {
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-}
-
-.metaBox span {
-  display: block;
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
-.citationBox {
-  padding: 12px;
-  border-left: 4px solid var(--accent);
-  background: var(--soft);
-  line-height: 1.55;
-}
-
-@media (max-width: 1250px) {
-  .milestoneGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .pdfPanel,
-  .pdfObject,
-  .emptyPdfState,
-  .textReaderShell {
-    min-height: 620px;
-  }
-}
-
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
+  .milestoneGrid,
   .workspaceGrid {
     grid-template-columns: 1fr;
   }
-}
 
-@media (max-width: 720px) {
-  .shell {
-    width: min(100vw - 24px, 1560px);
-  }
-
-  .workflowHeader,
-  .sectionHeading {
-    display: grid;
-  }
-
-  .twoColumnInputs,
-  .mappingFormula {
-    grid-template-columns: 1fr;
-  }
-
-  .textReaderShell {
-    padding: 24px;
+  .annotationPanel {
+    position: static;
+    max-height: none;
   }
 }
