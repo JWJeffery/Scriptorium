@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { highlightColors } from "../lib/highlights";
-import { PdfAnchoredPageReader, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
+import { PdfAnchoredPageReader, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = "sbl-note" | "chicago-note";
@@ -52,6 +52,7 @@ function lineLocator(anchor: TextSelectionAnchor) { return anchor.lineStart === 
 function normalizeTextSnapshot(text: string) { return text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n"); }
 function mediaTypeFor(kind: DocumentKind, file: File) { return file.type || (kind === "PDF" ? "application/pdf" : kind === "MARKDOWN" ? "text/markdown" : kind === "DOCX" ? DOCX_MEDIA_TYPE : "text/plain"); }
 function formatFor(kind: DocumentKind) { return kind === "MARKDOWN" ? "Markdown" : kind === "TXT" ? "TXT" : kind === "DOCX" ? "DOCX" : "PDF"; }
+function titleFromFilename(fileName: string) { return fileName.replace(/\.(pdf|txt|md|markdown|docx)$/i, ""); }
 
 function fileKind(file: File): DocumentKind | null {
   const name = file.name.toLowerCase();
@@ -284,16 +285,38 @@ export function ScriptoriumMilestoneOnePersisted() {
     const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
     return [{ id: record.id, color: color.color, anchor: record.anchor }];
   }), [currentSnapshotRecords]);
+  const previewPdfHighlight = useMemo<PdfPageHighlight[]>(() => {
+    if (!documentRecord || documentRecord.kind !== "PDF" || !anchor || isTextAnchor(anchor) || !selectedText.trim()) return [];
+    const color = highlightColors.find((item) => item.key === selectedColor) ?? highlightColors[0];
+    return [{ id: "active-selection-preview", color: color.color, anchor }];
+  }, [anchor, documentRecord, selectedColor, selectedText]);
+  const activePdfHighlights = useMemo(() => [...visiblePdfHighlights, ...previewPdfHighlight], [previewPdfHighlight, visiblePdfHighlights]);
   const visibleTextHighlights = useMemo<TextPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
     if (!record.anchor || !isTextAnchor(record.anchor)) return [];
     const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
     return [{ id: record.id, color: color.color, anchor: record.anchor }];
   }), [currentSnapshotRecords]);
 
+  const mergePdfMetadata = useCallback((metadata: PdfEmbeddedMetadata) => {
+    setDocumentRecord((current) => {
+      if (!current || current.kind !== "PDF") return current;
+      const fileTitle = titleFromFilename(current.filename);
+      const nextSource = {
+        ...current.source,
+        title: metadata.title && (!current.source.title.trim() || current.source.title === fileTitle) ? metadata.title : current.source.title,
+        author: metadata.author && !current.source.author.trim() ? metadata.author : current.source.author
+      };
+      const nextTitle = nextSource.title || current.title;
+      const nextDocument = { ...current, title: nextTitle, source: nextSource };
+      saveDocument(nextDocument);
+      return nextDocument;
+    });
+  }, []);
+
   const capturePdfAnchor = useCallback((nextAnchor: PdfSelectionAnchor) => {
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
-    setStatus("Captured selected text, context, and highlight rectangles from the PDF page.");
+    setStatus("Captured selected text, context, and highlight rectangles from the PDF page. Preview highlight is shown until saved.");
   }, []);
 
   const captureTextAnchor = useCallback((nextAnchor: TextSelectionAnchor) => {
@@ -304,11 +327,12 @@ export function ScriptoriumMilestoneOnePersisted() {
 
   async function registerSource(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    event.currentTarget.value = "";
     if (!file) return;
 
     const kind = fileKind(file);
     if (!kind) {
-      setStatus("This gate accepts PDF, TXT, Markdown, and DOCX files only.");
+      setStatus("This workspace accepts PDF, TXT, Markdown, and DOCX files only.");
       return;
     }
 
@@ -317,7 +341,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     const textReimportDocument = kind !== "PDF" && isText(documentRecord) && documentRecord.kind === kind && documentRecord.server?.documentId ? documentRecord : null;
     const isTextReimport = Boolean(textReimportDocument);
     const documentId = textReimportDocument ? textReimportDocument.id : localId("doc");
-    const title = file.name.replace(/\.(pdf|txt|md|markdown|docx)$/i, "");
+    const title = titleFromFilename(file.name);
     let nextDocument: StoredDocument = textReimportDocument
       ? { ...textReimportDocument, title, filename: file.name, mediaType: mediaTypeFor(kind, file), size: file.size, source: { ...textReimportDocument.source, title: textReimportDocument.source.title || title }, pageMap: DEFAULT_PAGE_MAP }
       : { id: documentId, title, filename: file.name, kind, mediaType: mediaTypeFor(kind, file), size: file.size, source: { ...EMPTY_SOURCE, title }, pageMap: DEFAULT_PAGE_MAP };
@@ -338,19 +362,18 @@ export function ScriptoriumMilestoneOnePersisted() {
       try {
         const server = await persistPdfFile(file, nextDocument, bookPage(nextDocument.pageMap));
         nextDocument = { ...nextDocument, server };
-        setStatus("PDF registered locally, uploaded to server storage, and database metadata persisted.");
+        setStatus("PDF registered, uploaded, and database metadata persisted. Embedded metadata will prefill fields if available.");
       } catch {
         try {
           const server = await persistDocument(nextDocument, bookPage(nextDocument.pageMap));
           nextDocument = { ...nextDocument, server };
-          setStatus("PDF registered locally and document metadata persisted to the database. Server file storage is unavailable.");
+          setStatus("PDF registered locally and document metadata persisted. Server file storage is unavailable.");
         } catch {
           setStatus("PDF registered locally. Database persistence is unavailable in this environment.");
         }
       }
       setPdfUrl(URL.createObjectURL(file));
     } else {
-      if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
       setPdfUrl(null);
       if (kind === "DOCX") {
         setTextContent("");
@@ -378,7 +401,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   function updateDocument(nextDocument: StoredDocument) { setDocumentRecord(nextDocument); saveDocument(nextDocument); }
   function updateSource(field: keyof SourceRecord, value: string) { if (documentRecord) updateDocument({ ...documentRecord, title: field === "title" ? value : documentRecord.title, source: { ...documentRecord.source, [field]: value } }); }
   function updatePageMap(field: keyof PageMap, value: number) { if (documentRecord) updateDocument({ ...documentRecord, pageMap: { ...documentRecord.pageMap, [field]: Number.isFinite(value) ? value : 1 } }); }
-  function goToPage(page: number) { if (!documentRecord || documentRecord.kind !== "PDF") return; const upper = pageCount > 0 ? pageCount : page; setAnchor(undefined); updatePageMap("currentPdfPageIndex", Math.min(Math.max(page, 1), upper)); }
+  function goToPage(page: number) { if (!documentRecord || documentRecord.kind !== "PDF") return; const upper = pageCount > 0 ? pageCount : page; setAnchor(undefined); setSelectedText(""); updatePageMap("currentPdfPageIndex", Math.min(Math.max(page, 1), upper)); }
 
   async function saveSourceRecord() {
     if (!documentRecord) { setStatus("Register a document before saving CSL source metadata."); return; }
@@ -413,9 +436,11 @@ export function ScriptoriumMilestoneOnePersisted() {
       setStatus("Saved annotation locally. Database persistence is unavailable for this record.");
     }
 
-    const next = [record, ...annotations];
-    setAnnotations(next);
-    saveAnnotations(next);
+    setAnnotations((previous) => {
+      const next = [record, ...previous];
+      saveAnnotations(next);
+      return next;
+    });
     setSelectedText("");
     setAnchor(undefined);
     setNote("");
@@ -430,9 +455,9 @@ export function ScriptoriumMilestoneOnePersisted() {
     <section className="workflow" aria-label="Scriptorium scholarly ingestion workflow">
       <div className="workflowHeader">
         <div>
-          <p className="eyebrow">Current gate</p>
-          <h2>CSL source editor</h2>
-          <p>Register PDF, TXT, Markdown, or DOCX sources. The source metadata panel now saves a controlled CSL-compatible source record used by generated citations.</p>
+          <p className="eyebrow">Post-ledger QA workspace</p>
+          <h2>Scholarly source workspace</h2>
+          <p>Register PDF, TXT, Markdown, or DOCX sources; annotate passages; preserve locators; and verify citations, search, retrieval, and cited output.</p>
         </div>
         <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} /></label>
       </div>
@@ -460,7 +485,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         </aside>
         <section className="pdfPanel" aria-label="Document display">
           {isPdf(documentRecord) ? (
-            pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} highlights={visiblePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
+            pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
           ) : isText(documentRecord) ? (
             textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
           ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}

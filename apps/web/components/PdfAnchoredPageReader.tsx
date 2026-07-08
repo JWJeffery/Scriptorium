@@ -6,12 +6,18 @@ import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
 type PdfViewport = { width: number; height: number; transform: number[] };
+type PdfMetadata = { info?: Record<string, unknown>; metadata?: { get: (key: string) => string | null } | null };
 type PdfPage = {
   getViewport: (args: { scale: number }) => PdfViewport;
   getTextContent: () => Promise<{ items: unknown[] }>;
   render: (args: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<void> };
 };
-type PdfDocument = { numPages: number; getPage: (pageNumber: number) => Promise<PdfPage>; destroy: () => Promise<void> | void };
+type PdfDocument = {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PdfPage>;
+  getMetadata?: () => Promise<PdfMetadata>;
+  destroy: () => Promise<void> | void;
+};
 type TextItemLike = { str: string; transform: number[] };
 type TextRun = { index: number; text: string; left: number; top: number; fontSize: number };
 
@@ -24,6 +30,7 @@ export type PdfSelectionAnchor = {
   rects: PdfAnchorRect[];
 };
 export type PdfPageHighlight = { id: string; color: string; anchor: PdfSelectionAnchor };
+export type PdfEmbeddedMetadata = { title?: string; author?: string; keywords?: string; subject?: string };
 
 type Props = {
   fileUrl: string;
@@ -32,10 +39,25 @@ type Props = {
   onPageCountChange: (pageCount: number) => void;
   onSelectionCapture: (anchor: PdfSelectionAnchor) => void;
   onStatusChange: (status: string) => void;
+  onMetadataExtracted?: (metadata: PdfEmbeddedMetadata) => void;
 };
 
 function isTextItem(item: unknown): item is TextItemLike {
   return typeof item === "object" && item !== null && "str" in item && "transform" in item;
+}
+
+function cleanMetadataValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function embeddedMetadataFrom(pdfMetadata: PdfMetadata): PdfEmbeddedMetadata {
+  const info = pdfMetadata.info ?? {};
+  const metadata = pdfMetadata.metadata;
+  const title = cleanMetadataValue(info.Title) || cleanMetadataValue(metadata?.get("dc:title"));
+  const author = cleanMetadataValue(info.Author) || cleanMetadataValue(metadata?.get("dc:creator"));
+  const subject = cleanMetadataValue(info.Subject) || cleanMetadataValue(metadata?.get("dc:description"));
+  const keywords = cleanMetadataValue(info.Keywords) || cleanMetadataValue(metadata?.get("pdf:Keywords"));
+  return { title: title || undefined, author: author || undefined, subject: subject || undefined, keywords: keywords || undefined };
 }
 
 async function renderCanvas(page: PdfPage, canvas: HTMLCanvasElement, scale: number) {
@@ -86,7 +108,7 @@ function rectsFor(range: Range, frame: HTMLDivElement) {
   })).filter((rect) => rect.width > 0 && rect.height > 0);
 }
 
-export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange }: Props) {
+export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
@@ -107,6 +129,14 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
         documentRef.current = pdfDocument;
         onPageCountChange(pdfDocument.numPages);
         setDocumentLoadKey((value) => value + 1);
+        if (pdfDocument.getMetadata && onMetadataExtracted) {
+          try {
+            const metadata = embeddedMetadataFrom(await pdfDocument.getMetadata());
+            if (metadata.title || metadata.author || metadata.subject || metadata.keywords) onMetadataExtracted(metadata);
+          } catch {
+            // PDF metadata is optional and often malformed; ignore metadata failures.
+          }
+        }
         onStatusChange(`PDF.js loaded ${pdfDocument.numPages} page${pdfDocument.numPages === 1 ? "" : "s"}.`);
       } catch {
         onStatusChange("PDF.js could not load this PDF.");
@@ -116,7 +146,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     }
     loadDocument();
     return () => { cancelled = true; };
-  }, [fileUrl, onPageCountChange, onStatusChange]);
+  }, [fileUrl, onMetadataExtracted, onPageCountChange, onStatusChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +158,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
       try {
         const safePageNumber = Math.min(Math.max(pageNumber, 1), pdfDocument.numPages);
         const page = await pdfDocument.getPage(safePageNumber);
-        const scale = 1.35;
+        const scale = 1;
         const viewport = await renderCanvas(page, canvas, scale);
         const runs = await buildTextRuns(page, scale);
         if (cancelled) return;
@@ -153,8 +183,9 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     if (!selection || selection.rangeCount === 0 || !selectedText || !frame || !textLayer) return;
     const range = selection.getRangeAt(0);
     if (!textLayer.contains(range.commonAncestorContainer)) return;
-    onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects: rectsFor(range, frame) });
-    onStatusChange("Captured selected text and anchor rectangles from the PDF.js text layer.");
+    const rects = rectsFor(range, frame);
+    onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
+    onStatusChange(`Captured selected text and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from the PDF.js text layer.`);
   }
 
   return (
