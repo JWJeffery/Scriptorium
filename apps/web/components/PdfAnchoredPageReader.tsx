@@ -186,6 +186,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     const range = selection.getRangeAt(0);
     if (!textLayer.contains(range.commonAncestorContainer)) return;
     const rects = rectsFor(range, frame);
+    selection.removeAllRanges();
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
     onStatusChange(`Captured selected text and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from the PDF.js text layer.`);
   }
