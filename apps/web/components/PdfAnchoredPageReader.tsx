@@ -18,8 +18,8 @@ type PdfDocument = {
   getMetadata?: () => Promise<PdfMetadata>;
   destroy: () => Promise<void> | void;
 };
-type TextItemLike = { str: string; transform: number[] };
-type TextRun = { index: number; text: string; left: number; top: number; fontSize: number };
+type TextItemLike = { str: string; transform: number[]; width?: number; height?: number };
+type TextRun = { index: number; text: string; left: number; top: number; fontSize: number; width?: number };
 
 export type PdfAnchorRect = { left: number; top: number; width: number; height: number };
 export type PdfSelectionAnchor = {
@@ -78,12 +78,14 @@ async function buildTextRuns(page: PdfPage, scale: number) {
   return textContent.items.filter(isTextItem).map((item, index) => {
     const transform = pdfjsLib.Util.transform(viewport.transform, item.transform as number[]);
     const fontSize = Math.max(Math.hypot(transform[2], transform[3]), 8);
+    const width = typeof item.width === "number" ? item.width * scale : undefined;
     return {
       index,
       text: String(item.str),
       left: transform[4],
-      top: viewport.height - transform[5] - fontSize,
-      fontSize
+      top: transform[5] - fontSize,
+      fontSize,
+      width
     } satisfies TextRun;
   });
 }
@@ -202,7 +204,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
         </div>
         <div className="pdfTextLayer" aria-label="Selectable PDF text layer" ref={textLayerRef}>
           {textRuns.map((run) => (
-            <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize }}>
+            <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
               {run.text}
             </span>
           ))}
