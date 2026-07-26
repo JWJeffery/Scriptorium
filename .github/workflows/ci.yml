@@ -31,6 +31,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
+          # 22.6+ required: Milestone 14-18 verifiers use --experimental-strip-types
           node-version: 22
 
       - name: Install dependencies
@@ -71,6 +72,21 @@ jobs:
 
       - name: Verify Milestone 9 research threads
         run: node scripts/verify-milestone-9-research-threads.mjs
+
+      - name: Verify Milestone 14 expanded citation styles
+        run: node --experimental-strip-types scripts/verify-milestone-14-citation-styles.mjs
+
+      - name: Verify Milestone 15 citation regeneration
+        run: node --experimental-strip-types scripts/verify-milestone-15-citation-regeneration.mjs
+
+      - name: Verify Milestone 16 corpus export
+        run: node --experimental-strip-types scripts/verify-milestone-16-corpus-export.mjs
+
+      - name: Verify Milestone 17 OCR pipeline contract
+        run: node --experimental-strip-types scripts/verify-milestone-17-ocr-contract.mjs
+
+      - name: Verify Milestone 18 non-Latin script tokenization
+        run: node --experimental-strip-types scripts/verify-milestone-18-non-latin-tokenization.mjs
 
       - name: Typecheck web app
         id: typecheck

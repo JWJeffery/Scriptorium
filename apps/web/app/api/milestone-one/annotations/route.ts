@@ -58,6 +58,8 @@ export async function POST(request: NextRequest) {
       include: { tags: true }
     });
 
+    const source = await tx.source.findUniqueOrThrow({ where: { id: body.sourceId } });
+
     const citation = await tx.citation.create({
       data: {
         sourceId: body.sourceId,
@@ -65,7 +67,8 @@ export async function POST(request: NextRequest) {
         styleId: body.citationStyle,
         locatorType: body.locatorType ?? "page",
         locatorValue: body.locatorValue ?? null,
-        generatedText: body.citationText
+        generatedText: body.citationText,
+        sourceSnapshotUpdatedAt: source.updatedAt
       }
     });
 

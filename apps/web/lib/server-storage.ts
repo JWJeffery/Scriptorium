@@ -1,4 +1,4 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
@@ -132,4 +132,42 @@ export async function readStoredTextSnapshot(storageKey: string) {
 export async function deleteStoredPdfFile(storageKey: string) {
   const absolutePath = resolveStorageKey(storageKey);
   await unlink(absolutePath).catch(() => undefined);
+}
+
+export type StoredFileEntry = { storageKey: string; size: number; modifiedAt: string };
+
+/**
+ * Recursively list every file under the storage root, relative to it. This
+ * is the backbone of the corpus export manifest (Milestone 15): the
+ * database export covers metadata/annotations/citations, but the PDF
+ * originals and text snapshots live on disk, so a full backup needs both.
+ */
+export async function listStoredFiles(): Promise<StoredFileEntry[]> {
+  const root = getStorageRoot();
+  const entries: StoredFileEntry[] = [];
+
+  async function walk(relativeDir: string) {
+    const absoluteDir = resolveStorageKey(relativeDir);
+    let dirEntries;
+    try {
+      dirEntries = await readdir(absoluteDir, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+
+    for (const entry of dirEntries) {
+      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(relativePath);
+        continue;
+      }
+      const info = await stat(resolveStorageKey(relativePath));
+      entries.push({ storageKey: relativePath, size: info.size, modifiedAt: info.mtime.toISOString() });
+    }
+  }
+
+  await walk("");
+  entries.sort((a, b) => a.storageKey.localeCompare(b.storageKey));
+  return entries;
 }

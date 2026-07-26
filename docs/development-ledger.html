@@ -16,7 +16,7 @@
     .gate-grid { grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
     .box,.gate,.history-item { background:color-mix(in srgb,var(--panel) 88%,black); border:1px solid color-mix(in srgb,var(--line) 70%,transparent); border-radius:.75rem; padding:1rem; }
     .dot,.stamp { display:inline-block; width:1rem; height:1rem; border-radius:999px; margin-right:.5rem; vertical-align:-.1rem; }
-    .green,.status-green .stamp { background:var(--green); } .yellow { background:var(--yellow); } .red,.status-red .stamp { background:var(--red); }
+    .green,.status-green .stamp { background:var(--green); } .yellow,.status-yellow .stamp { background:var(--yellow); } .red,.status-red .stamp { background:var(--red); }
     .gate[data-active="true"] { outline:3px solid var(--yellow); box-shadow:0 0 0 4px rgba(226,189,67,.15); }
     .sequence, code { color:#f8d86a; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
     .active-pill { display:inline-block; margin-left:.5rem; padding:.1rem .45rem; border:1px solid var(--yellow); border-radius:999px; color:var(--yellow); font-size:.8rem; text-transform:uppercase; }
@@ -41,7 +41,7 @@
     <h2>Final integrated deliverable</h2>
     <p>A scholarly workspace for texts, locators, annotations, citations, threads, exact search, similarity retrieval, and cited final output.</p>
     <p class="rule"><strong>Workflow rule:</strong> One active gate at a time. Do not advance until the active gate is implemented, audited, CI-verified, and closed.</p>
-    <p><strong>All gates are green.</strong></p>
+    <p><strong>Gates 1–13 are green and closed.</strong> Gates 14–18 were added this session for citation-tooling, backup, OCR, and non-Latin-script gaps found in review; they are locally built and fixture-verified but not yet opened as GitHub issues/PRs or run through real CI — see each gate's audit-debt note. Gate 14 is the active gate.</p>
   </section>
 
   <section>
@@ -60,6 +60,11 @@
       <article class="gate status-green" data-ledger-id="exact-search" data-active="false"><div class="sequence">11</div><h3><span class="stamp"></span>Exact search</h3><p>Issue #22; PR #23; CI <code>28885643588</code>.</p></article>
       <article class="gate status-green" data-ledger-id="semantic-search" data-active="false"><div class="sequence">12</div><h3><span class="stamp"></span>Semantic search</h3><p>Issue #24; PR #25; CI <code>28888669168</code>.</p></article>
       <article class="gate status-green" data-ledger-id="grounded-answer-generation" data-active="false"><div class="sequence">13</div><h3><span class="stamp"></span>Grounded answer generation</h3><p>Issue #26; PR #27; CI <code>28893324439</code>.</p></article>
+      <article class="gate status-yellow" data-ledger-id="expanded-citation-styles" data-active="true"><div class="sequence">14</div><h3><span class="stamp"></span>Expanded citation styles + richer CSL item types<span class="active-pill">Active</span></h3><p>Turabian/APA/MLA/Harvard added; chapter/article/manuscript CSL types; RIS export. Locally fixture-verified, no issue/PR yet.</p></article>
+      <article class="gate status-yellow" data-ledger-id="citation-regeneration" data-active="false"><div class="sequence">15</div><h3><span class="stamp"></span>Citation regeneration</h3><p>Staleness tracking + supersession lineage so stale citations can be regenerated without silently rewriting history. Locally fixture-verified, no issue/PR yet.</p></article>
+      <article class="gate status-yellow" data-ledger-id="corpus-backup-export" data-active="false"><div class="sequence">16</div><h3><span class="stamp"></span>Corpus backup/export</h3><p>Full DB export plus an on-disk file manifest for PDFs/snapshots. Locally fixture-verified, no issue/PR yet.</p></article>
+      <article class="gate status-yellow" data-ledger-id="ocr-pipeline-contract" data-active="false"><div class="sequence">17</div><h3><span class="stamp"></span>OCR pipeline contract for scanned PDFs</h3><p>Scan detection + pluggable provider interface; no OCR engine bundled yet, by design. Locally fixture-verified, no issue/PR yet.</p></article>
+      <article class="gate status-yellow" data-ledger-id="non-latin-script-tokenization" data-active="false"><div class="sequence">18</div><h3><span class="stamp"></span>Non-Latin script tokenization fix</h3><p>Search/similarity tokenizer was ASCII-only and silently blind to Greek/Ge'ez/Syriac/Coptic text; now Unicode-aware. Locally fixture-verified, no issue/PR yet.</p></article>
     </div>
   </section>
 

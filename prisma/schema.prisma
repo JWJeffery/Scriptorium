@@ -161,19 +161,32 @@ model AnnotationTag {
 }
 
 model Citation {
-  id            String      @id @default(cuid())
-  sourceId      String
-  source        Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  annotationId  String?
-  annotation    Annotation? @relation(fields: [annotationId], references: [id], onDelete: SetNull)
-  styleId       String      @db.VarChar(128)
-  locale        String      @default("en-US") @db.VarChar(32)
-  locatorType   String      @default("page") @db.VarChar(64)
-  locatorValue  String?     @db.VarChar(255)
-  prefix        String?     @db.Text
-  suffix        String?     @db.Text
-  generatedText String      @db.LongText
-  createdAt     DateTime    @default(now())
+  id                      String      @id @default(cuid())
+  sourceId                String
+  source                  Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  annotationId            String?
+  annotation              Annotation? @relation(fields: [annotationId], references: [id], onDelete: SetNull)
+  styleId                 String      @db.VarChar(128)
+  locale                  String      @default("en-US") @db.VarChar(32)
+  locatorType             String      @default("page") @db.VarChar(64)
+  locatorValue            String?     @db.VarChar(255)
+  prefix                  String?     @db.Text
+  suffix                  String?     @db.Text
+  generatedText           String      @db.LongText
+  createdAt               DateTime    @default(now())
+  // Snapshot of Source.updatedAt at the moment this citation was generated.
+  // Staleness = sourceSnapshotUpdatedAt < source.updatedAt. Defaulting to
+  // now() for pre-existing rows is a deliberately conservative choice: it
+  // means citations generated before this field existed read as "possibly
+  // stale" rather than silently reading as fresh.
+  sourceSnapshotUpdatedAt DateTime    @default(now())
+  // Regeneration lineage. A regenerated citation is a NEW row that points
+  // back at the one it replaces, per ARCHITECTURE.md's regeneration rule:
+  // "offer regeneration rather than silently changing old research notes."
+  // The superseded row is left in place untouched.
+  supersedesCitationId    String?     @unique
+  supersedesCitation      Citation?   @relation("CitationRegeneration", fields: [supersedesCitationId], references: [id], onDelete: SetNull)
+  supersededBy            Citation?   @relation("CitationRegeneration")
 
   @@index([sourceId])
   @@index([annotationId])

@@ -8,14 +8,25 @@ function stem(token: string) {
     .replace(/(ing|ed|es|s)$/g, "");
 }
 
+// NOTE: this previously split on /[^a-z0-9]+/, which only recognizes ASCII
+// Latin letters and digits. Any text in Greek, Ge'ez/Ethiopic, Syriac, Coptic,
+// or other non-Latin scripts common in patristic/liturgical sources contains
+// no characters matching that class, so it tokenized to nothing and was
+// invisible to search and similarity scoring. \p{L}\p{N} matches letters and
+// numbers in any Unicode script; NFKD + combining-mark strip still removes
+// accents where the script has them (Latin, Greek, etc.).
+function isStemmableAscii(token: string) {
+  return /^[a-z0-9]+$/.test(token);
+}
+
 export function tokenizeForSimilarity(text: string) {
   return text
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .split(/[^a-z0-9]+/)
-    .map(stem)
-    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((token) => (isStemmableAscii(token) ? stem(token) : token))
+    .filter((token) => token.length >= 2 && !STOP_WORDS.has(token));
 }
 
 export function weightedTermVector(text: string) {
