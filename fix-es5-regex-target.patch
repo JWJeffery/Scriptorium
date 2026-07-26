@@ -1,0 +1,30 @@
+diff --git a/apps/web/lib/local-similarity.ts b/apps/web/lib/local-similarity.ts
+index 40782d4..5113261 100644
+--- a/apps/web/lib/local-similarity.ts
++++ b/apps/web/lib/local-similarity.ts
+@@ -15,6 +15,16 @@ function stem(token: string) {
+ // invisible to search and similarity scoring. \p{L}\p{N} matches letters and
+ // numbers in any Unicode script; NFKD + combining-mark strip still removes
+ // accents where the script has them (Latin, Greek, etc.).
++//
++// This project's tsconfig targets es5, and TypeScript rejects the `u` flag
++// on a regex *literal* below es6/es2018 (TS1501) even though the runtime
++// (Node, any current browser) executes it correctly regardless of
++// compilation target — the target only constrains what syntax TS lets you
++// author, not what the JS engine can run. Building the same pattern via the
++// RegExp constructor from a string sidesteps the literal-only static check
++// while producing the identical regex at runtime.
++const NON_WORD_SPLIT = new RegExp("[^\\p{L}\\p{N}]+", "u");
++
+ function isStemmableAscii(token: string) {
+   return /^[a-z0-9]+$/.test(token);
+ }
+@@ -24,7 +34,7 @@ export function tokenizeForSimilarity(text: string) {
+     .toLowerCase()
+     .normalize("NFKD")
+     .replace(/[\u0300-\u036f]/g, "")
+-    .split(/[^\p{L}\p{N}]+/u)
++    .split(NON_WORD_SPLIT)
+     .map((token) => (isStemmableAscii(token) ? stem(token) : token))
+     .filter((token) => token.length >= 2 && !STOP_WORDS.has(token));
+ }
