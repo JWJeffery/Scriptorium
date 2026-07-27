@@ -1,0 +1,13 @@
+diff --git a/apps/web/app/api/milestone-fifteen/corpus-export/route.ts b/apps/web/app/api/milestone-fifteen/corpus-export/route.ts
+index 4d1e406..c893da8 100644
+--- a/apps/web/app/api/milestone-fifteen/corpus-export/route.ts
++++ b/apps/web/app/api/milestone-fifteen/corpus-export/route.ts
+@@ -5,7 +5,7 @@ import { listStoredFiles } from "../../../../lib/server-storage";
+ export const runtime = "nodejs";
+ export const dynamic = "force-dynamic";
+ 
+-export const CORPUS_EXPORT_SCHEMA_VERSION = 1;
++const CORPUS_EXPORT_SCHEMA_VERSION = 1;
+ 
+ /**
+  * Exports the full scholarly record set as one JSON bundle: documents,

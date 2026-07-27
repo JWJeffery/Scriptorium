@@ -5,7 +5,7 @@ import { listStoredFiles } from "../../../../lib/server-storage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export const CORPUS_EXPORT_SCHEMA_VERSION = 1;
+const CORPUS_EXPORT_SCHEMA_VERSION = 1;
 
 /**
  * Exports the full scholarly record set as one JSON bundle: documents,
