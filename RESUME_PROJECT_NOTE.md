@@ -149,6 +149,25 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   that's the thing to revisit — Tesseract's Node core-selection (`getCore.js`) auto-detects
   SIMD support and doesn't expose a way to override it through the public `createWorker`
   API, so a real fix would mean patching around that, not just passing an option.
+- **Real bug shipped and then caught by Josh: the OCR feature broke the build entirely.**
+  This repo had no `next.config.js`/`.mjs` at all before now. Without `serverExternalPackages`
+  telling webpack to leave native/binary packages alone, webpack tried to parse
+  `@napi-rs/canvas`'s platform `.node` binary as JavaScript and failed outright with
+  `Module parse failed: Unexpected character` - a hard build error, not a runtime one, so
+  it broke `next dev` immediately on Josh's next pull. Added `apps/web/next.config.mjs`
+  with `serverExternalPackages: ["@napi-rs/canvas", "tesseract.js", "tesseract.js-core"]`.
+  **Root cause of the miss:** the sandbox testing that validated the OCR pipeline ran raw
+  `.ts` fixture scripts directly via `node --experimental-strip-types`, which proved the
+  rendering/recognition *logic* was correct but never went through Next.js's webpack
+  bundler at all - the one thing that would have caught this. Confirmed the fix by actually
+  reproducing the build error in the sandbox first (`next build`, real failure), then
+  confirming `next build` compiles clean past that stage with the config added. A live
+  `next dev` request-level test was attempted but the background process got reaped by
+  the sandbox's job control before it could be hit - `next build` and `next dev` share the
+  same webpack module-resolution path for externals, so this is still solid evidence, but
+  it's a build-time proof, not a request-level one. **Lesson for future sessions building
+  anything with native/WASM dependencies: run it through the actual Next.js build, not just
+  raw Node scripts, before calling it verified.**
 - The first OCR run in any environment downloads Tesseract's English language data
   (~15MB) into the working directory by default (`eng.traineddata`) — added
   `*.traineddata` to `.gitignore` so this can't get committed by accident.
