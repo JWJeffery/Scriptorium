@@ -453,3 +453,191 @@ h2 {
     max-height: none;
   }
 }
+
+.toolsPanel {
+  margin-top: 18px;
+  padding: 22px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: 0 10px 30px rgb(33 31 27 / 7%);
+}
+
+.toolsPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+
+.toolsPanelHeader p:not(.eyebrow) {
+  max-width: 740px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.toolsCurrentDoc {
+  display: grid;
+  gap: 4px;
+  min-width: 240px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+  text-align: right;
+}
+
+.toolsCurrentDoc span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.toolsTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.toolsTab {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 16px;
+  background: #fff;
+  color: var(--accent-strong);
+}
+
+.toolsTab.active {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+}
+
+.toolsFormLayout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.toolsForm {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.toolsSidebarNote {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.toolsStatusLine {
+  position: static;
+  margin: 0;
+}
+
+.toolsHint {
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.92rem;
+}
+
+.toolsResultsStack {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.toolsResultRow {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.toolsResultRow p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.toolsResultRow small {
+  color: var(--muted);
+}
+
+.toolsResultRowHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.toolsResultRowActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.toolsBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.toolsBadgeStale {
+  background: #f4e2d8;
+  color: #8a4b25;
+}
+
+.toolsBadgeFresh {
+  background: #e2ecdf;
+  color: #35643f;
+}
+
+.toolsCountsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.toolsCountCard {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+  text-align: center;
+}
+
+.toolsCountCard strong {
+  font-size: 1.6rem;
+  color: var(--accent-strong);
+}
+
+.toolsCountCard span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 900px) {
+  .toolsFormLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .toolsPanelHeader {
+    flex-direction: column;
+  }
+
+  .toolsCurrentDoc {
+    text-align: left;
+  }
+}

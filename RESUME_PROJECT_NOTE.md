@@ -105,9 +105,14 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
 
 ## Outstanding work
 
-- **No UI exists for gates 14–17.** All four are real, callable API routes with zero screens
-  — `ScriptoriumMilestoneOnePersisted.tsx` (the only real UI component in the app) doesn't
-  import or call any of them. This is the natural next body of work.
+- **Gates 14–17 now have a first UI**, added as `components/ScholarlyToolsPanel.tsx` and
+  rendered below `ScriptoriumMilestoneOnePersisted` on the home page. Four tabs: expanded
+  CSL source editor, citation regeneration/staleness, corpus export (JSON download), OCR
+  scan detection. It reads the current document/source id out of the same
+  `scriptorium.currentDocument` localStorage key the main workflow already writes
+  (read-only) and also accepts manual id entry, so it works standalone. This is functional
+  but not yet visually polished or user-tested by Josh — treat it as a first pass, not a
+  finished screen. Typechecked clean against the routes' actual request/response shapes.
 - **Decided (Josh): "pushed directly to main + real CI green" is sufficient evidence going
   forward.** Gates 14–18 will not be retrofitted with per-gate issues/PRs. This is now the
   standing convention for future gates too — don't reopen the question next session.

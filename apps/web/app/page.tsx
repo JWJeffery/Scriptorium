@@ -1,4 +1,5 @@
 import { ScriptoriumMilestoneOnePersisted } from "../components/ScriptoriumMilestoneOnePersisted";
+import { ScholarlyToolsPanel } from "../components/ScholarlyToolsPanel";
 
 export default function HomePage() {
   return (
@@ -8,6 +9,7 @@ export default function HomePage() {
         <h1>Scholarly reading, annotation, citation, and research memory.</h1>
       </header>
       <ScriptoriumMilestoneOnePersisted />
+      <ScholarlyToolsPanel />
     </main>
   );
 }

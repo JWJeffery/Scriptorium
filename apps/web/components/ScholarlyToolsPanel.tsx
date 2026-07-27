@@ -1,0 +1,578 @@
+"use client";
+
+import { FormEvent, useEffect, useState } from "react";
+
+// This panel gives gates 14-17 their first screens. Until now they were
+// real, callable API routes with zero UI (see RESUME_PROJECT_NOTE.md,
+// "Outstanding work"). Nothing here touches ScriptoriumMilestoneOnePersisted
+// or its routes - this is purely additive.
+//
+// Gate 14  -> /api/milestone-fourteen/csl-source-editor  (expanded CSL record)
+//          -> /api/milestone-fourteen/citation-regenerate (also gate 15's staleness/lineage)
+// Gate 16  -> /api/milestone-fifteen/corpus-export        (folder name predates gate renumbering)
+// Gate 17  -> /api/milestone-sixteen/ocr-status            (folder name predates gate renumbering)
+
+const DOCUMENT_KEY = "scriptorium.currentDocument";
+
+type CurrentDocumentRef = { documentId?: string; sourceId?: string; title?: string };
+
+function readCurrentDocumentRef(): CurrentDocumentRef {
+  try {
+    const raw = localStorage.getItem(DOCUMENT_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as { title?: string; server?: { documentId?: string; sourceId?: string } };
+    return { documentId: parsed.server?.documentId, sourceId: parsed.server?.sourceId, title: parsed.title };
+  } catch {
+    return {};
+  }
+}
+
+type ToolsTab = "source-editor" | "regeneration" | "export" | "ocr";
+
+const TABS: { key: ToolsTab; label: string }[] = [
+  { key: "source-editor", label: "Expanded citation source" },
+  { key: "regeneration", label: "Citation regeneration" },
+  { key: "export", label: "Corpus export" },
+  { key: "ocr", label: "OCR scan detection" }
+];
+
+export function ScholarlyToolsPanel() {
+  const [tab, setTab] = useState<ToolsTab>("source-editor");
+  const [currentRef, setCurrentRef] = useState<CurrentDocumentRef>({});
+
+  useEffect(() => {
+    setCurrentRef(readCurrentDocumentRef());
+  }, [tab]);
+
+  return (
+    <section className="toolsPanel" aria-label="Scholarly tools: gates 14 through 17">
+      <div className="toolsPanelHeader">
+        <div>
+          <p className="eyebrow">Gates 14&ndash;17</p>
+          <h2>Scholarly tools</h2>
+          <p>
+            Expanded citation records, staleness-aware regeneration, full corpus backup, and scanned-PDF detection.
+            These routes existed with no screen until now.
+          </p>
+        </div>
+        {currentRef.title ? (
+          <div className="toolsCurrentDoc">
+            <span>Current registered source</span>
+            <strong>{currentRef.title}</strong>
+          </div>
+        ) : (
+          <div className="toolsCurrentDoc">
+            <span>No document registered in this browser yet</span>
+            <strong>Register one above, or enter ids by hand below.</strong>
+          </div>
+        )}
+      </div>
+      <div className="toolsTabs" role="tablist">
+        {TABS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.key}
+            className={tab === item.key ? "toolsTab active" : "toolsTab"}
+            onClick={() => setTab(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="toolsSection">
+        {tab === "source-editor" ? <CslSourceEditorSection currentRef={currentRef} /> : null}
+        {tab === "regeneration" ? <CitationRegenerationSection currentRef={currentRef} /> : null}
+        {tab === "export" ? <CorpusExportSection /> : null}
+        {tab === "ocr" ? <OcrStatusSection currentRef={currentRef} /> : null}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gate 14: expanded CSL source editor
+// ---------------------------------------------------------------------------
+
+const SOURCE_TYPES = [
+  { value: "book", label: "Book" },
+  { value: "chapter", label: "Chapter" },
+  { value: "article-journal", label: "Journal article" },
+  { value: "manuscript", label: "Manuscript" }
+];
+
+type SourceEditorFormState = {
+  sourceId: string;
+  type: string;
+  title: string;
+  author: string;
+  editor: string;
+  translator: string;
+  containerTitle: string;
+  place: string;
+  publisher: string;
+  volume: string;
+  edition: string;
+  year: string;
+};
+
+const EMPTY_SOURCE_FORM: SourceEditorFormState = {
+  sourceId: "",
+  type: "book",
+  title: "",
+  author: "",
+  editor: "",
+  translator: "",
+  containerTitle: "",
+  place: "",
+  publisher: "",
+  volume: "",
+  edition: "",
+  year: ""
+};
+
+function CslSourceEditorSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
+  const [form, setForm] = useState<SourceEditorFormState>(EMPTY_SOURCE_FORM);
+  const [status, setStatus] = useState("Fill in the fields this source actually needs and save.");
+  const [savedShortTitle, setSavedShortTitle] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (currentRef.sourceId) setForm((previous) => ({ ...previous, sourceId: currentRef.sourceId ?? "" }));
+  }, [currentRef.sourceId]);
+
+  function update<K extends keyof SourceEditorFormState>(key: K, value: SourceEditorFormState[K]) {
+    setForm((previous) => ({ ...previous, [key]: value }));
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!form.sourceId.trim()) {
+      setStatus("A source id is required. Register a document above first, or paste a source id below.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Saving expanded source record...");
+    try {
+      const response = await fetch("/api/milestone-fourteen/csl-source-editor", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      const body = (await response.json()) as { source?: { shortTitle?: string }; error?: string };
+      if (!response.ok) {
+        setStatus(body.error ?? "Save failed.");
+        setSavedShortTitle(null);
+        return;
+      }
+      setSavedShortTitle(body.source?.shortTitle ?? form.title);
+      setStatus("Saved. This source's CSL record now carries the fuller item shape (editor, translator, container, volume, edition).");
+    } catch {
+      setStatus("Save failed - the server did not respond.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="toolsFormLayout">
+      <form className="toolsForm" onSubmit={handleSubmit}>
+        <label>
+          Source id
+          <input value={form.sourceId} onChange={(event) => update("sourceId", event.target.value)} placeholder="Filled automatically from the registered document above" />
+        </label>
+        <label>
+          Source type
+          <select value={form.type} onChange={(event) => update("type", event.target.value)}>
+            {SOURCE_TYPES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Title
+          <input value={form.title} onChange={(event) => update("title", event.target.value)} />
+        </label>
+        <div className="twoColumnInputs">
+          <label>
+            Author
+            <input value={form.author} onChange={(event) => update("author", event.target.value)} />
+          </label>
+          <label>
+            Editor
+            <input value={form.editor} onChange={(event) => update("editor", event.target.value)} placeholder="For edited volumes" />
+          </label>
+        </div>
+        <div className="twoColumnInputs">
+          <label>
+            Translator
+            <input value={form.translator} onChange={(event) => update("translator", event.target.value)} />
+          </label>
+          <label>
+            Container title
+            <input value={form.containerTitle} onChange={(event) => update("containerTitle", event.target.value)} placeholder="Journal or larger work" />
+          </label>
+        </div>
+        <div className="twoColumnInputs">
+          <label>
+            Place
+            <input value={form.place} onChange={(event) => update("place", event.target.value)} />
+          </label>
+          <label>
+            Publisher
+            <input value={form.publisher} onChange={(event) => update("publisher", event.target.value)} />
+          </label>
+        </div>
+        <div className="twoColumnInputs">
+          <label>
+            Volume
+            <input value={form.volume} onChange={(event) => update("volume", event.target.value)} />
+          </label>
+          <label>
+            Edition
+            <input value={form.edition} onChange={(event) => update("edition", event.target.value)} />
+          </label>
+        </div>
+        <label>
+          Year
+          <input value={form.year} onChange={(event) => update("year", event.target.value)} />
+        </label>
+        <button className="primaryButton" type="submit" disabled={busy}>
+          Save expanded source record
+        </button>
+      </form>
+      <div className="toolsSidebarNote">
+        <p className="statusLine toolsStatusLine">{status}</p>
+        {savedShortTitle ? (
+          <div className="generatedCitation">
+            <span>Saved short title</span>
+            <p>{savedShortTitle}</p>
+          </div>
+        ) : null}
+        <p className="toolsHint">
+          The original book-only editor at Milestone 6 is untouched. This form writes to the same Source row but accepts
+          chapters, journal articles, and manuscripts, with editor/translator/container/volume/edition fields.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gate 15: citation regeneration + staleness
+// ---------------------------------------------------------------------------
+
+type RegenerationResult = {
+  citationId: string;
+  sourceId: string;
+  annotationId: string;
+  styleId: string;
+  stale: boolean;
+  generatedText: string;
+  sourceUpdatedAt: string;
+  citationSnapshotAt: string;
+};
+
+function CitationRegenerationSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
+  const [documentId, setDocumentId] = useState(currentRef.documentId ?? "");
+  const [results, setResults] = useState<RegenerationResult[]>([]);
+  const [status, setStatus] = useState("Look up this document's live citations to see which ones are stale.");
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentRef.documentId) setDocumentId(currentRef.documentId);
+  }, [currentRef.documentId]);
+
+  async function lookUp() {
+    if (!documentId.trim()) {
+      setStatus("Enter a document id (or register a document above) first.");
+      return;
+    }
+    setStatus("Checking citation staleness...");
+    try {
+      const response = await fetch(`/api/milestone-fourteen/citation-regenerate?documentId=${encodeURIComponent(documentId.trim())}`);
+      const body = (await response.json()) as { count?: number; staleCount?: number; results?: RegenerationResult[]; error?: string };
+      if (!response.ok) {
+        setStatus(body.error ?? "Lookup failed.");
+        setResults([]);
+        return;
+      }
+      setResults(body.results ?? []);
+      setStatus(`${body.count ?? 0} live citation(s) found, ${body.staleCount ?? 0} stale.`);
+    } catch {
+      setStatus("Lookup failed - the server did not respond.");
+    }
+  }
+
+  async function regenerate(citationId: string, force: boolean) {
+    setBusyId(citationId);
+    try {
+      const response = await fetch("/api/milestone-fourteen/citation-regenerate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ citationId, force })
+      });
+      const body = (await response.json()) as { regenerated?: boolean; reason?: string; citation?: RegenerationResult; error?: string };
+      if (!response.ok) {
+        setStatus(body.error ?? "Regeneration failed.");
+        return;
+      }
+      if (!body.regenerated) {
+        setStatus(body.reason ?? "Citation is not stale; nothing to regenerate.");
+        return;
+      }
+      setStatus("Regenerated. Re-checking the list...");
+      await lookUp();
+    } catch {
+      setStatus("Regeneration failed - the server did not respond.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="toolsFormLayout">
+      <div className="toolsForm">
+        <label>
+          Document id
+          <input value={documentId} onChange={(event) => setDocumentId(event.target.value)} placeholder="Filled automatically from the registered document above" />
+        </label>
+        <button className="primaryButton" type="button" onClick={lookUp}>
+          Check citations
+        </button>
+        <p className="statusLine toolsStatusLine">{status}</p>
+      </div>
+      <div className="toolsResultsStack">
+        {results.length === 0 ? (
+          <p className="emptyAnnotationState">No citations checked yet.</p>
+        ) : (
+          results.map((result) => (
+            <article className="toolsResultRow" key={result.citationId}>
+              <div className="toolsResultRowHeader">
+                <span className={result.stale ? "toolsBadge toolsBadgeStale" : "toolsBadge toolsBadgeFresh"}>
+                  {result.stale ? "Stale" : "Current"}
+                </span>
+                <strong>{result.styleId}</strong>
+              </div>
+              <p className="recordCitation">{result.generatedText}</p>
+              <small>
+                Source last updated {new Date(result.sourceUpdatedAt).toLocaleString()} &middot; citation snapshot{" "}
+                {new Date(result.citationSnapshotAt).toLocaleString()}
+              </small>
+              <div className="toolsResultRowActions">
+                <button className="secondaryButton" type="button" disabled={busyId === result.citationId} onClick={() => regenerate(result.citationId, false)}>
+                  Regenerate if stale
+                </button>
+                <button className="secondaryButton" type="button" disabled={busyId === result.citationId} onClick={() => regenerate(result.citationId, true)}>
+                  Force regenerate
+                </button>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gate 16 (folder milestone-fifteen): corpus export
+// ---------------------------------------------------------------------------
+
+type CorpusCounts = {
+  documents: number;
+  sources: number;
+  annotations: number;
+  citations: number;
+  threads: number;
+  storedFiles: number;
+};
+
+function CorpusExportSection() {
+  const [status, setStatus] = useState("Exports the full scholarly record set as one JSON bundle you can save.");
+  const [counts, setCounts] = useState<CorpusCounts | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function runExport() {
+    setBusy(true);
+    setStatus("Building export...");
+    try {
+      const response = await fetch("/api/milestone-fifteen/corpus-export");
+      if (!response.ok) {
+        setStatus("Export failed.");
+        return;
+      }
+      const body = (await response.json()) as { counts: CorpusCounts; exportedAt: string; [key: string]: unknown };
+      setCounts(body.counts);
+      const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `scriptorium-corpus-export-${body.exportedAt.replace(/[:.]/g, "-")}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setStatus("Export downloaded. Note: this covers database records only, not PDF/text file bytes - see storedFiles below for the file manifest to back up separately.");
+    } catch {
+      setStatus("Export failed - the server did not respond.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="toolsFormLayout">
+      <div className="toolsForm">
+        <p>Downloads documents, versions, page maps, text spans, sources, annotations, citations (with regeneration lineage), and research threads as one JSON file.</p>
+        <button className="primaryButton" type="button" onClick={runExport} disabled={busy}>
+          Export full corpus
+        </button>
+        <p className="statusLine toolsStatusLine">{status}</p>
+      </div>
+      {counts ? (
+        <div className="toolsCountsGrid">
+          <div className="toolsCountCard">
+            <strong>{counts.documents}</strong>
+            <span>Documents</span>
+          </div>
+          <div className="toolsCountCard">
+            <strong>{counts.sources}</strong>
+            <span>Sources</span>
+          </div>
+          <div className="toolsCountCard">
+            <strong>{counts.annotations}</strong>
+            <span>Annotations</span>
+          </div>
+          <div className="toolsCountCard">
+            <strong>{counts.citations}</strong>
+            <span>Citations</span>
+          </div>
+          <div className="toolsCountCard">
+            <strong>{counts.threads}</strong>
+            <span>Research threads</span>
+          </div>
+          <div className="toolsCountCard">
+            <strong>{counts.storedFiles}</strong>
+            <span>Stored files</span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gate 17 (folder milestone-sixteen): OCR scan detection
+// ---------------------------------------------------------------------------
+
+type OcrResult = {
+  versionId: string;
+  documentId: string;
+  documentTitle: string;
+  extractionState: string;
+  pageCount: number;
+  extractedTextLength: number;
+  likelyScanned: boolean;
+  charsPerPage: number;
+  reason: string;
+};
+
+function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
+  const [documentId, setDocumentId] = useState(currentRef.documentId ?? "");
+  const [results, setResults] = useState<OcrResult[]>([]);
+  const [status, setStatus] = useState("Checks PDF versions for a likely missing text layer. Leave the id blank to check every PDF.");
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentRef.documentId) setDocumentId(currentRef.documentId);
+  }, [currentRef.documentId]);
+
+  async function lookUp() {
+    setStatus("Checking for scanned pages...");
+    try {
+      const query = documentId.trim() ? `?documentId=${encodeURIComponent(documentId.trim())}` : "";
+      const response = await fetch(`/api/milestone-sixteen/ocr-status${query}`);
+      const body = (await response.json()) as { count?: number; likelyScannedCount?: number; results?: OcrResult[]; error?: string };
+      if (!response.ok) {
+        setStatus(body.error ?? "Lookup failed.");
+        setResults([]);
+        return;
+      }
+      setResults(body.results ?? []);
+      setStatus(`${body.count ?? 0} PDF version(s) checked, ${body.likelyScannedCount ?? 0} likely scanned.`);
+    } catch {
+      setStatus("Lookup failed - the server did not respond.");
+    }
+  }
+
+  async function attemptOcr(versionId: string) {
+    setBusyId(versionId);
+    try {
+      const response = await fetch("/api/milestone-sixteen/ocr-status", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ versionId })
+      });
+      const body = (await response.json()) as { ocrRan?: boolean; error?: string };
+      if (response.status === 501) {
+        setStatus(body.error ?? "No OCR provider is configured yet. This confirms the detection pipeline works; a real OCR engine plugs in here later.");
+        return;
+      }
+      if (!response.ok) {
+        setStatus(body.error ?? "OCR attempt failed.");
+        return;
+      }
+      setStatus("OCR ran.");
+    } catch {
+      setStatus("OCR attempt failed - the server did not respond.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="toolsFormLayout">
+      <div className="toolsForm">
+        <label>
+          Document id (optional)
+          <input value={documentId} onChange={(event) => setDocumentId(event.target.value)} placeholder="Leave blank to check every PDF" />
+        </label>
+        <button className="primaryButton" type="button" onClick={lookUp}>
+          Check for scanned pages
+        </button>
+        <p className="statusLine toolsStatusLine">{status}</p>
+      </div>
+      <div className="toolsResultsStack">
+        {results.length === 0 ? (
+          <p className="emptyAnnotationState">No versions checked yet.</p>
+        ) : (
+          results.map((result) => (
+            <article className="toolsResultRow" key={result.versionId}>
+              <div className="toolsResultRowHeader">
+                <span className={result.likelyScanned ? "toolsBadge toolsBadgeStale" : "toolsBadge toolsBadgeFresh"}>
+                  {result.likelyScanned ? "Likely scanned" : "Text layer present"}
+                </span>
+                <strong>{result.documentTitle}</strong>
+              </div>
+              <p>{result.reason}</p>
+              <small>
+                {result.pageCount} page(s) &middot; {result.extractedTextLength} extracted character(s) &middot; extraction state {result.extractionState}
+              </small>
+              {result.likelyScanned ? (
+                <div className="toolsResultRowActions">
+                  <button className="secondaryButton" type="button" disabled={busyId === result.versionId} onClick={() => attemptOcr(result.versionId)}>
+                    Attempt OCR
+                  </button>
+                </div>
+              ) : null}
+            </article>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
