@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
 import { deleteStoredPdfFile, storePdfFile } from "../../../../lib/server-storage";
+import { extractPdfText } from "../../../../lib/pdf-text-extraction";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
   const baseBookPage = parsePositivePage(readText(formData, "baseBookPage"), 1);
   const currentPdfPageIndex = parsePositivePage(readText(formData, "currentPdfPageIndex"), 1);
   const bookPageLabel = readText(formData, "bookPageLabel") || String(baseBookPage + currentPdfPageIndex - basePdfPageIndex);
+  const pdfBytes = Buffer.from(await file.arrayBuffer());
   let storageKeyToClean: string | undefined;
 
   try {
@@ -89,12 +91,28 @@ export async function POST(request: NextRequest) {
         data: { storageKey: storedFile.storageKey }
       });
 
+      // Read whatever text layer the PDF genuinely has (not OCR - see
+      // lib/tesseract-ocr-provider.ts for that). Before this, PDF
+      // ingestion never persisted any extracted text server-side, which
+      // meant scan detection (Milestone 16/gate 17) always read 0
+      // characters and flagged every PDF as likely scanned, real text
+      // layer or not.
+      let extraction: { pages: { pageIndex: number; text: string }[]; totalTextLength: number } = { pages: [], totalTextLength: 0 };
+      let extractionState = "server-pdfjs-extraction-failed";
+      try {
+        extraction = await extractPdfText(pdfBytes);
+        extractionState = extraction.totalTextLength > 0 ? "server-pdfjs-text-layer" : "server-pdfjs-no-text-layer";
+      } catch {
+        // Leave the defaults above. A failed extraction shouldn't fail the
+        // whole upload - the document/file are still valid without it.
+      }
+
       const version = await tx.documentVersion.create({
         data: {
           documentId: document.id,
           snapshotKind: "PDF_RENDERING",
           snapshotKey: storedFile.storageKey,
-          extractionState: "browser-local-pdfjs"
+          extractionState
         }
       });
 
@@ -117,8 +135,26 @@ export async function POST(request: NextRequest) {
         }
       });
 
+      if (extraction.pages.length > 0) {
+        await tx.textSpan.createMany({
+          data: extraction.pages.map((page) => ({
+            versionId: version.id,
+            pageMapId: page.pageIndex === currentPdfPageIndex ? pageMap.id : null,
+            text: page.text,
+            anchor: { pdfPageIndex: page.pageIndex }
+          }))
+        });
+      }
+
       storageKeyToClean = undefined;
-      return { document: updatedDocument, version, source: sourceRecord, pageMap, storedFile };
+      return {
+        document: updatedDocument,
+        version,
+        source: sourceRecord,
+        pageMap,
+        storedFile,
+        extraction: { pageCount: extraction.pages.length, totalTextLength: extraction.totalTextLength }
+      };
     });
 
     return NextResponse.json(result, { status: 201 });

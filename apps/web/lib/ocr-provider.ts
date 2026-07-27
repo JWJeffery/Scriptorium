@@ -12,7 +12,11 @@
 // Calling the null provider is meant to fail loudly and explain why, not to
 // silently pretend OCR happened.
 
-export type OcrResult = { text: string; warnings: string[] };
+export type OcrResult = {
+  text: string;
+  warnings: string[];
+  pages?: { pageIndex: number; text: string; confidence: number }[];
+};
 
 export interface OcrProvider {
   readonly name: string;

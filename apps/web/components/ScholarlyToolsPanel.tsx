@@ -517,16 +517,24 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ versionId })
       });
-      const body = (await response.json()) as { ocrRan?: boolean; error?: string };
+      const body = (await response.json()) as {
+        ocrRan?: boolean;
+        error?: string;
+        pagesProcessed?: number;
+        totalCharactersExtracted?: number;
+        warnings?: string[];
+      };
       if (response.status === 501) {
         setStatus(body.error ?? "No OCR provider is configured yet. This confirms the detection pipeline works; a real OCR engine plugs in here later.");
         return;
       }
-      if (!response.ok) {
+      if (!response.ok || !body.ocrRan) {
         setStatus(body.error ?? "OCR attempt failed.");
         return;
       }
-      setStatus("OCR ran.");
+      const warningNote = body.warnings && body.warnings.length > 0 ? ` ${body.warnings.length} page(s) came back with low confidence - worth checking against the original scan.` : "";
+      setStatus(`OCR complete: ${body.pagesProcessed ?? 0} page(s), ${body.totalCharactersExtracted ?? 0} character(s) recognized.${warningNote} Re-checking...`);
+      await lookUp();
     } catch {
       setStatus("OCR attempt failed - the server did not respond.");
     } finally {

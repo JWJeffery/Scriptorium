@@ -113,6 +113,45 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   (read-only) and also accepts manual id entry, so it works standalone. This is functional
   but not yet visually polished or user-tested by Josh — treat it as a first pass, not a
   finished screen. Typechecked clean against the routes' actual request/response shapes.
+- **Real OCR is now wired in (was previously detection-only).** Two new lib modules:
+  `lib/pdf-text-extraction.ts` (reads a PDF's real embedded text layer via pdfjs-dist,
+  no rendering) and `lib/tesseract-ocr-provider.ts` (renders pages via pdfjs-dist +
+  `@napi-rs/canvas`, recognizes with Tesseract, English only per Josh's choice). Two new
+  dependencies: `tesseract.js`, `@napi-rs/canvas` — both ship prebuilt/WASM, no system
+  Cairo/Poppler needed, but `@napi-rs/canvas` is still a native package, worth keeping in
+  mind for the eventual Spaceship/cPanel deploy target.
+- **Found and fixed a real bug while building OCR:** PDF ingestion never persisted any
+  extracted text server-side — `TextSpan` rows were never created for PDFs, only for
+  TXT/MD/DOCX. That meant scan detection's `extractedTextLength` was always 0 and its
+  `pageCount` was always 1 (it was counting `PageMap` rows, not real PDF pages) for every
+  PDF ever registered, so it was flagging 100% of PDFs as "likely scanned" regardless of
+  whether they had a real text layer. Fixed in `api/milestone-one/files/route.ts`: ingestion
+  now calls `extractPdfText` and persists one `TextSpan` per page; `extractionState` is now
+  `server-pdfjs-text-layer` / `server-pdfjs-no-text-layer` / `server-pdfjs-extraction-failed`
+  instead of the uninformative `browser-local-pdfjs`. `ocr-status/route.ts` GET now derives
+  `pageCount` from `textSpans.length` (falls back to the old `pages.length` for documents
+  registered before this fix, so they read as less precise rather than wrong). **This means
+  documents registered before this patch will still show stale detection results until
+  re-registered** — there's no backfill migration for already-ingested PDFs.
+- OCR POST now actually runs Tesseract, deletes the version's old TextSpans, and writes
+  fresh ones from the recognized per-page text, updating `extractionState` to
+  `tesseract-js-eng-v1`. Low-confidence pages (<40%) come back as warnings in the API
+  response and are surfaced in the panel's status line.
+- **Validated locally in the sandbox** with synthetic fixture PDFs (one with a real text
+  layer, one image-only) built via a scratch `pdf-lib` script (not committed): text
+  extraction correctly distinguished the two, and the full render→Tesseract pipeline
+  produced 95% confidence with an exact text match once a sandbox-specific WASM SIMD
+  execution bug was worked around (`wasm-feature-detect` claimed SIMD support that then
+  failed at runtime — forcing the non-SIMD LSTM core fixed it). **This looked like a
+  container/emulation quirk specific to this sandbox, not a code bug, but hasn't been
+  confirmed working in Josh's actual Codespace yet.** If the exact error
+  `Aborted(missing function: _ZN9tesseract13DotProductSSEEPKfS1_i)` shows up there too,
+  that's the thing to revisit — Tesseract's Node core-selection (`getCore.js`) auto-detects
+  SIMD support and doesn't expose a way to override it through the public `createWorker`
+  API, so a real fix would mean patching around that, not just passing an option.
+- The first OCR run in any environment downloads Tesseract's English language data
+  (~15MB) into the working directory by default (`eng.traineddata`) — added
+  `*.traineddata` to `.gitignore` so this can't get committed by accident.
 - **Decided (Josh): "pushed directly to main + real CI green" is sufficient evidence going
   forward.** Gates 14–18 will not be retrofitted with per-gate issues/PRs. This is now the
   standing convention for future gates too — don't reopen the question next session.
