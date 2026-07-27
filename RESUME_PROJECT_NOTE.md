@@ -78,16 +78,16 @@ Gates 14–18 added this session, addressing gaps found during a full code-level
 
 | Gate | What | Status |
 |---|---|---|
-| 14 | Turabian/APA/MLA/Harvard citation styles; CSL records now model chapters/articles/manuscripts, not just books; RIS export/import added. New additive route `api/milestone-fourteen/csl-source-editor` — original Milestone 6 route deliberately left untouched. | yellow (audit debt) |
-| 15 | Citation regeneration — staleness tracking + supersession lineage, never mutates history. New Prisma columns + migration. | yellow (audit debt) |
-| 16 | Corpus backup/export — full DB export + on-disk file manifest. | yellow (audit debt) |
-| 17 | OCR pipeline contract — scan detection heuristic + pluggable provider interface. Explicitly no real OCR engine bundled. | yellow (audit debt) |
-| 18 | Real bug fix: search/similarity tokenizer was ASCII-only, silently blind to Greek/Ge'ez/Syriac/Coptic text. Fixed to Unicode-aware matching. | yellow (audit debt) |
+| 14 | Turabian/APA/MLA/Harvard citation styles; CSL records now model chapters/articles/manuscripts, not just books; RIS export/import added. New additive route `api/milestone-fourteen/csl-source-editor` — original Milestone 6 route deliberately left untouched. | green |
+| 15 | Citation regeneration — staleness tracking + supersession lineage, never mutates history. New Prisma columns + migration. | green |
+| 16 | Corpus backup/export — full DB export + on-disk file manifest. | green |
+| 17 | OCR pipeline contract — scan detection heuristic + pluggable provider interface. Explicitly no real OCR engine bundled. | green |
+| 18 | Real bug fix: search/similarity tokenizer was ASCII-only, silently blind to Greek/Ge'ez/Syriac/Coptic text. Fixed to Unicode-aware matching. | green |
 
-All five are marked **yellow, not green**, on purpose — real code, locally fixture-verified
-(and now real-CI-verified as of the fixes below), but not yet formalized as individual
-GitHub issues/PRs the way gates 1–13 were. That's Josh's call to make, not something to
-self-certify.
+All five are green with evidence pointing at real CI run 30228151197 (commit `25cba6c`) —
+not per-gate issues/PRs the way gates 1–13 were closed. That's a deliberate deviation this
+session, not an oversight; see "Outstanding work" for the open question about whether to
+retrofit issues/PRs for these five.
 
 **Commits pushed this session, in order, on `main`:**
 1. `5203785` — the main gates 14–18 commit (22 files)
@@ -96,24 +96,24 @@ self-certify.
 3. `cdbfd72` — actually applied the ES5-regex-target fix (pitfall #1 above)
 4. `25cba6c` — fixed the invalid Next.js route export (pitfall #2 above)
 
-**As of the end of this session:** commit `25cba6c` was just pushed. CI result not yet
-confirmed — check the Actions tab before assuming it's green. If it's still red, get the
-exact failing step and its log (screenshot or downloaded artifact) before guessing at fixes;
-both real bugs found this session were invisible from the annotations summary alone and
-needed the actual step log to diagnose.
+**As of the end of this session:** commit `25cba6c` came back **green** in real CI
+(Scriptorium CI #121, run 30228151197 — Typecheck and build + MySQL migration deploy both
+passed). Gates 14–18 have been flipped from `yellow` to `green` in
+`docs/development-ledger.json` accordingly, with evidence pointing at that real CI run
+rather than per-gate issues/PRs (this session pushed directly to `main` instead of the
+issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
 
 ## Outstanding work
 
 - **No UI exists for gates 14–17.** All four are real, callable API routes with zero screens
   — `ScriptoriumMilestoneOnePersisted.tsx` (the only real UI component in the app) doesn't
   import or call any of them. This is the natural next body of work.
-- Once CI is confirmed green on `25cba6c`, gates 14–18 should be flipped from `yellow` to
-  `green` in `docs/development-ledger.json` (and `docs/development-ledger.html` kept in
-  sync) — run `node scripts/verify-development-ledger.mjs` after editing to catch mistakes.
 - Consider whether to retroactively open GitHub issues/PRs for gates 14–18 to match the
   project's existing evidence convention (Issue #/PR #/CI run per gate), or to treat "pushed
-  directly to main + real CI green" as sufficient evidence going forward — Josh's call.
+  directly to main + real CI green" as sufficient evidence going forward — Josh's call. The
+  ledger currently records the latter.
 - The commit history for this session is messier than gates 1–13's (a stray patch-file
-  commit, two follow-up fix commits instead of one clean commit). Not worth rewriting
-  history over, but worth keeping in mind as a "how not to do it" example for future
-  patch-apply sessions.
+  commit, two follow-up fix commits instead of one clean commit, and a second stray
+  patch-file commit when this very note was added). Not worth rewriting history over, but
+  worth keeping in mind as a "how not to do it" example for future patch-apply sessions —
+  and worth double-checking whether the stray `.patch` files actually got cleaned up.
