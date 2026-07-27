@@ -114,8 +114,18 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
 - A **second** stray patch file (`fix-corpus-export-route-shape.patch`) was found still
   tracked in the repo root after this note was first written — it had been committed
   alongside the real fix in `25cba6c` instead of being deleted once applied. Removed in
-  commit `864944d`. The lesson from last session's "messier than gates 1–13" admission
-  wasn't fully learned the first time; this was the second cleanup pass, not the first.
-  **Standing rule going forward: delete the `.patch` file in the same commit as the code
-  change it applies — never a follow-up commit — and check `git status` / `git ls-files`
-  for leftover `.patch` files before ending any session.**
+  commit `864944d`.
+- **A third instance happened immediately after that cleanup, in the very commit that
+  delivered the cleanup.** The patch file (`scriptorium-cleanup.patch`) that carried the
+  gate-14–18-adjacent fixes landed in the working directory when Josh downloaded it, and
+  the copy-paste command sequence handed to him was `git apply <file> && git add -A &&
+  git commit ...` — which stages the patch file itself along with the real changes,
+  because it's sitting in the working tree at `git add -A` time. Writing "delete the patch
+  file in the same commit" into this note doesn't fix anything, because Josh doesn't read
+  this note — Claude does, at the *start* of a session. The instruction has to be in the
+  command sequence Claude hands Josh, every time, not in prose here.
+  **Fixed convention going forward: every copy-paste command block Claude gives Josh for
+  applying a patch must be `git apply <file>.patch && rm <file>.patch && git add -A &&
+  git commit -m "..." && git push origin main` — the `rm` step is mandatory and non-optional,
+  not a suggestion Josh has to remember on his own.** Removed the stray file in commit
+  (see git log after this note is applied).
