@@ -111,8 +111,11 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   scan detection. It reads the current document/source id out of the same
   `scriptorium.currentDocument` localStorage key the main workflow already writes
   (read-only) and also accepts manual id entry, so it works standalone. This is functional
-  but not yet visually polished or user-tested by Josh — treat it as a first pass, not a
-  finished screen. Typechecked clean against the routes' actual request/response shapes.
+  but not yet visually polished. The OCR scan-detection tab specifically went through an
+  extensive real debugging session with Josh (stale dev-server processes, missing Prisma
+  client, MySQL not running, and the pdfjs-dist worker-file bug documented below) - the fix
+  for the last of those is in this patch but not yet confirmed working by Josh. The other
+  three tabs (source editor, citation regeneration, corpus export) remain untested by him.
 - **Real OCR is now wired in (was previously detection-only).** Two new lib modules:
   `lib/pdf-text-extraction.ts` (reads a PDF's real embedded text layer via pdfjs-dist,
   no rendering) and `lib/tesseract-ocr-provider.ts` (renders pages via pdfjs-dist +
@@ -185,6 +188,29 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   prebuilds enabled (devcontainer prebuild caching could be serving a stale snapshotted
   `node_modules`/`.next` state that survives a normal in-session `rm -rf`) - that's outside
   what a code patch can fix and would need investigating directly in his Codespace settings.**
+- **The actual OCR rendering bug, found and fixed by reproducing it for real.** Once the
+  `.node` build error and stale-process/stale-DB issues above were cleared, a genuinely
+  different error surfaced: `Setting up fake worker failed: Cannot find module
+  '.../vendor-chunks/pdf.worker.mjs'`. This is a pdfjs-dist + webpack issue, not related to
+  the native binary problem. pdfjs-dist needs a separate `pdf.worker.mjs` file at runtime;
+  by default it resolves that file relative to wherever webpack physically places pdf.mjs's
+  *bundled output* (`.next/server/vendor-chunks/`), which never contains a copy of the
+  worker file. First attempt at a fix - manually overriding `GlobalWorkerOptions.workerSrc`
+  via `require.resolve` - did not work and was reverted: webpack statically intercepts
+  `require.resolve()` calls even through `createRequire`, rewriting them into its own
+  internal module IDs instead of real file paths (confirmed with debug logging before
+  abandoning it). **Real fix: added `"pdfjs-dist"` to `serverExternalPackages` in
+  `next.config.mjs`** (same mechanism already used for `@napi-rs/canvas`/`tesseract.js`) -
+  this stops webpack from touching pdfjs-dist at all, so its own internal relative-path
+  logic runs against its real, unmodified location in `node_modules`, where the worker file
+  genuinely sits. No manual path hacking needed once that's in place.
+  **This was verified by actually reproducing the failure**: built a throwaway API route,
+  hit it through a real running dev server via HTTP (not a raw Node script, which is what
+  let the earlier `.node` bug ship unverified in the first place), confirmed the exact same
+  error, applied the fix, confirmed it resolved through the same route, and confirmed a full
+  production `next build` also compiles clean. This is the pattern to repeat for any future
+  bug in this dependency chain: reproduce through a real request to a real dev server before
+  believing a fix, not through an isolated script.
 - The first OCR run in any environment downloads Tesseract's English language data
   (~15MB) into the working directory by default (`eng.traineddata`) — added
   `*.traineddata` to `.gitignore` so this can't get committed by accident.
