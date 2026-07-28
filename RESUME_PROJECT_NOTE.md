@@ -195,21 +195,44 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   the native binary problem. pdfjs-dist needs a separate `pdf.worker.mjs` file at runtime;
   by default it resolves that file relative to wherever webpack physically places pdf.mjs's
   *bundled output* (`.next/server/vendor-chunks/`), which never contains a copy of the
-  worker file. First attempt at a fix - manually overriding `GlobalWorkerOptions.workerSrc`
-  via `require.resolve` - did not work and was reverted: webpack statically intercepts
-  `require.resolve()` calls even through `createRequire`, rewriting them into its own
-  internal module IDs instead of real file paths (confirmed with debug logging before
-  abandoning it). **Real fix: added `"pdfjs-dist"` to `serverExternalPackages` in
-  `next.config.mjs`** (same mechanism already used for `@napi-rs/canvas`/`tesseract.js`) -
-  this stops webpack from touching pdfjs-dist at all, so its own internal relative-path
-  logic runs against its real, unmodified location in `node_modules`, where the worker file
-  genuinely sits. No manual path hacking needed once that's in place.
-  **This was verified by actually reproducing the failure**: built a throwaway API route,
-  hit it through a real running dev server via HTTP (not a raw Node script, which is what
-  let the earlier `.node` bug ship unverified in the first place), confirmed the exact same
-  error, applied the fix, confirmed it resolved through the same route, and confirmed a full
-  production `next build` also compiles clean. This is the pattern to repeat for any future
-  bug in this dependency chain: reproduce through a real request to a real dev server before
+  worker file.
+
+  Two failed attempts before the real fix, both worth recording so they aren't retried:
+  1. Manually overriding `GlobalWorkerOptions.workerSrc` via `require.resolve` -
+     webpack statically intercepts `require.resolve()` calls even through `createRequire`,
+     rewriting them into its own internal module IDs instead of real file paths (confirmed
+     with debug logging).
+  2. **Adding `"pdfjs-dist"` to `serverExternalPackages`** - this actually did fix the OCR
+     render path, verified through a real dev-server request. But it broke something else:
+     `components/PdfAnchoredPageReader.tsx` (the existing, pre-OCR client-side PDF reader)
+     sets `pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(..., import.meta.url)`, the
+     normal webpack pattern for client-bundled worker assets - and that requires pdfjs-dist
+     to be bundled normally, not externalized. `serverExternalPackages` externalizes a
+     package for *all* server-side compilation, including the server-side reference pass
+     Next.js does for "use client" components as part of building the RSC boundary - not
+     just the OCR API routes. Josh caught this immediately (`Module not found: ESM packages
+     (pdfjs-dist/build/pdf.worker.min.mjs) need to be imported`, on the homepage, from
+     `PdfAnchoredPageReader.tsx`). Reverted.
+
+  **Actual fix, found in pdfjs-dist's own source**: `PDFWorker._setupFakeWorkerGlobal`
+  checks `globalThis.pdfjsWorker?.WorkerMessageHandler` *before* ever attempting the dynamic
+  `import(workerSrc)` that fails. Pre-populating that global by directly, statically
+  importing `pdfjs-dist/legacy/build/pdf.worker.mjs` (a normal import, not a
+  dynamically-constructed path pdfjs itself uses `webpackIgnore` on - so webpack bundles it
+  correctly without any special handling needed) and assigning it to
+  `globalThis.pdfjsWorker` makes pdfjs skip the broken import path entirely. This is
+  pdfjs-dist's own intended Node.js integration point, not a workaround. Implemented as
+  `lib/pdfjs-worker-setup.ts`, imported for its side effect at the top of both
+  `pdf-text-extraction.ts` and `tesseract-ocr-provider.ts` - never import it from
+  client-side code. `next.config.mjs`'s `serverExternalPackages` no longer includes
+  `pdfjs-dist`.
+  **Verified this time by testing both paths together**, not just the one that broke last
+  time: hit a throwaway OCR-render test route (confirmed working, same PNG byte count as
+  every earlier successful render) *and* the homepage (confirmed loading clean, no
+  `PdfAnchoredPageReader.tsx` error) in the same session, both through a real dev server via
+  HTTP. Also confirmed a full production `next build` compiles clean. This is the pattern to
+  repeat for any future bug in this dependency chain: reproduce through a real request to a
+  real dev server before
   believing a fix, not through an isolated script.
 - The first OCR run in any environment downloads Tesseract's English language data
   (~15MB) into the working directory by default (`eng.traineddata`) — added

@@ -10,6 +10,7 @@
 // compare against. It does not render pages or run OCR - see
 // lib/tesseract-ocr-provider.ts for that.
 
+import "./pdfjs-worker-setup";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 export type PdfPageText = { pageIndex: number; text: string };

@@ -10,6 +10,7 @@
 // the specific script before trusting it the way the Unicode-aware search
 // fix (gate 18) already trusts Greek/Ge'ez/Syriac/Coptic text.
 
+import "./pdfjs-worker-setup";
 import { createWorker } from "tesseract.js";
 import { createCanvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
