@@ -7,6 +7,10 @@ import { readStoredPdfFile } from "../../../../lib/server-storage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const RUNNING_STATE = "tesseract-js-eng-v1-running";
+const FAILED_STATE = "tesseract-js-eng-v1-failed";
+const NO_TEXT_STATE = "tesseract-js-eng-v1-no-text";
+
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -22,11 +26,10 @@ export async function GET(request: NextRequest) {
 
   const results = versions.map((version) => {
     const extractedTextLength = version.textSpans.reduce((sum, span) => sum + span.text.length, 0);
-    // Real page count now comes from the per-page TextSpans that ingestion
-    // (and OCR) create - one row per PDF page. Falls back to the PageMap
-    // count (historically just 1, the page registered at ingest time) for
-    // documents registered before that existed, so old records don't
-    // divide-by-a-wrong-number instead of just being less precise.
+    // Real page count comes from the per-page TextSpans that ingestion (and
+    // OCR) create - one row per PDF page. Falls back to the PageMap count
+    // (historically just 1, the page registered at ingest time) for
+    // documents registered before that existed.
     const pageCount = version.textSpans.length || version.pages.length || 1;
     const detection = detectLikelyScanned({ extractedTextLength, pageCount });
 
@@ -35,6 +38,7 @@ export async function GET(request: NextRequest) {
       documentId: version.documentId,
       documentTitle: version.document.title,
       extractionState: version.extractionState,
+      ocrRunning: version.extractionState === RUNNING_STATE,
       pageCount,
       extractedTextLength,
       ...detection
@@ -48,6 +52,13 @@ export async function GET(request: NextRequest) {
   });
 }
 
+// OCR (page rendering + Tesseract recognition, plus a first-run language-data
+// download) can easily take longer than a reverse proxy's request timeout -
+// this is exactly what caused 504 Gateway Timeout errors in a GitHub
+// Codespace even though the work itself was completing fine. So this route
+// no longer does OCR inline: it marks the version as running, kicks the real
+// work off in the background without awaiting it, and returns immediately.
+// The panel polls GET above until extractionState moves off "-running".
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as { versionId?: string };
   const versionId = clean(body.versionId);
@@ -66,23 +77,30 @@ export async function POST(request: NextRequest) {
       { status: 422 }
     );
   }
-
-  let pdfBytes: Buffer;
-  try {
-    pdfBytes = await readStoredPdfFile(version.snapshotKey);
-  } catch {
-    return NextResponse.json({ error: "The stored PDF file could not be read from disk." }, { status: 500 });
+  if (version.extractionState === RUNNING_STATE) {
+    return NextResponse.json({ ocrStarted: false, error: "OCR is already running for this version." }, { status: 409 });
   }
 
+  await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: RUNNING_STATE } });
+
+  runOcrInBackground(versionId, version.snapshotKey).catch((error) => {
+    // eslint-disable-next-line no-console
+    console.error(`Background OCR failed for version ${versionId}:`, error);
+  });
+
+  return NextResponse.json({ ocrStarted: true, versionId, extractionState: RUNNING_STATE }, { status: 202 });
+}
+
+async function runOcrInBackground(versionId: string, snapshotKey: string) {
   try {
-    const result = await tesseractOcrProvider.extractText({ pdfBytes, documentId: version.documentId });
+    const pdfBytes = await readStoredPdfFile(snapshotKey);
+    const result = await tesseractOcrProvider.extractText({ pdfBytes, documentId: versionId });
 
     if (result.pages && result.pages.length > 0) {
       // OCR results replace whatever TextSpans this version had (from
       // ingestion's empty-text spans on a real scan). This intentionally
       // loses the one pageMapId link ingestion set on the registered page -
-      // that link isn't used for anything OCR-relevant, and re-deriving it
-      // here isn't worth the complexity for a first pass.
+      // that link isn't used for anything OCR-relevant.
       await prisma.$transaction([
         prisma.textSpan.deleteMany({ where: { versionId } }),
         prisma.textSpan.createMany({
@@ -97,18 +115,13 @@ export async function POST(request: NextRequest) {
           data: { extractionState: tesseractOcrProvider.name }
         })
       ]);
+    } else {
+      await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: NO_TEXT_STATE } });
     }
-
-    return NextResponse.json({
-      ocrRan: true,
-      pagesProcessed: result.pages?.length ?? 0,
-      totalCharactersExtracted: result.text.length,
-      warnings: result.warnings
-    });
   } catch (error) {
-    return NextResponse.json(
-      { ocrRan: false, error: error instanceof Error ? error.message : "OCR failed." },
-      { status: 500 }
-    );
+    await prisma.documentVersion
+      .update({ where: { id: versionId }, data: { extractionState: FAILED_STATE } })
+      .catch(() => {});
+    throw error;
   }
 }

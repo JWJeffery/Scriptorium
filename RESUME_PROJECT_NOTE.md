@@ -234,6 +234,26 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   repeat for any future bug in this dependency chain: reproduce through a real request to a
   real dev server before
   believing a fix, not through an isolated script.
+- **After that fix landed, OCR still appeared to do "nothing" when clicked.** Turned out to
+  be a real, different problem: the browser console showed two `504 Gateway Timeout` errors
+  on the OCR POST request. The request was reaching the server fine - real OCR (page
+  rendering + Tesseract recognition + a first-run ~15MB language-data download) was just
+  taking longer than GitHub Codespaces' port-forwarding proxy allows a single HTTP request
+  to stay open. Not something fixable by waiting longer or optimizing OCR speed - the
+  request needed to stop blocking on the work at all.
+  **Fix: made OCR asynchronous.** `ocr-status` POST now marks the version's
+  `extractionState` as `tesseract-js-eng-v1-running` and returns immediately (202) without
+  waiting for OCR to finish; the actual `tesseractOcrProvider.extractText` call runs
+  unawaited in the background. GET now includes an `ocrRunning` flag per version. The panel
+  polls GET every 4 seconds after starting OCR (capped at ~2.5 minutes) instead of waiting
+  on one long-lived request, and auto-resumes polling on load if a previous OCR run is still
+  in progress (covers a page refresh mid-run). New extraction states:
+  `tesseract-js-eng-v1-running`, `tesseract-js-eng-v1-failed`, `tesseract-js-eng-v1-no-text`,
+  alongside the existing success state `tesseract-js-eng-v1`.
+  **Not yet confirmed by Josh against real MySQL + a real OCR run** - verified by typecheck
+  and a full `next build` only, since this sandbox has no way to run the database. The next
+  session (or Josh directly) should confirm an actual OCR run completes and the panel
+  reflects it correctly, not just that the code compiles.
 - The first OCR run in any environment downloads Tesseract's English language data
   (~15MB) into the working directory by default (`eng.traineddata`) — added
   `*.traineddata` to `.gitignore` so this can't get committed by accident.

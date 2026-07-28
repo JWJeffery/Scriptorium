@@ -474,6 +474,7 @@ type OcrResult = {
   documentId: string;
   documentTitle: string;
   extractionState: string;
+  ocrRunning: boolean;
   pageCount: number;
   extractedTextLength: number;
   likelyScanned: boolean;
@@ -503,6 +504,13 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
         return;
       }
       setResults(body.results ?? []);
+      const running = body.results?.find((result) => result.ocrRunning);
+      if (running) {
+        setStatus(`${body.count ?? 0} PDF version(s) checked, ${body.likelyScannedCount ?? 0} likely scanned. OCR is already running on "${running.documentTitle}" - resuming progress checks...`);
+        setBusyId(running.versionId);
+        await pollUntilDone(running.versionId);
+        return;
+      }
       setStatus(`${body.count ?? 0} PDF version(s) checked, ${body.likelyScannedCount ?? 0} likely scanned.`);
     } catch {
       setStatus("Lookup failed - the server did not respond.");
@@ -517,27 +525,57 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ versionId })
       });
-      const body = (await response.json()) as {
-        ocrRan?: boolean;
-        error?: string;
-        pagesProcessed?: number;
-        totalCharactersExtracted?: number;
-        warnings?: string[];
-      };
+      const body = (await response.json()) as { ocrStarted?: boolean; error?: string };
       if (response.status === 501) {
         setStatus(body.error ?? "No OCR provider is configured yet. This confirms the detection pipeline works; a real OCR engine plugs in here later.");
+        setBusyId(null);
         return;
       }
-      if (!response.ok || !body.ocrRan) {
+      if (!response.ok || !body.ocrStarted) {
         setStatus(body.error ?? "OCR attempt failed.");
+        setBusyId(null);
         return;
       }
-      const warningNote = body.warnings && body.warnings.length > 0 ? ` ${body.warnings.length} page(s) came back with low confidence - worth checking against the original scan.` : "";
-      setStatus(`OCR complete: ${body.pagesProcessed ?? 0} page(s), ${body.totalCharactersExtracted ?? 0} character(s) recognized.${warningNote} Re-checking...`);
-      await lookUp();
+      setStatus("OCR started. This can take a while - rendering the page, running recognition, and (the first time only) downloading language data. Checking progress...");
+      await pollUntilDone(versionId);
     } catch {
       setStatus("OCR attempt failed - the server did not respond.");
-    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function pollUntilDone(versionId: string, attempt = 0) {
+    const MAX_ATTEMPTS = 40; // ~2.5 minutes at 4s apart - generous for a first run downloading language data
+    try {
+      const query = documentId.trim() ? `?documentId=${encodeURIComponent(documentId.trim())}` : "";
+      const response = await fetch(`/api/milestone-sixteen/ocr-status${query}`);
+      const body = (await response.json()) as { results?: OcrResult[] };
+      const match = body.results?.find((result) => result.versionId === versionId);
+      setResults(body.results ?? []);
+
+      if (match?.ocrRunning) {
+        if (attempt >= MAX_ATTEMPTS) {
+          setStatus("OCR is still running after a while - it hasn't failed, just taking longer than expected. Click \"Check for scanned pages\" again in a bit to see if it finished.");
+          setBusyId(null);
+          return;
+        }
+        setStatus(`OCR still running (checked ${attempt + 1} time(s))...`);
+        setTimeout(() => {
+          pollUntilDone(versionId, attempt + 1);
+        }, 4000);
+        return;
+      }
+
+      if (match?.extractionState === "tesseract-js-eng-v1-failed") {
+        setStatus("OCR failed. Check the server terminal for the actual error.");
+      } else if (match && !match.likelyScanned) {
+        setStatus(`OCR complete. ${match.extractedTextLength} character(s) recognized.`);
+      } else {
+        setStatus("OCR finished running, but the page still doesn't have a usable text layer - it may be a poor-quality scan.");
+      }
+      setBusyId(null);
+    } catch {
+      setStatus("Lost track of OCR progress - the server did not respond. Click \"Check for scanned pages\" to see the current state.");
       setBusyId(null);
     }
   }
@@ -561,19 +599,28 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
           results.map((result) => (
             <article className="toolsResultRow" key={result.versionId}>
               <div className="toolsResultRowHeader">
-                <span className={result.likelyScanned ? "toolsBadge toolsBadgeStale" : "toolsBadge toolsBadgeFresh"}>
-                  {result.likelyScanned ? "Likely scanned" : "Text layer present"}
-                </span>
+                {result.ocrRunning ? (
+                  <span className="toolsBadge toolsBadgeStale">Running OCR&hellip;</span>
+                ) : (
+                  <span className={result.likelyScanned ? "toolsBadge toolsBadgeStale" : "toolsBadge toolsBadgeFresh"}>
+                    {result.likelyScanned ? "Likely scanned" : "Text layer present"}
+                  </span>
+                )}
                 <strong>{result.documentTitle}</strong>
               </div>
               <p>{result.reason}</p>
               <small>
                 {result.pageCount} page(s) &middot; {result.extractedTextLength} extracted character(s) &middot; extraction state {result.extractionState}
               </small>
-              {result.likelyScanned ? (
+              {result.likelyScanned || result.ocrRunning ? (
                 <div className="toolsResultRowActions">
-                  <button className="secondaryButton" type="button" disabled={busyId === result.versionId} onClick={() => attemptOcr(result.versionId)}>
-                    Attempt OCR
+                  <button
+                    className="secondaryButton"
+                    type="button"
+                    disabled={busyId === result.versionId || result.ocrRunning}
+                    onClick={() => attemptOcr(result.versionId)}
+                  >
+                    {result.ocrRunning ? "Running\u2026" : "Attempt OCR"}
                   </button>
                 </div>
               ) : null}
