@@ -168,6 +168,23 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   it's a build-time proof, not a request-level one. **Lesson for future sessions building
   anything with native/WASM dependencies: run it through the actual Next.js build, not just
   raw Node scripts, before calling it verified.**
+- **The next.config.mjs fix above did not resolve it for Josh, three separate times, including
+  after a fully clean `pkill next dev` + `rm -rf apps/web/.next` + `pnpm dev` restart.**
+  Every reproduction attempt in the sandbox succeeded, including a fully fresh
+  `rm -rf node_modules && pnpm install` matching what should have been an equivalent clean
+  state - never once reproduced Josh's failure. The one thing never tried on Josh's side
+  was clearing `node_modules` itself, only `.next` (Next's build cache) - if the native
+  `@napi-rs/canvas-linux-x64-gnu` package installed incompletely or got corrupted at some
+  point, that would produce exactly this symptom and wouldn't be fixed by clearing `.next`
+  at all. Added a second, independent layer of defense on top of `serverExternalPackages`:
+  an explicit webpack rule (`node-loader` package) that handles `.node` binary files by file
+  extension rather than relying on Next's package-name-based externalization matching every
+  possible platform-package name. Also broadened `serverExternalPackages` to list Darwin and
+  ARM platform variants of `@napi-rs/canvas`, not just the Linux x64 one seen in the error.
+  **If this still doesn't resolve it, the next thing to check is whether Josh's Codespace has
+  prebuilds enabled (devcontainer prebuild caching could be serving a stale snapshotted
+  `node_modules`/`.next` state that survives a normal in-session `rm -rf`) - that's outside
+  what a code patch can fix and would need investigating directly in his Codespace settings.**
 - The first OCR run in any environment downloads Tesseract's English language data
   (~15MB) into the working directory by default (`eng.traineddata`) — added
   `*.traineddata` to `.gitignore` so this can't get committed by accident.
