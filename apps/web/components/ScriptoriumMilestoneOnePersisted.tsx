@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { highlightColors } from "../lib/highlights";
-import { PdfAnchoredPageReader, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
+import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = "sbl-note" | "chicago-note";
@@ -228,6 +228,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [sourceSaveMessage, setSourceSaveMessage] = useState("");
   const [recentAnnotationId, setRecentAnnotationId] = useState<string | undefined>();
   const [authoritativePageText, setAuthoritativePageText] = useState<string | null>(null);
+  const [authoritativeWords, setAuthoritativeWords] = useState<PdfAuthoritativeWord[] | null>(null);
 
   useEffect(() => {
     const storedDocument = readDocument();
@@ -470,18 +471,24 @@ export function ScriptoriumMilestoneOnePersisted() {
     const versionId = documentRecord?.server?.versionId;
     if (!versionId || documentRecord?.kind !== "PDF") {
       setAuthoritativePageText(null);
+      setAuthoritativeWords(null);
       return;
     }
     let cancelled = false;
     fetch(`/api/milestone-sixteen/page-text?versionId=${encodeURIComponent(versionId)}&pdfPageIndex=${currentPage}`)
-      .then((response) => (response.ok ? response.json() : { text: null }))
-      .then((body: { text?: string | null }) => {
-        if (!cancelled) setAuthoritativePageText(body.text ?? null);
+      .then((response) => (response.ok ? response.json() : { text: null, words: null }))
+      .then((body: { text?: string | null; words?: PdfAuthoritativeWord[] | null }) => {
+        if (cancelled) return;
+        setAuthoritativePageText(body.text ?? null);
+        setAuthoritativeWords(body.words ?? null);
       })
       .catch(() => {
         // Best-effort only - most documents won't have extraction/OCR data
         // yet, and that's a normal, silent case, not an error to surface.
-        if (!cancelled) setAuthoritativePageText(null);
+        if (!cancelled) {
+          setAuthoritativePageText(null);
+          setAuthoritativeWords(null);
+        }
       });
     return () => { cancelled = true; };
   }, [documentRecord?.server?.versionId, documentRecord?.kind, currentPage]);
@@ -521,7 +528,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         </aside>
         <section className="pdfPanel" aria-label="Document display">
           {isPdf(documentRecord) ? (
-            pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
+            pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
           ) : isText(documentRecord) ? (
             textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
           ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}

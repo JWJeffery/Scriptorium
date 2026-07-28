@@ -338,3 +338,58 @@ Not yet confirmed against the live "NGUCA" page specifically - verified via `nex
 and reasoning through the code path only, since this sandbox has no MySQL to actually
 reproduce the original selection. Worth Josh re-selecting that exact spot to confirm the
 warning fires as intended.
+
+## Real fix for the corrupted text layer, not just a warning
+
+Following on from the manual-selection warning above: Josh pushed back on stopping at "warn
+when it's wrong" and asked to actually fix the text layer, or explain how rarely OCR text
+would even be around to check against (fair question - the corroboration warning only helps
+when a page needed OCR *and* still has a corrupted-but-selectable layer underneath, which
+won't be the common case). The better, more broadly useful fix: use real OCR data to
+*replace* the broken layer for pages OCR ran on, not just flag it after the fact.
+
+Tesseract can return word-level bounding boxes, not just a flat text blob - this wasn't
+being captured before. Confirmed in the sandbox (with the same non-SIMD-core diagnostic
+patch used earlier, reverted after): calling `worker.recognize(image, {}, { blocks: true })`
+instead of the bare call returns `data.blocks[].paragraphs[].lines[].words[]`, each with
+`{text, bbox: {x0,y0,x1,y1}, confidence}` in the *rendered* pixel space (RENDER_SCALE=2).
+Verified against the same synthetic fixture used throughout this session - real, accurate
+per-word positions, not estimated.
+
+Changes:
+- `lib/ocr-provider.ts`: added `OcrWord` type; `OcrResult.pages[].words` is now populated.
+- `lib/tesseract-ocr-provider.ts`: requests `{ blocks: true }`, flattens the block/paragraph/
+  line/word tree into a flat array per page, converts each bbox from RENDER_SCALE pixel
+  space back to scale=1 PDF page-space (divide by `RENDER_SCALE`) - that's the same
+  coordinate space the reader renders pages in client-side, so positions line up directly
+  with no further transform needed on the client.
+- `ocr-status/route.ts`: persists `words` inside each `TextSpan.anchor` JSON alongside the
+  existing `pdfPageIndex`/`ocr`/`confidence` fields.
+- `api/milestone-sixteen/page-text/route.ts`: now also returns `words` (null when a page's
+  TextSpan has none, e.g. plain extraction with no OCR).
+- `PdfAnchoredPageReader.tsx`: new `authoritativeWords` prop. When present and non-empty, it
+  *replaces* pdf.js's own `getTextContent()`-derived text layer for building the selectable
+  `.pdfTextRun` spans - real positioned OCR words instead of whatever pdf.js parsed from the
+  page's (possibly malformed) embedded fonts. pdf.js's own extraction remains the fallback
+  for pages nothing OCR'd (the normal case for a genuinely good PDF). The manual-selection
+  corroboration check from the previous fix is skipped when the OCR layer is active - it's
+  authoritative by construction there, and comparing against the separately-joined flat text
+  string risked a confusing false alarm rather than adding real safety.
+- `ScriptoriumMilestoneOnePersisted.tsx`: fetches and threads `authoritativeWords` through
+  the same effect that already fetches `authoritativePageText`.
+
+**Scope, stated honestly per Josh's actual question**: this only produces a *better*
+selectable layer for pages that were OCR'd - it can't create positions for a purely
+image-only page nobody has run OCR on yet, and doesn't help pages with a genuinely good
+existing pdf.js text layer (nothing to replace there). The real remaining gap for a corpus
+with many scanned pages is that a page with *zero* selectable text of any kind still can't
+be annotated by drag-selection at all - that's a separate feature (e.g. rectangle-region
+annotation over the rendered image, using OCR'd text as the underlying quote) that hasn't
+been built.
+
+Verified via `tsc --noEmit` (only the pre-existing Prisma-type cascade, unrelated) and a
+full production `next build`. Not yet confirmed live against the actual "NGUCA" page with
+real MySQL - the coordinate math and data flow are verified correct end-to-end in the
+sandbox with the synthetic fixture, but the real, decisive test is Josh re-selecting that
+same spot on "The Integrity of Anglicanism" and getting real, correct, positioned text
+instead of a warning.

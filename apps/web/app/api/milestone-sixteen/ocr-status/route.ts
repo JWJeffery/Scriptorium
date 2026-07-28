@@ -122,7 +122,7 @@ async function runOcrInBackground(versionId: string, snapshotKey: string) {
           data: result.pages.map((page) => ({
             versionId,
             text: page.text,
-            anchor: { pdfPageIndex: page.pageIndex, ocr: true, confidence: page.confidence }
+            anchor: { pdfPageIndex: page.pageIndex, ocr: true, confidence: page.confidence, words: page.words }
           }))
         }),
         prisma.documentVersion.update({

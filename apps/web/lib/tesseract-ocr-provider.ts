@@ -14,7 +14,7 @@ import "./pdfjs-worker-setup";
 import { createWorker } from "tesseract.js";
 import { createCanvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import type { OcrProvider, OcrResult } from "./ocr-provider";
+import type { OcrProvider, OcrResult, OcrWord } from "./ocr-provider";
 
 // Higher scale = sharper rendered page = better recognition, at the cost of
 // time and memory. 2x is a reasonable middle ground for a scanned book page.
@@ -33,7 +33,7 @@ export class TesseractOcrProvider implements OcrProvider {
     });
     const doc = await loadingTask.promise;
     const worker = await createWorker("eng");
-    const pages: { pageIndex: number; text: string; confidence: number }[] = [];
+    const pages: { pageIndex: number; text: string; confidence: number; words: OcrWord[] }[] = [];
     const warnings: string[] = [];
 
     try {
@@ -50,9 +50,35 @@ export class TesseractOcrProvider implements OcrProvider {
           await page.render({ canvasContext: context as unknown as CanvasRenderingContext2D, viewport }).promise;
 
           const pngBuffer = canvas.toBuffer("image/png");
-          const { data } = await worker.recognize(pngBuffer);
+          // blocks: true asks Tesseract for word-level bounding boxes, not
+          // just the flat recognized text - without this, blocks comes back
+          // null. The boxes are in the *rendered* pixel space (RENDER_SCALE),
+          // so they're converted back to scale=1 PDF page-space below - that
+          // matches the coordinate space the reader renders pages in, so the
+          // client can use these directly as a real, positioned, selectable
+          // text layer instead of trusting pdf.js's own (sometimes corrupted
+          // - see the NGUCA incident) text layer for pages OCR actually ran
+          // on.
+          const { data } = await worker.recognize(pngBuffer, {}, { blocks: true });
           const text = data.text.trim();
-          pages.push({ pageIndex, text, confidence: data.confidence });
+          const words: OcrWord[] = [];
+          for (const block of data.blocks ?? []) {
+            for (const paragraph of block.paragraphs) {
+              for (const line of paragraph.lines) {
+                for (const word of line.words) {
+                  words.push({
+                    text: word.text,
+                    left: word.bbox.x0 / RENDER_SCALE,
+                    top: word.bbox.y0 / RENDER_SCALE,
+                    width: (word.bbox.x1 - word.bbox.x0) / RENDER_SCALE,
+                    height: (word.bbox.y1 - word.bbox.y0) / RENDER_SCALE,
+                    confidence: word.confidence
+                  });
+                }
+              }
+            }
+          }
+          pages.push({ pageIndex, text, confidence: data.confidence, words });
 
           if (text && data.confidence < LOW_CONFIDENCE_THRESHOLD) {
             warnings.push(

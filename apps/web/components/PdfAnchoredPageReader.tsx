@@ -20,6 +20,7 @@ type PdfDocument = {
 };
 type TextItemLike = { str: string; transform: number[]; width?: number; height?: number };
 type TextRun = { index: number; text: string; left: number; top: number; fontSize: number; width?: number };
+export type PdfAuthoritativeWord = { text: string; left: number; top: number; width: number; height: number; confidence: number };
 
 export type PdfAnchorRect = { left: number; top: number; width: number; height: number };
 export type PdfSelectionAnchor = {
@@ -48,6 +49,13 @@ type Props = {
   // extraction/OCR has ever run for this document) - absence of this check
   // is not itself a signal that a capture is trustworthy.
   authoritativePageText?: string | null;
+  // Word-level positions from a real OCR pass on this page (same source
+  // route). When present, these *replace* pdf.js's own text layer for
+  // building the selectable spans - not just a warning after the fact, an
+  // actually-correct layer for pages OCR ran on. pdf.js's own extraction
+  // (buildTextRuns below) remains the fallback when this is absent, which
+  // is the normal case for a genuinely good, non-scanned PDF.
+  authoritativeWords?: PdfAuthoritativeWord[] | null;
 };
 
 function isTextItem(item: unknown): item is TextItemLike {
@@ -98,6 +106,17 @@ async function buildTextRuns(page: PdfPage, scale: number) {
   });
 }
 
+function runsFromWords(words: PdfAuthoritativeWord[]): TextRun[] {
+  return words.map((word, index) => ({
+    index,
+    text: word.text,
+    left: word.left,
+    top: word.top,
+    fontSize: Math.max(word.height, 8),
+    width: word.width
+  }));
+}
+
 function contextFor(textRuns: TextRun[], selectedText: string) {
   const pageText = textRuns.map((run) => run.text).join(" ").replace(/\s+/g, " ").trim();
   const start = pageText.indexOf(selectedText);
@@ -131,15 +150,27 @@ function rectsFor(range: Range, frame: HTMLDivElement) {
   })).filter((rect) => rect.width > 0 && rect.height > 0);
 }
 
-export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText }: Props) {
+export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const documentRef = useRef<PdfDocument | null>(null);
-  const [textRuns, setTextRuns] = useState<TextRun[]>([]);
+  const [pdfTextRuns, setPdfTextRuns] = useState<TextRun[]>([]);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [isLoading, setIsLoading] = useState(false);
   const [documentLoadKey, setDocumentLoadKey] = useState(0);
+
+  const usingOcrLayer = Boolean(authoritativeWords && authoritativeWords.length > 0);
+  const textRuns = usingOcrLayer ? runsFromWords(authoritativeWords!) : pdfTextRuns;
+
+  useEffect(() => {
+    if (usingOcrLayer) {
+      onStatusChange(`Using this page's real OCR text for selection instead of the PDF's own text layer (${authoritativeWords!.length} word${authoritativeWords!.length === 1 ? "" : "s"}).`);
+    }
+    // Only fire when the OCR layer actually becomes active for the current
+    // page - not on every unrelated status change elsewhere in the reader.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usingOcrLayer, pageNumber]);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,7 +217,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
         const runs = await buildTextRuns(page, scale);
         if (cancelled) return;
         setPageSize({ width: viewport.width, height: viewport.height });
-        setTextRuns(runs);
+        setPdfTextRuns(runs);
         onStatusChange(`Rendered PDF page ${safePageNumber} with selectable text layer.`);
       } catch {
         if (!cancelled) onStatusChange("Could not render this PDF page.");
@@ -210,7 +241,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     selection.removeAllRanges();
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
 
-    if (authoritativePageText && selectedText.length >= MIN_LENGTH_TO_CHECK) {
+    if (!usingOcrLayer && authoritativePageText && selectedText.length >= MIN_LENGTH_TO_CHECK) {
       const corroborated = normalizeForCompare(authoritativePageText).includes(normalizeForCompare(selectedText));
       if (!corroborated) {
         onStatusChange(
@@ -220,7 +251,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
       }
     }
 
-    onStatusChange(`Captured selected text and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from the PDF.js text layer.`);
+    onStatusChange(`Captured selected text and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from the ${usingOcrLayer ? "verified OCR" : "PDF.js"} text layer.`);
   }
 
   return (
