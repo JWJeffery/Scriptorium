@@ -227,6 +227,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [status, setStatus] = useState("Register a PDF, TXT, Markdown, or DOCX file to begin.");
   const [sourceSaveMessage, setSourceSaveMessage] = useState("");
   const [recentAnnotationId, setRecentAnnotationId] = useState<string | undefined>();
+  const [authoritativePageText, setAuthoritativePageText] = useState<string | null>(null);
 
   useEffect(() => {
     const storedDocument = readDocument();
@@ -465,6 +466,26 @@ export function ScriptoriumMilestoneOnePersisted() {
   const currentPage = documentRecord?.pageMap.currentPdfPageIndex ?? 1;
   const formatLabel = documentRecord ? formatFor(documentRecord.kind) : "PDF";
 
+  useEffect(() => {
+    const versionId = documentRecord?.server?.versionId;
+    if (!versionId || documentRecord?.kind !== "PDF") {
+      setAuthoritativePageText(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/milestone-sixteen/page-text?versionId=${encodeURIComponent(versionId)}&pdfPageIndex=${currentPage}`)
+      .then((response) => (response.ok ? response.json() : { text: null }))
+      .then((body: { text?: string | null }) => {
+        if (!cancelled) setAuthoritativePageText(body.text ?? null);
+      })
+      .catch(() => {
+        // Best-effort only - most documents won't have extraction/OCR data
+        // yet, and that's a normal, silent case, not an error to surface.
+        if (!cancelled) setAuthoritativePageText(null);
+      });
+    return () => { cancelled = true; };
+  }, [documentRecord?.server?.versionId, documentRecord?.kind, currentPage]);
+
   return (
     <section className="workflow" aria-label="Scriptorium scholarly ingestion workflow">
       <div className="workflowHeader">
@@ -500,7 +521,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         </aside>
         <section className="pdfPanel" aria-label="Document display">
           {isPdf(documentRecord) ? (
-            pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
+            pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
           ) : isText(documentRecord) ? (
             textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
           ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}

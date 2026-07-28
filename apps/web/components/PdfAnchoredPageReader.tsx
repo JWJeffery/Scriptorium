@@ -40,6 +40,14 @@ type Props = {
   onSelectionCapture: (anchor: PdfSelectionAnchor) => void;
   onStatusChange: (status: string) => void;
   onMetadataExtracted?: (metadata: PdfEmbeddedMetadata) => void;
+  // Independently-derived text for the current page (server extraction on
+  // ingest, or a real OCR pass) - see api/milestone-sixteen/page-text.
+  // When present, a captured selection that doesn't appear anywhere in it
+  // gets flagged as possibly corrupted rather than reported as a normal
+  // successful capture. Optional and silently skipped when absent (e.g. no
+  // extraction/OCR has ever run for this document) - absence of this check
+  // is not itself a signal that a capture is trustworthy.
+  authoritativePageText?: string | null;
 };
 
 function isTextItem(item: unknown): item is TextItemLike {
@@ -100,6 +108,19 @@ function contextFor(textRuns: TextRun[], selectedText: string) {
   };
 }
 
+function normalizeForCompare(value: string) {
+  // Case-insensitive, whitespace-collapsed, punctuation-light comparison -
+  // OCR and pdf.js text-layer extraction can legitimately disagree on
+  // exact punctuation/spacing for genuinely correct text, so this only
+  // needs to be loose enough to not false-flag real matches, not exact.
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// A selection this short (e.g. a single short word) is too easy to match
+// coincidentally against unrelated authoritative text to be a meaningful
+// check either way, so it's skipped rather than risking a false "verified".
+const MIN_LENGTH_TO_CHECK = 8;
+
 function rectsFor(range: Range, frame: HTMLDivElement) {
   const frameRect = frame.getBoundingClientRect();
   return Array.from(range.getClientRects()).map((rect) => ({
@@ -110,7 +131,7 @@ function rectsFor(range: Range, frame: HTMLDivElement) {
   })).filter((rect) => rect.width > 0 && rect.height > 0);
 }
 
-export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted }: Props) {
+export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
@@ -188,6 +209,17 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     const rects = rectsFor(range, frame);
     selection.removeAllRanges();
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
+
+    if (authoritativePageText && selectedText.length >= MIN_LENGTH_TO_CHECK) {
+      const corroborated = normalizeForCompare(authoritativePageText).includes(normalizeForCompare(selectedText));
+      if (!corroborated) {
+        onStatusChange(
+          `Captured "${selectedText.slice(0, 60)}${selectedText.length > 60 ? "\u2026" : ""}" - but this text does not appear in this page's independently extracted/OCR'd text. The source PDF's embedded text layer may be corrupted here (this happens with malformed fonts). Verify very carefully before saving, or consider that this capture may not reflect the real content of the page.`
+        );
+        return;
+      }
+    }
+
     onStatusChange(`Captured selected text and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from the PDF.js text layer.`);
   }
 

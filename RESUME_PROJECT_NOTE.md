@@ -301,3 +301,40 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   git commit -m "..." && git push origin main` — the `rm` step is mandatory and non-optional,
   not a suggestion Josh has to remember on his own.** Removed the stray file in commit
   (see git log after this note is applied).
+
+## Manual-selection corruption warning (reader data integrity)
+
+While confirming OCR worked on "The Integrity of Anglicanism", Josh selected text in the
+regular reader (not OCR) and captured "NGUCA" - garbled nonsense - as if it were a normal,
+trustworthy selection. Root cause: `PdfAnchoredPageReader.tsx`'s selectable text layer is
+built from `pdf.js`'s own `getTextContent()`, the same API used server-side for extraction.
+This specific PDF has malformed embedded fonts (the "getPathGenerator - ignoring character:
+Requesting object that isn't resolved yet" warnings that flooded the terminal throughout
+every OCR attempt this session are `pdf.js` failing to resolve glyphs on this exact file) -
+so the captured text wasn't fabricated by the app, it's genuinely what `pdf.js` parsed from
+a corrupted source. Not a logic bug in `captureSelection` itself.
+
+Fixed anyway, because nothing previously warned the person this could happen - a corrupted
+capture looked identical to a normal one. A pure character-level heuristic (vowel ratio,
+consonant-run length) was tried first and rejected: tested against "NGUCA" and it *missed*
+it (2 vowels in 5 letters reads as plausible), while false-flagging real English words like
+"strengths" (low vowel ratio is common and unremarkable in real text). Shipping an
+unreliable heuristic would have been worse than nothing.
+
+Real fix: added `api/milestone-sixteen/page-text` (`GET ?versionId=&pdfPageIndex=`), which
+returns the independently-derived text for that page - server extraction on ingest, or a
+real OCR pass, whichever exists - by matching `TextSpan.anchor.pdfPageIndex`.
+`ScriptoriumMilestoneOnePersisted.tsx` fetches this whenever the current PDF version or page
+changes and passes it into the reader as `authoritativePageText`. `captureSelection` now
+checks any selection ≥8 characters against it (case/punctuation-loose substring match) and,
+if it isn't found anywhere in the authoritative text, replaces the normal "Captured
+selected text..." success message with an explicit warning naming the likely cause and
+telling the person to verify carefully before saving - rather than silently proceeding as
+if nothing were wrong. Absence of authoritative text (most documents, since extraction/OCR
+data is new) means the check is silently skipped, not treated as a "verified" result -
+important not to invert that logic later.
+
+Not yet confirmed against the live "NGUCA" page specifically - verified via `next build`
+and reasoning through the code path only, since this sandbox has no MySQL to actually
+reproduce the original selection. Worth Josh re-selecting that exact spot to confirm the
+warning fires as intended.
