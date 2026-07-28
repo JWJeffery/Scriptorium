@@ -566,7 +566,9 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
         return;
       }
 
-      if (match?.extractionState === "tesseract-js-eng-v1-failed") {
+      if (match?.extractionState === "tesseract-js-eng-v1-timed-out") {
+        setStatus("OCR timed out after 3 minutes - most likely the language-data download stalled. You can try again; it should be faster now that a partial download may already be cached.");
+      } else if (match?.extractionState === "tesseract-js-eng-v1-failed") {
         setStatus("OCR failed. Check the server terminal for the actual error.");
       } else if (match && !match.likelyScanned) {
         setStatus(`OCR complete. ${match.extractedTextLength} character(s) recognized.`);

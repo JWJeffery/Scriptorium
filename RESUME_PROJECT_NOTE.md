@@ -250,10 +250,33 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   in progress (covers a page refresh mid-run). New extraction states:
   `tesseract-js-eng-v1-running`, `tesseract-js-eng-v1-failed`, `tesseract-js-eng-v1-no-text`,
   alongside the existing success state `tesseract-js-eng-v1`.
-  **Not yet confirmed by Josh against real MySQL + a real OCR run** - verified by typecheck
-  and a full `next build` only, since this sandbox has no way to run the database. The next
-  session (or Josh directly) should confirm an actual OCR run completes and the panel
-  reflects it correctly, not just that the code compiles.
+  **Confirmed by Josh, and it exposed two real gaps.** The async architecture itself worked -
+  no more 504s - but OCR sat in "running" for 25+ polls (~100+ seconds) with zero visible
+  progress: the terminal showed nothing but fast, empty polling `GET` requests, no sign the
+  actual Tesseract work (page render, recognition, first-run language-data download) was
+  progressing at all. Most likely cause: `tesseract.js`'s language-data fetch has no built-in
+  timeout, so a stalled/slow download hangs indefinitely rather than erroring.
+  This exposed a worse problem: **the version could get stuck in `-running` state forever**,
+  with no way to tell "slow" from "dead" from the outside - and the POST route was
+  explicitly *rejecting* retry attempts while that state was set (a 409 "already running"),
+  meaning a hang had no recovery path short of manually editing the database.
+  Two fixes: (1) added a hard 3-minute timeout (`BACKGROUND_TIMEOUT_MS`) around the
+  `extractText` call via `Promise.race`, with a distinct `tesseract-js-eng-v1-timed-out`
+  state and a clear message telling Josh to just try again. (2) Removed the 409 guard
+  entirely - since there's no real way to detect whether a "-running" version's background
+  task is actually still alive versus orphaned by a server restart, blocking retry on that
+  state was strictly worse than allowing a redundant concurrent run. Also had to guard
+  against a subtler bug: `Promise.race` doesn't cancel the underlying `extractText` call, so
+  if it settles *after* the timeout already fired, that orphaned promise could throw an
+  unhandled rejection later and crash the whole Node process - attached an inert `.catch(() =>
+  {})` directly to it to prevent that.
+  **Still not confirmed end-to-end**: whether OCR now actually completes within 3 minutes in
+  Josh's environment, or reliably hits the new timeout state instead, hasn't been observed
+  yet. If it keeps timing out, the language-data download itself is the next thing to
+  investigate directly - e.g. whether Codespaces' network is slow/restricted to whatever CDN
+  `tesseract.js` defaults to, in which case pointing `langPath` at a mirror this repo already
+  used successfully once for sandbox testing (`raw.githubusercontent.com/naptha/tessdata`)
+  might be the real fix, not just a longer timeout.
 - The first OCR run in any environment downloads Tesseract's English language data
   (~15MB) into the working directory by default (`eng.traineddata`) — added
   `*.traineddata` to `.gitignore` so this can't get committed by accident.

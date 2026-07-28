@@ -10,6 +10,12 @@ export const dynamic = "force-dynamic";
 const RUNNING_STATE = "tesseract-js-eng-v1-running";
 const FAILED_STATE = "tesseract-js-eng-v1-failed";
 const NO_TEXT_STATE = "tesseract-js-eng-v1-no-text";
+const TIMEOUT_STATE = "tesseract-js-eng-v1-timed-out";
+// Generous, but bounded: this exists specifically so a hung language-data
+// download or a stalled recognition step can't leave a version stuck in
+// "-running" forever with no way to tell the difference between "slow" and
+// "dead" from the outside.
+const BACKGROUND_TIMEOUT_MS = 3 * 60 * 1000;
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -77,9 +83,6 @@ export async function POST(request: NextRequest) {
       { status: 422 }
     );
   }
-  if (version.extractionState === RUNNING_STATE) {
-    return NextResponse.json({ ocrStarted: false, error: "OCR is already running for this version." }, { status: 409 });
-  }
 
   await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: RUNNING_STATE } });
 
@@ -94,7 +97,19 @@ export async function POST(request: NextRequest) {
 async function runOcrInBackground(versionId: string, snapshotKey: string) {
   try {
     const pdfBytes = await readStoredPdfFile(snapshotKey);
-    const result = await tesseractOcrProvider.extractText({ pdfBytes, documentId: versionId });
+    const extractPromise = tesseractOcrProvider.extractText({ pdfBytes, documentId: versionId });
+    // Promise.race doesn't cancel extractPromise - if it settles after the
+    // timeout has already fired below, this prevents an unhandled
+    // rejection (which can crash the whole Node process on a later
+    // failure) from an orphaned promise nobody else is watching.
+    extractPromise.catch(() => {});
+
+    const result = await Promise.race([
+      extractPromise,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("OCR timed out")), BACKGROUND_TIMEOUT_MS);
+      })
+    ]);
 
     if (result.pages && result.pages.length > 0) {
       // OCR results replace whatever TextSpans this version had (from
@@ -119,8 +134,9 @@ async function runOcrInBackground(versionId: string, snapshotKey: string) {
       await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: NO_TEXT_STATE } });
     }
   } catch (error) {
+    const timedOut = error instanceof Error && error.message === "OCR timed out";
     await prisma.documentVersion
-      .update({ where: { id: versionId }, data: { extractionState: FAILED_STATE } })
+      .update({ where: { id: versionId }, data: { extractionState: timedOut ? TIMEOUT_STATE : FAILED_STATE } })
       .catch(() => {});
     throw error;
   }
