@@ -416,3 +416,34 @@ affordance, not get re-gated behind detection status.
 button) haven't been confirmed to close the loop on the live NGUCA page yet - that needs
 Josh to re-run OCR on "The Integrity of Anglicanism" now that the button is available, then
 re-select that same spot a third time.
+
+## Real progress reporting for OCR, and a raised timeout
+
+Two things followed from Josh actually running OCR on the real 64-page book: (1) he asked
+for a percentage/progress bar instead of "checked N times", a genuinely better idea than
+what shipped; (2) the run hit the 3-minute timeout added earlier - while visibly still
+progressing (terminal showed a steady stream of real per-character font-resolution
+warnings and periodic polling GETs the whole time), meaning 3 minutes was too tight for a
+real book, not evidence of a hang.
+
+Fixed both together, since real progress data was the prerequisite for both:
+- `TesseractOcrProvider.extractText` now takes an optional `onPageComplete(completed,
+  total)` callback, invoked after each page's `finally` block regardless of that page's
+  outcome. `OcrProvider` interface updated to match.
+- `ocr-status/route.ts`: added an in-memory `Map<versionId, {completed, total}>`
+  (module-level, not persisted - lost on restart, same as the background OCR work itself
+  already is; there's no real job queue here). Passed as the callback into `extractText`.
+  GET now includes `ocrProgress` per version when running. Raised
+  `BACKGROUND_TIMEOUT_MS` from 3 to 12 minutes - generous enough for a genuinely long book's
+  worth of page-by-page rendering + recognition, while still being an actual bound.
+- `ScholarlyToolsPanel.tsx`: added a real `<div role="progressbar">` bar (CSS:
+  `.toolsProgressTrack`/`.toolsProgressFill`/`.toolsProgressLabel`) showing "N / total pages
+  (X%)" instead of "checked N times", falls back to a starting-up message before the first
+  page completes (progress data doesn't exist yet at that point). Client polling's
+  `MAX_ATTEMPTS` raised to match the new server-side timeout with a small buffer, so the
+  client doesn't give up before the server would.
+
+Not yet confirmed against the real 64-page run - Josh needs to re-run OCR now that the
+timeout is longer and progress is visible, and this time let it run to completion (or a
+real 12-minute timeout) rather than stopping it partway through as he did with the previous
+attempt once he saw the counter climbing without context for how much was left.

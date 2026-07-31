@@ -22,7 +22,10 @@ export type OcrResult = {
 
 export interface OcrProvider {
   readonly name: string;
-  extractText(input: { pdfBytes: Buffer; documentId: string }): Promise<OcrResult>;
+  extractText(
+    input: { pdfBytes: Buffer; documentId: string },
+    onPageComplete?: (completed: number, total: number) => void
+  ): Promise<OcrResult>;
 }
 
 export class OcrNotConfiguredError extends Error {

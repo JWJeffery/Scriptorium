@@ -14,8 +14,18 @@ const TIMEOUT_STATE = "tesseract-js-eng-v1-timed-out";
 // Generous, but bounded: this exists specifically so a hung language-data
 // download or a stalled recognition step can't leave a version stuck in
 // "-running" forever with no way to tell the difference between "slow" and
-// "dead" from the outside.
-const BACKGROUND_TIMEOUT_MS = 3 * 60 * 1000;
+// "dead" from the outside. 3 minutes turned out to be too tight for a real
+// multi-page book (a 64-page run legitimately timed out doing real, visibly
+// progressing work) - raised to a bound generous enough for a genuinely
+// long book while still being an actual bound, not "forever".
+const BACKGROUND_TIMEOUT_MS = 12 * 60 * 1000;
+
+// In-memory only - lost on server restart, same as the background OCR work
+// itself already is (there's no persistent job queue here, just a
+// long-running Node process). Exists purely to answer "how far along is
+// this" for the panel's progress bar; not a source of truth for anything
+// that needs to survive a restart.
+const ocrProgress = new Map<string, { completed: number; total: number }>();
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -38,13 +48,15 @@ export async function GET(request: NextRequest) {
     // documents registered before that existed.
     const pageCount = version.textSpans.length || version.pages.length || 1;
     const detection = detectLikelyScanned({ extractedTextLength, pageCount });
+    const ocrRunning = version.extractionState === RUNNING_STATE;
 
     return {
       versionId: version.id,
       documentId: version.documentId,
       documentTitle: version.document.title,
       extractionState: version.extractionState,
-      ocrRunning: version.extractionState === RUNNING_STATE,
+      ocrRunning,
+      ocrProgress: ocrRunning ? ocrProgress.get(version.id) ?? null : null,
       pageCount,
       extractedTextLength,
       ...detection
@@ -85,6 +97,7 @@ export async function POST(request: NextRequest) {
   }
 
   await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: RUNNING_STATE } });
+  ocrProgress.delete(versionId);
 
   runOcrInBackground(versionId, version.snapshotKey).catch((error) => {
     // eslint-disable-next-line no-console
@@ -97,7 +110,9 @@ export async function POST(request: NextRequest) {
 async function runOcrInBackground(versionId: string, snapshotKey: string) {
   try {
     const pdfBytes = await readStoredPdfFile(snapshotKey);
-    const extractPromise = tesseractOcrProvider.extractText({ pdfBytes, documentId: versionId });
+    const extractPromise = tesseractOcrProvider.extractText({ pdfBytes, documentId: versionId }, (completed, total) => {
+      ocrProgress.set(versionId, { completed, total });
+    });
     // Promise.race doesn't cancel extractPromise - if it settles after the
     // timeout has already fired below, this prevents an unhandled
     // rejection (which can crash the whole Node process on a later

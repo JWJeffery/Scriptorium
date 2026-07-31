@@ -475,6 +475,7 @@ type OcrResult = {
   documentTitle: string;
   extractionState: string;
   ocrRunning: boolean;
+  ocrProgress: { completed: number; total: number } | null;
   pageCount: number;
   extractedTextLength: number;
   likelyScanned: boolean;
@@ -545,7 +546,7 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
   }
 
   async function pollUntilDone(versionId: string, attempt = 0) {
-    const MAX_ATTEMPTS = 40; // ~2.5 minutes at 4s apart - generous for a first run downloading language data
+    const MAX_ATTEMPTS = 195; // ~13 minutes at 4s apart - a little past the server's 12-minute bound, so the client doesn't give up first
     try {
       const query = documentId.trim() ? `?documentId=${encodeURIComponent(documentId.trim())}` : "";
       const response = await fetch(`/api/milestone-sixteen/ocr-status${query}`);
@@ -559,7 +560,12 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
           setBusyId(null);
           return;
         }
-        setStatus(`OCR still running (checked ${attempt + 1} time(s))...`);
+        if (match.ocrProgress && match.ocrProgress.total > 0) {
+          const percent = Math.round((match.ocrProgress.completed / match.ocrProgress.total) * 100);
+          setStatus(`OCR running: page ${match.ocrProgress.completed} of ${match.ocrProgress.total} (${percent}%)...`);
+        } else {
+          setStatus("OCR starting up - rendering the first page and (on a first run) downloading language data...");
+        }
         setTimeout(() => {
           pollUntilDone(versionId, attempt + 1);
         }, 4000);
@@ -567,7 +573,7 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
       }
 
       if (match?.extractionState === "tesseract-js-eng-v1-timed-out") {
-        setStatus("OCR timed out after 3 minutes - most likely the language-data download stalled. You can try again; it should be faster now that a partial download may already be cached.");
+        setStatus("OCR timed out - most likely the language-data download stalled. You can try again; it should be faster now that a partial download may already be cached.");
       } else if (match?.extractionState === "tesseract-js-eng-v1-failed") {
         setStatus("OCR failed. Check the server terminal for the actual error.");
       } else if (match && !match.likelyScanned) {
@@ -614,6 +620,26 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
               <small>
                 {result.pageCount} page(s) &middot; {result.extractedTextLength} extracted character(s) &middot; extraction state {result.extractionState}
               </small>
+              {result.ocrRunning && result.ocrProgress && result.ocrProgress.total > 0 ? (
+                <div>
+                  <div
+                    className="toolsProgressTrack"
+                    role="progressbar"
+                    aria-valuenow={result.ocrProgress.completed}
+                    aria-valuemin={0}
+                    aria-valuemax={result.ocrProgress.total}
+                  >
+                    <div
+                      className="toolsProgressFill"
+                      style={{ width: `${Math.round((result.ocrProgress.completed / result.ocrProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="toolsProgressLabel">
+                    {result.ocrProgress.completed} / {result.ocrProgress.total} pages (
+                    {Math.round((result.ocrProgress.completed / result.ocrProgress.total) * 100)}%)
+                  </span>
+                </div>
+              ) : null}
               <div className="toolsResultRowActions">
                 <button
                   className="secondaryButton"

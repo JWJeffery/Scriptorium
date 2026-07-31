@@ -24,7 +24,10 @@ const LOW_CONFIDENCE_THRESHOLD = 40;
 export class TesseractOcrProvider implements OcrProvider {
   readonly name = "tesseract-js-eng-v1";
 
-  async extractText(input: { pdfBytes: Buffer; documentId: string }): Promise<OcrResult> {
+  async extractText(
+    input: { pdfBytes: Buffer; documentId: string },
+    onPageComplete?: (completed: number, total: number) => void
+  ): Promise<OcrResult> {
     const loadingTask = getDocument({
       data: new Uint8Array(input.pdfBytes),
       useSystemFonts: true,
@@ -87,6 +90,7 @@ export class TesseractOcrProvider implements OcrProvider {
           }
         } finally {
           page.cleanup();
+          onPageComplete?.(pageIndex, doc.numPages);
         }
       }
     } finally {

@@ -602,6 +602,28 @@ h2 {
   color: #35643f;
 }
 
+.toolsProgressTrack {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.toolsProgressFill {
+  height: 100%;
+  background: var(--accent-strong);
+  transition: width 0.3s ease;
+}
+
+.toolsProgressLabel {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .toolsCountsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
