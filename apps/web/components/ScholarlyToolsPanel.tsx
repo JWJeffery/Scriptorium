@@ -614,18 +614,26 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
               <small>
                 {result.pageCount} page(s) &middot; {result.extractedTextLength} extracted character(s) &middot; extraction state {result.extractionState}
               </small>
-              {result.likelyScanned || result.ocrRunning ? (
-                <div className="toolsResultRowActions">
-                  <button
-                    className="secondaryButton"
-                    type="button"
-                    disabled={busyId === result.versionId || result.ocrRunning}
-                    onClick={() => attemptOcr(result.versionId)}
-                  >
-                    {result.ocrRunning ? "Running\u2026" : "Attempt OCR"}
-                  </button>
-                </div>
-              ) : null}
+              <div className="toolsResultRowActions">
+                <button
+                  className="secondaryButton"
+                  type="button"
+                  disabled={busyId === result.versionId || result.ocrRunning}
+                  onClick={() => attemptOcr(result.versionId)}
+                >
+                  {result.ocrRunning
+                    ? "Running\u2026"
+                    : result.extractionState === "tesseract-js-eng-v1"
+                      ? "Re-run OCR"
+                      : "Attempt OCR"}
+                </button>
+                {result.extractionState === "tesseract-js-eng-v1" && !result.ocrRunning ? (
+                  <small className="toolsHint">
+                    Already OCR&apos;d successfully - re-run only if you need to regenerate it (e.g. after an OCR
+                    pipeline update).
+                  </small>
+                ) : null}
+              </div>
             </article>
           ))
         )}
