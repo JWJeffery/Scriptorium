@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
@@ -184,6 +184,22 @@ function rectsFor(range: Range, frame: HTMLDivElement) {
   })).filter((rect) => rect.width > 0 && rect.height > 0);
 }
 
+type DragRect = { left: number; top: number; width: number; height: number };
+
+function pointInFrame(event: { clientX: number; clientY: number }, frame: HTMLDivElement) {
+  const frameRect = frame.getBoundingClientRect();
+  return { x: event.clientX - frameRect.left, y: event.clientY - frameRect.top };
+}
+
+function rectFromPoints(start: { x: number; y: number }, end: { x: number; y: number }): DragRect {
+  return {
+    left: Math.min(start.x, end.x),
+    top: Math.min(start.y, end.y),
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y)
+  };
+}
+
 export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -193,6 +209,8 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [isLoading, setIsLoading] = useState(false);
   const [documentLoadKey, setDocumentLoadKey] = useState(0);
+  const [dragRect, setDragRect] = useState<DragRect | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const usingOcrLayer = Boolean(authoritativeWords && authoritativeWords.length > 0);
   const textRuns = usingOcrLayer ? runsFromWords(authoritativeWords!) : pdfTextRuns;
@@ -205,34 +223,6 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     // page - not on every unrelated status change elsewhere in the reader.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usingOcrLayer, pageNumber]);
-
-  useLayoutEffect(() => {
-    // The invisible OCR line-spans are positioned as a correct bounding box
-    // (left/top/width), but the browser renders the text *inside* that box
-    // at its own natural font width, which has no relationship to where the
-    // real characters sit in the scanned image - the box lands in the right
-    // place, but the characters at any given x-position within it don't
-    // match what's visually beneath them. This is why selecting produced
-    // correctly-positioned but wrong-content text. Fix: after the spans are
-    // painted, measure each one's natural rendered width and apply a
-    // horizontal scaleX so the text is stretched/compressed to exactly fill
-    // its real target width - the same technique real PDF text layers use
-    // for this exact problem. transform-origin: 0 0 (already set in CSS)
-    // keeps the stretch anchored at the span's left edge.
-    if (!usingOcrLayer) return;
-    const layer = textLayerRef.current;
-    if (!layer) return;
-    const spans = layer.querySelectorAll<HTMLSpanElement>(".pdfTextRun[data-target-width]");
-    spans.forEach((span) => {
-      const targetWidth = Number(span.dataset.targetWidth);
-      if (!targetWidth || targetWidth <= 0) return;
-      span.style.transform = "none";
-      const naturalWidth = span.getBoundingClientRect().width;
-      if (naturalWidth > 0) {
-        span.style.transform = `scaleX(${targetWidth / naturalWidth})`;
-      }
-    });
-  }, [usingOcrLayer, textRuns]);
 
   useEffect(() => {
     let cancelled = false;
@@ -291,6 +281,61 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     return () => { cancelled = true; };
   }, [pageNumber, documentLoadKey, onStatusChange]);
 
+  // Two consecutive attempts at making the browser's native text selection
+  // work over an invisible, synthetic text layer (over an OCR'd page image)
+  // both failed on the same underlying issue: browsers don't reliably map
+  // mouse position to the correct character within text that isn't the
+  // page's own real, natively-laid-out content - not even with a computed
+  // CSS scaleX correction. Real word positions from OCR are trustworthy
+  // data; the problem was routing selection through browser text hit-testing
+  // at all. This replaces that entirely for OCR pages: track the drag as a
+  // plain rectangle in page coordinates, then directly test which known
+  // word boxes it covers - simple, reliable geometry, no browser text-layout
+  // guessing involved anywhere in the path.
+  function handleOcrMouseDown(event: React.MouseEvent) {
+    if (!usingOcrLayer) return;
+    const frame = frameRef.current;
+    if (!frame) return;
+    dragStartRef.current = pointInFrame(event, frame);
+    setDragRect(null);
+  }
+
+  function handleOcrMouseMove(event: React.MouseEvent) {
+    if (!usingOcrLayer || !dragStartRef.current) return;
+    const frame = frameRef.current;
+    if (!frame) return;
+    setDragRect(rectFromPoints(dragStartRef.current, pointInFrame(event, frame)));
+  }
+
+  function handleOcrMouseUp() {
+    const start = dragStartRef.current;
+    const rect = dragRect;
+    dragStartRef.current = null;
+    setDragRect(null);
+    if (!usingOcrLayer || !start || !rect || !authoritativeWords) return;
+    // A tiny drag (or a plain click) shouldn't be treated as a selection.
+    if (rect.width < 3 && rect.height < 3) return;
+
+    // A word counts as selected if its center falls inside the dragged
+    // rectangle - more predictable than "any overlap" for a person dragging
+    // roughly across the words they mean to select.
+    const matched = authoritativeWords.filter((word) => {
+      const centerX = word.left + word.width / 2;
+      const centerY = word.top + word.height / 2;
+      return centerX >= rect.left && centerX <= rect.left + rect.width && centerY >= rect.top && centerY <= rect.top + rect.height;
+    });
+    if (matched.length === 0) return;
+
+    const sorted = [...matched].sort((a, b) => a.top - b.top || a.left - b.left);
+    const selectedText = sorted.map((word) => word.text).join(" ");
+    const rects = sorted.map((word) => ({ left: word.left, top: word.top, width: word.width, height: word.height }));
+
+    onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
+    onStatusChange(
+      `Captured ${sorted.length} word${sorted.length === 1 ? "" : "s"} and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from real OCR word positions (no browser text-selection involved).`
+    );
+  }
+
   function captureSelection() {
     const selection = window.getSelection();
     const selectedText = selection?.toString().replace(/\s+/g, " ").trim();
@@ -319,7 +364,14 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
   return (
     <div className="pdfReaderShell">
       {isLoading ? <div className="pdfLoading">Rendering PDF page…</div> : null}
-      <div className="pdfPageFrame" onMouseUp={captureSelection} ref={frameRef} style={{ width: pageSize.width || undefined, height: pageSize.height || undefined }}>
+      <div
+        className="pdfPageFrame"
+        onMouseUp={usingOcrLayer ? handleOcrMouseUp : captureSelection}
+        onMouseDown={usingOcrLayer ? handleOcrMouseDown : undefined}
+        onMouseMove={usingOcrLayer ? handleOcrMouseMove : undefined}
+        ref={frameRef}
+        style={{ width: pageSize.width || undefined, height: pageSize.height || undefined }}
+      >
         <canvas ref={canvasRef} className="pdfCanvas" />
         <div className="pdfHighlightLayer" aria-hidden="true">
           {highlights.filter((highlight) => highlight.anchor.pageNumber === pageNumber).flatMap((highlight) =>
@@ -327,10 +379,18 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
               <span className="pdfHighlightBox" key={`${highlight.id}-${index}`} style={{ background: highlight.color, left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
             ))
           )}
+          {usingOcrLayer && dragRect ? (
+            <span className="pdfDragRect" style={{ left: dragRect.left, top: dragRect.top, width: dragRect.width, height: dragRect.height }} />
+          ) : null}
         </div>
-        <div className="pdfTextLayer" aria-label="Selectable PDF text layer" ref={textLayerRef}>
+        <div
+          className="pdfTextLayer"
+          aria-label="Selectable PDF text layer"
+          ref={textLayerRef}
+          style={usingOcrLayer ? { pointerEvents: "none", userSelect: "none", cursor: "default" } : undefined}
+        >
           {textRuns.map((run) => (
-            <span className="pdfTextRun" data-text-run-index={run.index} data-target-width={usingOcrLayer ? run.width : undefined} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
+            <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
               {run.text}
             </span>
           ))}

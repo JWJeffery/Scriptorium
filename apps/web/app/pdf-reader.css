@@ -127,6 +127,14 @@
   border-radius: 3px;
 }
 
+.pdfDragRect {
+  position: absolute;
+  display: block;
+  border: 1px dashed var(--accent-strong, #8a4b25);
+  background: rgb(138 75 37 / 12%);
+  pointer-events: none;
+}
+
 .pdfTextLayer {
   position: absolute;
   inset: 0;

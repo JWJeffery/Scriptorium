@@ -510,3 +510,49 @@ fully resolve it, the next thing to check is whether per-word scaling (rather th
 per-line) is needed, since a single scaleX factor assumes roughly uniform character spacing
 across the whole line, which may not hold if OCR confidence/spacing varies significantly
 within one line.
+
+## Abandoned the invisible-text-layer trick for OCR pages entirely
+
+The scaleX fix didn't work either. Two consecutive attempts at making the browser's native
+text selection work correctly over invisible, synthetic text laid over an OCR'd page image
+both failed on what's most likely the same underlying issue: browsers don't reliably map
+mouse/cursor position to the correct character within text that isn't the page's own real,
+natively-laid-out content, even with a computed CSS transform correction. This is a known
+category of rough edge for "invisible text over an image" techniques, not something that
+seemed fixable with a more careful version of the same approach.
+
+Real PDF viewers can get away with this technique because pdf.js's real text runs come
+directly from the PDF's own actual glyph positions - genuinely native content the browser
+lays out correctly by construction. OCR'd text has no such guarantee; it's synthetic text
+being forced into a shape that only approximately matches the image, and the browser's own
+character-level hit-testing doesn't reliably follow that approximation.
+
+**Stopped trying to make browser text selection work for OCR pages and replaced it
+entirely** with direct geometry: `PdfAnchoredPageReader.tsx` now tracks a mouse drag as a
+plain rectangle in page coordinates (`handleOcrMouseDown`/`handleOcrMouseMove`/
+`handleOcrMouseUp`), then filters the real, trusted OCR word boxes by whether each word's
+center point falls inside that rectangle - no `window.getSelection()`, no invisible text
+layer participation, no browser text-layout guessing anywhere in the path for OCR pages.
+The (former) text layer's `pointerEvents` are set to `none` when `usingOcrLayer` so it can't
+interfere. A dashed rectangle (`.pdfDragRect`) renders live during the drag for visual
+feedback. Matched words are sorted top-then-left for correct reading order, joined with
+spaces, and their own real bounding boxes become the highlight rects directly - which
+should also make saved highlights *more* accurate than before, not just the captured text,
+since they're now real per-word geometry instead of browser-measured client rects on
+scaled/skewed invisible text.
+
+pdf.js's own native-selection path (`captureSelection`, used when a page has a real text
+layer and OCR never ran) is completely unchanged - this only replaces the OCR case.
+
+**What was actually verified, and what wasn't**: the core matching/sorting logic was tested
+standalone against realistic word coordinates (partial-line, full-line, single-word-at-edge,
+and cross-line drag scenarios) and produced correct word sets in correct reading order in
+all four cases - real confidence in the algorithm itself. What's *not* verified is the
+actual DOM/mouse-event wiring in a real browser (this sandbox has none) - whether
+`onMouseDown`/`onMouseMove`/`onMouseUp` fire as expected on the frame element, whether
+`pointerEvents: none` correctly lets events pass through, and whether the coordinates
+computed via `getBoundingClientRect()` end up correct relative to the actual rendered page.
+This is the fourth attempt at this specific reader-selection problem across two sessions;
+if this one still isn't right, the next thing to check is whether the mouse events are
+firing/being captured at all (a `console.log` in each handler, checked via the browser
+console rather than guessing at coordinate math again).
