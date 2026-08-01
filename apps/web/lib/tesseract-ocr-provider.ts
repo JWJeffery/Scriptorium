@@ -82,6 +82,21 @@ export class TesseractOcrProvider implements OcrProvider {
             }
           }
           pages.push({ pageIndex, text, confidence: data.confidence, words });
+          // TEMPORARY diagnostic - client-side console data showed only 16
+          // words for a whole page whose plain text came back rich
+          // (thousands of characters), meaning word-level extraction is
+          // sparse/wrong even though aggregate text extraction is fine.
+          // This never got tested against a real, dense scanned page in the
+          // sandbox - only a trivial 3-line synthetic image, where it
+          // worked. Logging per-page here shows whether that gap is
+          // systemic across the whole book or specific to certain pages,
+          // and whether the raw data.blocks structure itself is already
+          // sparse (a Tesseract-side issue) versus something going wrong in
+          // the flattening loop above.
+          // eslint-disable-next-line no-console
+          console.log(
+            `[OCR-SERVER-DEBUG] page ${pageIndex}/${doc.numPages}: confidence=${data.confidence.toFixed(1)} textLength=${text.length} blocksCount=${data.blocks?.length ?? 0} flattenedWordCount=${words.length}`
+          );
 
           if (text && data.confidence < LOW_CONFIDENCE_THRESHOLD) {
             warnings.push(
