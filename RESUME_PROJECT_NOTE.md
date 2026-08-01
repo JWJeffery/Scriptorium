@@ -556,3 +556,59 @@ This is the fourth attempt at this specific reader-selection problem across two 
 if this one still isn't right, the next thing to check is whether the mouse events are
 firing/being captured at all (a `console.log` in each handler, checked via the browser
 console rather than guessing at coordinate math again).
+
+## Session ended unresolved: OCR selection accuracy still unconfirmed
+
+This whole session was spent chasing why manually-selected text on OCR'd pages came out
+garbled ("NGUCA" on page 3's "cheerful old inn" line; wrong words on the table-of-contents
+page). Multiple real fixes shipped and are confirmed correct in isolation, but the
+underlying question - can a person reliably select real text on a real OCR'd page - is
+**still open**. Do not assume this works. The next session should treat it as unverified.
+
+**What's confirmed working, in order:**
+1. OCR timeout was 3 min, too tight for a real book - raised to 12 min. Confirmed: a real
+   64-page run completed under this limit.
+2. `docker compose` doesn't survive a Codespace halt/restart - the container has to be
+   manually brought back up (`docker compose up -d`) every time the Codespace restarts.
+   This bit the session twice; it's environmental, not a code bug.
+3. Real-time OCR progress bar (page N/total, %) - built, confirmed rendering correctly live.
+4. OCR now captures word-level bounding boxes, not just flat text (`tesseract-ocr-provider.ts`,
+   `{blocks: true}`) - the boxes themselves were verified accurate via a synthetic test and
+   via live drag-rectangle screenshots matching what was visually dragged.
+5. Client-side selection was rebuilt three times chasing a bug that turned out NOT to be
+   in the selection code:
+   - v1: browser-native selection over scaled invisible OCR text - failed (browsers don't
+     reliably hit-test transformed synthetic text).
+   - v2: geometric drag-rectangle matched directly against real word boxes, no browser text
+     APIs involved - this part is verified CORRECT via a standalone logic test (partial-line,
+     full-line, edge-word, cross-line scenarios all passed) and via live screenshots showing
+     the drag rectangle visually landing exactly where dragged.
+   - The persisting garbled output was NOT a selection bug. Real browser console data
+     (`totalWordsOnPage: 16` for a page whose plain-text OCR came back with ~4258 characters)
+     proved the underlying WORD-LEVEL data itself is sparse/corrupted for at least some
+     pages, even though the AGGREGATE text from the same OCR pass is fine.
+
+**What's still unknown, and is the actual next task:**
+Whether the word-data sparsity is (a) specific to visually complex pages (page 3 has a
+library-stamp graphic plus a separate right-aligned quote-attribution block; the ToC page
+has a two-column numbered layout) versus (b) present on plain single-column prose pages too.
+Server-side diagnostic logging was added (`[OCR-SERVER-DEBUG]` in `tesseract-ocr-provider.ts`,
+one line per page: confidence/textLength/blocksCount/flattenedWordCount) and a full 64-page
+re-run was captured, but **the specific page 3 log line was lost when the Codespace terminal
+reset before it could be read** - pages 59-64 all showed healthy, proportional word counts
+(e.g. page 62: 6588 chars / 1134 words), so this is NOT a systemic bug across the whole book,
+but page 3 itself was never confirmed either way.
+
+**Fastest next step, don't repeat this session's mistake of re-running the whole book**:
+write a small isolated script that runs OCR against ONLY page 3 (and maybe the ToC page) in
+seconds, not a 64-page multi-minute run, and check its `[OCR-SERVER-DEBUG]` line directly.
+If that page's word count is healthy, the bug is downstream (storage/retrieval) - a
+different, more tractable investigation. If it's still sparse, the bug is in Tesseract's own
+block segmentation on visually complex pages specifically, which may need a fallback (e.g.
+skip block/word extraction and treat the page as text-only, disabling precise selection for
+just that page rather than silently corrupting it).
+
+Session ended over budget and without resolving this. The person was, fairly, extremely
+frustrated with how long this took and how much was spent without a confirmed working
+result. Whoever picks this up next should lead with the single-page diagnostic script
+before touching any other code in this area.
