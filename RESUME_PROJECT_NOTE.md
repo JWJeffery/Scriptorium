@@ -447,3 +447,28 @@ Not yet confirmed against the real 64-page run - Josh needs to re-run OCR now th
 timeout is longer and progress is visible, and this time let it run to completion (or a
 real 12-minute timeout) rather than stopping it partway through as he did with the previous
 attempt once he saw the counter climbing without context for how much was left.
+
+## OCR text layer only let you select one word at a time
+
+After the OCR word-position layer went live and actually replaced the broken text layer
+(confirmed - the corroboration warning stopped firing, meaning `usingOcrLayer` was
+correctly active), Josh found drag-selection could only ever pick up a single word. Root
+cause: `runsFromWords` built one separate `<span>` per OCR word, each absolutely positioned
+with a real geometric gap to its neighbors and nothing in the DOM connecting them. Browsers
+don't reliably extend a Selection across many small gaps like that during a drag - each
+word being its own disconnected element meant the drag could only ever land on one span at
+a time. This never affected pdf.js's own text runs because `getTextContent()` already
+groups whole phrases/lines into a single text item, not one item per word - so this was
+never exercised before OCR-derived runs existed.
+
+**Fix is client-only, no OCR re-run needed** (the word-level position data already stored
+from the just-completed run is exactly what's needed): `runsFromWords` in
+`PdfAnchoredPageReader.tsx` now clusters words into line-level groups by vertical position
+(each word's midpoint tested against existing lines' top/bottom range) rather than one span
+per word, joins each line's words with a space, and computes one bounding box spanning the
+whole line. This is a purely geometric grouping independent of Tesseract's own block/
+paragraph/line metadata, so it reflects actual visual line position regardless of how
+Tesseract segmented the page.
+
+Not yet confirmed - Josh needs to refresh and try dragging across multiple words on that
+same page again.

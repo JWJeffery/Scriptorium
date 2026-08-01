@@ -107,14 +107,48 @@ async function buildTextRuns(page: PdfPage, scale: number) {
 }
 
 function runsFromWords(words: PdfAuthoritativeWord[]): TextRun[] {
-  return words.map((word, index) => ({
-    index,
-    text: word.text,
-    left: word.left,
-    top: word.top,
-    fontSize: Math.max(word.height, 8),
-    width: word.width
-  }));
+  if (words.length === 0) return [];
+  // Group words into line-level spans rather than one span per word. A
+  // normal click-and-drag selection needs to span multiple words, and
+  // browsers don't reliably extend a Selection across many small real gaps
+  // between separate absolutely-positioned elements with nothing connecting
+  // them - each word being its own span meant a drag could only ever pick
+  // up one word at a time. pdf.js's own text runs never hit this because
+  // they already group whole phrases/lines into a single span; this brings
+  // OCR-derived runs in line with that. Word-level position data is still
+  // what's stored server-side (useful for finer-grained needs later) - this
+  // only changes how it's grouped for rendering the selectable layer.
+  const sorted = [...words].sort((a, b) => a.top - b.top || a.left - b.left);
+  type Line = { words: PdfAuthoritativeWord[]; top: number; bottom: number };
+  const lines: Line[] = [];
+  for (const word of sorted) {
+    const wordMid = word.top + word.height / 2;
+    const line = lines.find((candidate) => wordMid >= candidate.top && wordMid <= candidate.bottom);
+    if (line) {
+      line.words.push(word);
+      line.top = Math.min(line.top, word.top);
+      line.bottom = Math.max(line.bottom, word.top + word.height);
+    } else {
+      lines.push({ words: [word], top: word.top, bottom: word.top + word.height });
+    }
+  }
+  return lines
+    .sort((a, b) => a.top - b.top)
+    .map((line, index) => {
+      const lineWords = [...line.words].sort((a, b) => a.left - b.left);
+      const left = Math.min(...lineWords.map((word) => word.left));
+      const right = Math.max(...lineWords.map((word) => word.left + word.width));
+      const top = Math.min(...lineWords.map((word) => word.top));
+      const bottom = Math.max(...lineWords.map((word) => word.top + word.height));
+      return {
+        index,
+        text: lineWords.map((word) => word.text).join(" "),
+        left,
+        top,
+        fontSize: Math.max(bottom - top, 8),
+        width: right - left
+      } satisfies TextRun;
+    });
 }
 
 function contextFor(textRuns: TextRun[], selectedText: string) {
