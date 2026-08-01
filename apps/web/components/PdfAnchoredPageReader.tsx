@@ -316,6 +316,23 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     // A tiny drag (or a plain click) shouldn't be treated as a selection.
     if (rect.width < 3 && rect.height < 3) return;
 
+    // TEMPORARY diagnostic logging - three consecutive guesses at this bug
+    // were wrong, so this ships no fix at all, only visibility into the
+    // real numbers: the drag rectangle, the page's own size, and a sample
+    // of the actual stored word coordinates, so the real mismatch (if any)
+    // is visible directly rather than guessed at again. Safe to remove once
+    // the actual cause is confirmed from this output.
+    // eslint-disable-next-line no-console
+    console.log("[OCR-DRAG-DEBUG]", {
+      pageNumber,
+      dragRect: rect,
+      pageSize,
+      frameBoundingRect: frameRef.current?.getBoundingClientRect(),
+      totalWordsOnPage: authoritativeWords.length,
+      firstFiveWords: authoritativeWords.slice(0, 5),
+      lastFiveWords: authoritativeWords.slice(-5)
+    });
+
     // A word counts as selected if its center falls inside the dragged
     // rectangle - more predictable than "any overlap" for a person dragging
     // roughly across the words they mean to select.
@@ -324,6 +341,8 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
       const centerY = word.top + word.height / 2;
       return centerX >= rect.left && centerX <= rect.left + rect.width && centerY >= rect.top && centerY <= rect.top + rect.height;
     });
+    // eslint-disable-next-line no-console
+    console.log("[OCR-DRAG-DEBUG] matched:", matched.length, matched.slice(0, 10));
     if (matched.length === 0) return;
 
     const sorted = [...matched].sort((a, b) => a.top - b.top || a.left - b.left);
