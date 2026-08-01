@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
@@ -206,6 +206,34 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usingOcrLayer, pageNumber]);
 
+  useLayoutEffect(() => {
+    // The invisible OCR line-spans are positioned as a correct bounding box
+    // (left/top/width), but the browser renders the text *inside* that box
+    // at its own natural font width, which has no relationship to where the
+    // real characters sit in the scanned image - the box lands in the right
+    // place, but the characters at any given x-position within it don't
+    // match what's visually beneath them. This is why selecting produced
+    // correctly-positioned but wrong-content text. Fix: after the spans are
+    // painted, measure each one's natural rendered width and apply a
+    // horizontal scaleX so the text is stretched/compressed to exactly fill
+    // its real target width - the same technique real PDF text layers use
+    // for this exact problem. transform-origin: 0 0 (already set in CSS)
+    // keeps the stretch anchored at the span's left edge.
+    if (!usingOcrLayer) return;
+    const layer = textLayerRef.current;
+    if (!layer) return;
+    const spans = layer.querySelectorAll<HTMLSpanElement>(".pdfTextRun[data-target-width]");
+    spans.forEach((span) => {
+      const targetWidth = Number(span.dataset.targetWidth);
+      if (!targetWidth || targetWidth <= 0) return;
+      span.style.transform = "none";
+      const naturalWidth = span.getBoundingClientRect().width;
+      if (naturalWidth > 0) {
+        span.style.transform = `scaleX(${targetWidth / naturalWidth})`;
+      }
+    });
+  }, [usingOcrLayer, textRuns]);
+
   useEffect(() => {
     let cancelled = false;
     async function loadDocument() {
@@ -302,7 +330,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
         </div>
         <div className="pdfTextLayer" aria-label="Selectable PDF text layer" ref={textLayerRef}>
           {textRuns.map((run) => (
-            <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
+            <span className="pdfTextRun" data-text-run-index={run.index} data-target-width={usingOcrLayer ? run.width : undefined} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
               {run.text}
             </span>
           ))}

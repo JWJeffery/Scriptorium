@@ -472,3 +472,41 @@ Tesseract segmented the page.
 
 Not yet confirmed - Josh needs to refresh and try dragging across multiple words on that
 same page again.
+
+## Line-grouped selection landed on the right position, wrong characters
+
+Progress from the line-grouping fix was real - Josh's drag now correctly produced one
+selection spanning multiple words, and the highlighted yellow rectangle in the rendered
+page sat exactly over the right words ("the Church and bide in his cheerful old inn, and").
+But the captured text was garbage unrelated to what was visually highlighted ("the Cl nd b
+n his cheerful old inn e\").
+
+Root cause, more precise this time: each line-span's *bounding box* was positioned
+correctly (left/top/width all correct, from real OCR data), but the browser renders the
+*text inside* that box at its own natural font width and character spacing - which has no
+relationship at all to where the real characters sit in the scanned image underneath. The
+box was in the right place; the individual characters within it were not stretched to
+match, so whatever character happened to fall at a given x-coordinate in the browser's
+native text layout is essentially arbitrary relative to the real image. This is a
+well-known problem for exactly this technique (invisible text layer over an image/canvas)
+and real PDF viewers solve it by measuring each run's natural rendered width and applying a
+horizontal `scaleX` transform to stretch/compress it to the real target width - this was
+skipped when the line-grouping fix landed.
+
+Fixed: `data-target-width` attribute added to each OCR-derived span (only when
+`usingOcrLayer`, not for pdf.js's own runs, which don't have this problem to begin with).
+New `useLayoutEffect` runs after paint, resets any prior transform, measures each span's
+natural `getBoundingClientRect().width`, and applies `scaleX(targetWidth / naturalWidth)`.
+CSS already had `transform-origin: 0 0` set (unused until now), which anchors the stretch
+at the span's left edge rather than its center - confirmed this was already correct,
+no CSS change needed.
+
+**Honest limitation**: this sandbox has no live browser to visually confirm the fix -
+verified via typecheck and a full production build only. The mechanism (measure-then-scale)
+is the standard, well-documented technique for this exact problem, but hasn't been seen
+working. This is the third round on this specific selection-accuracy issue (garbled capture
+→ single-word-only selection → correct position but wrong characters) - if this doesn't
+fully resolve it, the next thing to check is whether per-word scaling (rather than
+per-line) is needed, since a single scaleX factor assumes roughly uniform character spacing
+across the whole line, which may not hold if OCR confidence/spacing varies significantly
+within one line.
