@@ -20,7 +20,16 @@ type PdfDocument = {
 };
 type TextItemLike = { str: string; transform: number[]; width?: number; height?: number };
 type TextRun = { index: number; text: string; left: number; top: number; fontSize: number; width?: number };
-export type PdfAuthoritativeWord = { text: string; left: number; top: number; width: number; height: number; confidence: number };
+export type PdfAuthoritativeWord = {
+  text: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  confidence: number;
+  blockNum?: number;
+  lineNum?: number;
+};
 
 export type PdfAnchorRect = { left: number; top: number; width: number; height: number };
 export type PdfSelectionAnchor = {
@@ -336,13 +345,50 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     // A word counts as selected if its center falls inside the dragged
     // rectangle - more predictable than "any overlap" for a person dragging
     // roughly across the words they mean to select.
-    const matched = authoritativeWords.filter((word) => {
+    const rawMatched = authoritativeWords.filter((word) => {
       const centerX = word.left + word.width / 2;
       const centerY = word.top + word.height / 2;
       return centerX >= rect.left && centerX <= rect.left + rect.width && centerY >= rect.top && centerY <= rect.top + rect.height;
     });
     // eslint-disable-next-line no-console
-    console.log("[OCR-DRAG-DEBUG] matched:", matched.length, matched.slice(0, 10));
+    console.log("[OCR-DRAG-DEBUG] matched:", rawMatched.length, rawMatched.slice(0, 10));
+    if (rawMatched.length === 0) return;
+
+    // A rectangle drag is drawn in screen space and has no idea it might be
+    // geometrically sweeping across two visually separate things that
+    // happen to share a y-range - e.g. a main paragraph and a smaller
+    // marginal citation/attribution block sitting to its right on roughly
+    // the same lines. Tesseract's own block_num groups words by the region
+    // its layout analysis actually detected, so when the raw match spans
+    // more than one block, keep only the block with the most matched words
+    // (the one the person was most likely actually trying to select) and
+    // drop the rest, rather than silently joining fragments from two
+    // unrelated regions into one nonsensical string. Only applies when
+    // every matched word actually has a blockNum (older, pre-this-fix
+    // stored OCR data won't) - falls back to the old "use everything"
+    // behavior otherwise rather than guessing.
+    const allHaveBlockInfo = rawMatched.every((word) => typeof word.blockNum === "number");
+    let matched = rawMatched;
+    let excludedOtherBlockCount = 0;
+    if (allHaveBlockInfo) {
+      const countsByBlock = new Map<number, number>();
+      for (const word of rawMatched) {
+        const key = word.blockNum as number;
+        countsByBlock.set(key, (countsByBlock.get(key) ?? 0) + 1);
+      }
+      if (countsByBlock.size > 1) {
+        let dominantBlock = rawMatched[0].blockNum as number;
+        let dominantCount = 0;
+        for (const [block, count] of countsByBlock) {
+          if (count > dominantCount) {
+            dominantBlock = block;
+            dominantCount = count;
+          }
+        }
+        matched = rawMatched.filter((word) => word.blockNum === dominantBlock);
+        excludedOtherBlockCount = rawMatched.length - matched.length;
+      }
+    }
     if (matched.length === 0) return;
 
     const sorted = [...matched].sort((a, b) => a.top - b.top || a.left - b.left);
@@ -350,8 +396,11 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     const rects = sorted.map((word) => ({ left: word.left, top: word.top, width: word.width, height: word.height }));
 
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
+    const coverageNote = excludedOtherBlockCount > 0
+      ? ` (${excludedOtherBlockCount} word${excludedOtherBlockCount === 1 ? "" : "s"} from an overlapping but visually separate region - e.g. a marginal note or citation - were excluded; redraw a tighter selection if you meant to include it.)`
+      : "";
     onStatusChange(
-      `Captured ${sorted.length} word${sorted.length === 1 ? "" : "s"} and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from real OCR word positions (no browser text-selection involved).`
+      `Captured ${sorted.length} word${sorted.length === 1 ? "" : "s"} and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from real OCR word positions (no browser text-selection involved).${coverageNote}`
     );
   }
 

@@ -690,3 +690,65 @@ in the panel's status line naming the exact page and coverage percentage, which 
 every previous round - gives a concrete, persisted starting point instead of another blind
 archaeology session. Either outcome is real forward progress over where the previous session
 ended.
+
+## Real live test on page 3: cross-block contamination confirmed, one root cause fixed, one still open
+
+Josh re-ran OCR and re-selected the same spot, live, with a screenshot. Coverage was fine
+this time (14/14 words, not sparse) - the previous fix's actual target (whole regions
+silently dropped) is holding. But the captured text was still garbage: `"his old inn Cl
+cheerful the nd n b in Thomas Ha ( in,"`. Traced this precisely rather than guessing again:
+those are the literal, individually stored `word.text` values in sorted order (14 tokens,
+matching "Captured 14 words" exactly) - not a client-side scrambling bug in the join/sort
+logic itself.
+
+**Two distinct real problems, confirmed from the screenshot, only one fixed this round:**
+
+1. **Cross-block contamination (fixed).** The drag rectangle Josh drew geometrically swept
+   across two visually separate regions that happen to share a y-range on this page: the
+   main paragraph ("...bide in his cheerful old inn...") and a smaller italic marginal
+   citation off to the right ("Coggan, in Thomas Hardy / Far from the Madding Crowd"). The
+   selection logic had no concept of "these are different blocks" - it just grabbed every
+   word whose center fell inside the rectangle and joined them in top-then-left order,
+   producing a nonsense mix of both regions' fragments (the "Thomas Ha ( in," tail is
+   plausibly the citation bleeding in). Fixed: `tesseract-ocr-provider.ts`'s TSV parsing now
+   also captures each word's `block_num`/`line_num` (TSV columns 2 and 4 - already present in
+   the export, just not read before). `PdfAuthoritativeWord`/`OcrWord` gained optional
+   `blockNum`/`lineNum` fields, threaded through `page-text/route.ts`. In
+   `PdfAnchoredPageReader.tsx`'s `handleOcrMouseUp`, when a raw rectangle match spans more
+   than one `blockNum`, only the block with the most matched words is kept (the one the
+   person most likely meant to select) and the rest are dropped - with a status-line note
+   naming how many words from "an overlapping but visually separate region" were excluded,
+   so Josh can tell when this happened and redraw a tighter selection if he actually wanted
+   the other region. Falls back to the old unfiltered behavior for any stored word missing
+   `blockNum` (pre-this-fix OCR data), rather than guessing.
+
+2. **Word-level fragmentation within a single block (NOT fixed, root cause understood but
+   unsolved).** Re-reading the captured tokens more carefully: several of the garbage
+   fragments ("nd", "n", "b") plausibly come from *within* the main paragraph's own text
+   (fragments of "and" and "bide"), not just from the marginal citation - meaning even after
+   block-filtering removes the citation contamination, some fragmentation inside the correct
+   block may remain. **This was never going to be fixed by the TSV-vs-blocks switch from the
+   previous round** - TSV and `blocks` both derive from the exact same underlying
+   word-boundary segmentation step in Tesseract; switching the export format changes what
+   gets *reported*, not the segmentation quality itself. This is a real, harder problem:
+   Tesseract's word-box segmentation (a geometric, connected-component-based step) is
+   measurably more fragile on real scanned text than its line-level LSTM recognition (which
+   has full sequence context to fall back on) - exactly consistent with the original
+   "16 words for 4,258 characters" symptom that started this whole investigation. Not
+   attempted this round because it needs either (a) a real degraded scan to test against
+   (every synthetic fixture built so far stayed too clean to reproduce this), or (b) a
+   structural change to derive selected *text* from line-level recognition while still using
+   word boxes only for highlight-rectangle geometry - a bigger change than one session should
+   ship blind. **Worth trying first, cheaply, before any structural rework**: raising
+   `RENDER_SCALE` in `tesseract-ocr-provider.ts` (currently 2) - higher-resolution rendering
+   is a standard, well-documented lever for Tesseract's word-segmentation reliability on real
+   scans, per Tesseract's own guidance that recognition quality improves with image
+   resolution. Untried this session; costs more render/recognition time per page, so worth
+   testing on a single page before a full 64-page re-run.
+
+**Verification this round**: brace-balance and structural check only (no live browser, no
+MySQL, in this sandbox, same limitation as every prior round). **Not yet confirmed against
+the real page** - Josh needs to pull this commit, re-select the same spot again. If the
+citation-attribution fragments are gone but some in-paragraph fragments remain, that
+confirms the two-problem diagnosis above and means the next session should try the
+`RENDER_SCALE` increase before anything more invasive.

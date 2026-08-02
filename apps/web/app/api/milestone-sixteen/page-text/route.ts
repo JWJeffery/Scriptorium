@@ -37,7 +37,16 @@ export async function GET(request: NextRequest) {
 
   const anchor = match.anchor as {
     ocr?: boolean;
-    words?: { text: string; left: number; top: number; width: number; height: number; confidence: number }[];
+    words?: {
+      text: string;
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      confidence: number;
+      blockNum?: number;
+      lineNum?: number;
+    }[];
   } | null;
   return NextResponse.json({
     text: match.text,

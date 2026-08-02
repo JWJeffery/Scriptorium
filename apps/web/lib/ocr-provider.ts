@@ -12,7 +12,24 @@
 // Calling the null provider is meant to fail loudly and explain why, not to
 // silently pretend OCR happened.
 
-export type OcrWord = { text: string; left: number; top: number; width: number; height: number; confidence: number };
+export type OcrWord = {
+  text: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  confidence: number;
+  // Tesseract's own block/line grouping for this word (from TSV columns
+  // block_num/line_num). Not used for rendering position - purely an
+  // identity signal so a rectangle-based drag selection that geometrically
+  // sweeps across two visually distinct regions (e.g. a main paragraph and
+  // a smaller marginal citation sitting on an overlapping y-range) can tell
+  // they're different blocks and avoid silently merging fragments from both
+  // into one nonsensical selection. line_num resets per block, so the two
+  // together (not line_num alone) identify a real line.
+  blockNum?: number;
+  lineNum?: number;
+};
 
 export type OcrResult = {
   text: string;

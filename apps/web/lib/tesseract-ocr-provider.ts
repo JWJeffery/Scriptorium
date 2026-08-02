@@ -75,7 +75,9 @@ function extractWordsFromTsv(tsv: string | null, renderScale: number): OcrWord[]
       top: Number(cols[7]) / renderScale,
       width: Number(cols[8]) / renderScale,
       height: Number(cols[9]) / renderScale,
-      confidence: Number(cols[10])
+      confidence: Number(cols[10]),
+      blockNum: Number(cols[2]),
+      lineNum: Number(cols[4])
     });
   }
   return words;
