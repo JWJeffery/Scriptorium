@@ -612,3 +612,81 @@ Session ended over budget and without resolving this. The person was, fairly, ex
 frustrated with how long this took and how much was spent without a confirmed working
 result. Whoever picks this up next should lead with the single-page diagnostic script
 before touching any other code in this area.
+
+## Real fix for the sparse-word-data root cause, plus a permanent diagnostic safety net
+
+Followed the previous session's own instruction (single-page diagnostic before touching
+anything else), but pursued it through code inspection and reproduction rather than a live
+re-run against the real book (no live browser or the actual scanned PDF available in this
+sandbox either).
+
+**What was tried and ruled out:** built five different adversarial synthetic test pages
+(`@napi-rs/canvas`-rendered) - dense prose + a corner graphic/stamp, a table-of-contents-style
+two-column layout, added noise + ~1° skew, tight/low-DPI character spacing, and sideways
+caption/stamp text - and ran each through the real `tesseract.js@7` `recognize()` call this
+codebase uses. In every case, the `blocks`-JSON-derived word count matched the flat `text`
+word count exactly. **The precise visual trigger on the real "Integrity of Anglicanism" page
+3 was not reproduced and remains unconfirmed** - don't treat this as closed in that sense.
+
+**What was found and fixed anyway, because it's real and independently justified:**
+`tesseract.js`'s own v6 changelog documents that as of v6, the `blocks` JSON output only
+reports blocks Tesseract's layout analysis classifies as *text* - non-text-classified
+regions (images, line segments, noise - exactly what a worn scan, foxing, or a library stamp
+produces) are silently dropped from `blocks` entirely, even when Tesseract still recognized
+real text inside them for the flat `text` output. This is a real, plausible mechanism for
+exactly the "\"rich flat text, sparse structured words\"" symptom reported, even though it
+didn't reproduce on any synthetic fixture built here.
+
+`lib/tesseract-ocr-provider.ts` changed: word/position extraction now parses Tesseract's
+`tsv` output (a separate, much older, stable per-word export path - one row per recognized
+word at the standard `level=5` RIL granularity - unaffected by the v6 `blocks`-JSON-specific
+filtering) instead of walking the `blocks` → `paragraphs` → `lines` → `words` tree. Verified
+word-for-word identical to the old `blocks`-derived extraction on all five synthetic
+fixtures (not just equal counts - same words, same positions after the same
+`RENDER_SCALE`-space division). This is a strict improvement with no observed downside, not
+a guess shipped on faith.
+
+**Also added: a permanent, persisted diagnostic**, addressing the actual process failure
+that ended the previous session (the one `[OCR-SERVER-DEBUG]` log line that would have
+settled this was lost when the sandbox terminal reset mid-run). `extractText` now computes
+a naive text-based word-count estimate per page and compares it against the real TSV word
+count; if coverage falls below 50%, a warning is pushed into the existing `warnings` array
+- the same mechanism that already surfaces low-confidence-page warnings in the Scholarly
+Tools panel's status line - so a future occurrence of this exact symptom (on this page or
+any other) shows up in the UI itself, survives any terminal/session boundary, and doesn't
+require catching a console log live again.
+
+**Verification performed:**
+1. Five synthetic fixtures (described above), each run through a direct `worker.recognize()`
+   call with both `blocks: true` and `tsv: true` requested simultaneously, confirming
+   word-for-word parity between the two extraction methods.
+2. The real, unmodified `tesseractOcrProvider.extractText()` function (only the import file
+   extensions were adjusted, for raw Node ESM resolution outside a bundler - not a logic
+   change) run end-to-end against a real 5-page synthetic PDF (built with `pdf-lib`,
+   embedding the same five fixture images) via `node --experimental-strip-types`, exercising
+   the full real pipeline: `pdfjs-dist` page render → `@napi-rs/canvas` → Tesseract recognize
+   → TSV parsing → coverage check. All 5 pages came back at 100% word coverage, zero warnings
+   (correctly - there was nothing to warn about on any of these clean fixtures), progress
+   callbacks fired correctly per page.
+3. **A real, separate, sandbox-specific issue was found and ruled out of scope during this
+   verification**: pinning `pdfjs-dist` to the exact version this repo uses (`4.10.38`,
+   vs. whatever `npm install pdfjs-dist` grabs unpinned) causes a hard segfault in this
+   sandbox's page-render step - reproduced with a bare render-only script (no Tesseract, no
+   OCR code at all) to confirm this has nothing to do with anything in this session's diff.
+   This is the same category of container/native-binary quirk as the WASM SIMD issue
+   documented earlier in this file (search "DotProductSSE" above) - a sandbox environment
+   limitation, not a code bug, and not something a patch here can fix. **Worth knowing for
+   future sessions**: don't trust a from-scratch pdfjs-dist+@napi-rs/canvas render test in
+   this sandbox at the repo's pinned version without expecting this; it is not evidence
+   against the actual code change, which was validated via the unpinned (newer) pdfjs-dist
+   version instead, where the identical rendering step worked cleanly across all 5 pages.
+
+**What Josh needs to do to actually close this**: re-run OCR on "The Integrity of
+Anglicanism" (the button already exists per the earlier "Re-run OCR" fix) and re-select the
+same "cheerful old inn" spot on page 3 a fourth time. Two possible outcomes: (a) it's now
+correct - the TSV switch fixed the real page the same way it should fix any page hitting the
+v6 blocks-filtering mechanism; or (b) it's still wrong, but this time a warning should appear
+in the panel's status line naming the exact page and coverage percentage, which - unlike
+every previous round - gives a concrete, persisted starting point instead of another blind
+archaeology session. Either outcome is real forward progress over where the previous session
+ended.

@@ -9,7 +9,30 @@
 // createWorker and, for non-Latin scripts, checking Tesseract's accuracy on
 // the specific script before trusting it the way the Unicode-aware search
 // fix (gate 18) already trusts Greek/Ge'ez/Syriac/Coptic text.
-
+//
+// WORD-POSITION SOURCE: this used to walk the `blocks` JSON output
+// (block.paragraphs[].lines[].words[]). Switched to parsing the `tsv`
+// output instead (see extractWordsFromTsv below) after investigating a real
+// production report of a page whose flat OCR text was rich (~4,258
+// characters) but whose block-derived word/position array had only 16
+// entries. That exact split could not be reproduced against several
+// adversarial synthetic fixtures in this codebase's sandbox (dense
+// prose+graphic, table/ToC layout, noise+skew, tight/low-DPI spacing,
+// sideways caption/stamp text all stayed internally consistent between text
+// and block-derived words in this tesseract.js version) - so the precise
+// visual trigger on the real page remains unconfirmed. But tesseract.js's
+// own v6 changelog documents a real, relevant mechanism: as of v6, the
+// `blocks` JSON format only reports blocks Tesseract's layout analysis
+// classifies as text - non-text-classified blocks (images, line segments,
+// noise - exactly the kind of region a worn scan, foxing, or a library
+// stamp can produce) are silently dropped from `blocks` entirely, even if
+// Tesseract still recognized real text inside them for the flat `text`
+// output. `tsv` is a separate, much older Tesseract export path (one row
+// per recognized element at every RIL level, unaffected by that specific
+// v6 blocks-JSON change) and is the standard, most complete way to recover
+// per-word positions - verified word-for-word identical to blocks-derived
+// output on every fixture tried here, so this is a strict improvement with
+// no observed downside, not just a guess.
 import "./pdfjs-worker-setup";
 import { createWorker } from "tesseract.js";
 import { createCanvas } from "@napi-rs/canvas";
@@ -20,6 +43,43 @@ import type { OcrProvider, OcrResult, OcrWord } from "./ocr-provider";
 // time and memory. 2x is a reasonable middle ground for a scanned book page.
 const RENDER_SCALE = 2;
 const LOW_CONFIDENCE_THRESHOLD = 40;
+// If fewer than this fraction of the page's estimated words got a real
+// position from TSV, something is still wrong even with the more complete
+// TSV source - flag it rather than silently shipping a mostly-unselectable
+// page. Kept well below 1.0 because legitimate partial coverage (e.g. a
+// genuinely blank margin, a page that's mostly a plate/illustration with a
+// short caption) is normal and shouldn't trip this.
+const WORD_COVERAGE_WARNING_THRESHOLD = 0.5;
+
+// Tesseract's TSV output: one row per recognized element at every RIL
+// level, tab-separated:
+// level  page_num  block_num  par_num  line_num  word_num  left  top  width  height  conf  text
+// Level 5 is a word row (1=page, 2=block, 3=paragraph, 4=line). Only level
+// 5 rows carry real text/confidence - this is the standard Tesseract TSV
+// contract, stable across versions, independent of the `blocks` JSON
+// format's own (separately versioned) shape.
+const TSV_WORD_LEVEL = 5;
+
+function extractWordsFromTsv(tsv: string | null, renderScale: number): OcrWord[] {
+  if (!tsv) return [];
+  const rows = tsv.trim().split("\n").slice(1); // drop header row
+  const words: OcrWord[] = [];
+  for (const row of rows) {
+    const cols = row.split("\t");
+    if (Number(cols[0]) !== TSV_WORD_LEVEL) continue;
+    const text = cols[11];
+    if (!text || !text.trim()) continue;
+    words.push({
+      text,
+      left: Number(cols[6]) / renderScale,
+      top: Number(cols[7]) / renderScale,
+      width: Number(cols[8]) / renderScale,
+      height: Number(cols[9]) / renderScale,
+      confidence: Number(cols[10])
+    });
+  }
+  return words;
+}
 
 export class TesseractOcrProvider implements OcrProvider {
   readonly name = "tesseract-js-eng-v1";
@@ -53,54 +113,38 @@ export class TesseractOcrProvider implements OcrProvider {
           await page.render({ canvasContext: context as unknown as CanvasRenderingContext2D, viewport }).promise;
 
           const pngBuffer = canvas.toBuffer("image/png");
-          // blocks: true asks Tesseract for word-level bounding boxes, not
-          // just the flat recognized text - without this, blocks comes back
-          // null. The boxes are in the *rendered* pixel space (RENDER_SCALE),
-          // so they're converted back to scale=1 PDF page-space below - that
-          // matches the coordinate space the reader renders pages in, so the
-          // client can use these directly as a real, positioned, selectable
-          // text layer instead of trusting pdf.js's own (sometimes corrupted
-          // - see the NGUCA incident) text layer for pages OCR actually ran
-          // on.
-          const { data } = await worker.recognize(pngBuffer, {}, { blocks: true });
+          // tsv: true asks Tesseract for its standard per-word TSV export
+          // (see extractWordsFromTsv above for why this replaced blocks:
+          // true) - real positioned words instead of trusting pdf.js's own
+          // (sometimes corrupted - see the NGUCA incident) text layer for
+          // pages OCR actually ran on.
+          const { data } = await worker.recognize(pngBuffer, {}, { tsv: true });
           const text = data.text.trim();
-          const words: OcrWord[] = [];
-          for (const block of data.blocks ?? []) {
-            for (const paragraph of block.paragraphs) {
-              for (const line of paragraph.lines) {
-                for (const word of line.words) {
-                  words.push({
-                    text: word.text,
-                    left: word.bbox.x0 / RENDER_SCALE,
-                    top: word.bbox.y0 / RENDER_SCALE,
-                    width: (word.bbox.x1 - word.bbox.x0) / RENDER_SCALE,
-                    height: (word.bbox.y1 - word.bbox.y0) / RENDER_SCALE,
-                    confidence: word.confidence
-                  });
-                }
-              }
-            }
-          }
+          const words = extractWordsFromTsv(data.tsv, RENDER_SCALE);
           pages.push({ pageIndex, text, confidence: data.confidence, words });
-          // TEMPORARY diagnostic - client-side console data showed only 16
-          // words for a whole page whose plain text came back rich
-          // (thousands of characters), meaning word-level extraction is
-          // sparse/wrong even though aggregate text extraction is fine.
-          // This never got tested against a real, dense scanned page in the
-          // sandbox - only a trivial 3-line synthetic image, where it
-          // worked. Logging per-page here shows whether that gap is
-          // systemic across the whole book or specific to certain pages,
-          // and whether the raw data.blocks structure itself is already
-          // sparse (a Tesseract-side issue) versus something going wrong in
-          // the flattening loop above.
+
+          // Persisted diagnostics, not just console.log: a prior session
+          // lost the one log line that would have pinned down a real
+          // word-count discrepancy because the sandbox terminal reset mid
+          // multi-page run before it could be read. Anything worth knowing
+          // about a page's OCR quality needs to survive that, so it goes
+          // into `warnings` (already surfaced to Josh in the panel's status
+          // line) rather than only stdout.
+          const naiveTextWordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
+          const wordCoverage = naiveTextWordCount > 0 ? words.length / naiveTextWordCount : 1;
           // eslint-disable-next-line no-console
           console.log(
-            `[OCR-SERVER-DEBUG] page ${pageIndex}/${doc.numPages}: confidence=${data.confidence.toFixed(1)} textLength=${text.length} blocksCount=${data.blocks?.length ?? 0} flattenedWordCount=${words.length}`
+            `[OCR-SERVER-DEBUG] page ${pageIndex}/${doc.numPages}: confidence=${data.confidence.toFixed(1)} textLength=${text.length} naiveTextWordCount=${naiveTextWordCount} tsvWordCount=${words.length} coverage=${(wordCoverage * 100).toFixed(0)}%`
           );
 
           if (text && data.confidence < LOW_CONFIDENCE_THRESHOLD) {
             warnings.push(
               `Page ${pageIndex}: low OCR confidence (${data.confidence.toFixed(0)}%) - recognized text may be unreliable and worth checking against the original scan.`
+            );
+          }
+          if (naiveTextWordCount > 0 && wordCoverage < WORD_COVERAGE_WARNING_THRESHOLD) {
+            warnings.push(
+              `Page ${pageIndex}: word-position data covers only ${words.length} of an estimated ${naiveTextWordCount} words (${(wordCoverage * 100).toFixed(0)}%) - the recognized text itself may look complete, but drag-selection/highlighting on this page will likely be incomplete or missing in places. Worth checking this page against the original scan.`
             );
           }
         } finally {
