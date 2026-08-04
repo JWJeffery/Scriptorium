@@ -223,6 +223,17 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [selectedText, setSelectedText] = useState("");
   const [anchor, setAnchor] = useState<SelectionAnchor | undefined>();
   const [note, setNote] = useState("");
+
+  // A "select some text" workflow needs an equally easy way to back out of
+  // it - clears both the app's own captured selection state and the
+  // browser's own visible native-highlight selection (window.getSelection
+  // is a real, separate thing from selectedText/anchor here - clearing
+  // one doesn't clear the other on its own).
+  function clearSelection() {
+    window.getSelection()?.removeAllRanges();
+    setSelectedText("");
+    setAnchor(undefined);
+  }
   // field-sizing: content (CSS-only auto-grow) turned out to be unreliable
   // across Chrome versions still in real use - stabilized late enough that
   // it can't be counted on yet. This does the same job with plain JS,
@@ -562,6 +573,11 @@ export function ScriptoriumMilestoneOnePersisted() {
           <h3>Annotation</h3>
           <p>{isText(documentRecord) ? "Select text directly from the current extracted text snapshot so Scriptorium can store line and offset anchors for this version." : "Select text directly from the rendered PDF page, then verify the captured passage before saving."}</p>
           <textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} />
+          {selectedText || anchor ? (
+            <button className="secondaryButton clearSelectionButton" type="button" onClick={clearSelection}>
+              Clear selection
+            </button>
+          ) : null}
           <textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} />
           <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option></select></label>
           <div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>
