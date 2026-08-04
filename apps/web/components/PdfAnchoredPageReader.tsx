@@ -243,9 +243,19 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     return () => observer.disconnect();
   }, []);
 
-  // Never scale up past the page's real size - only shrink to fit when the
-  // available space is genuinely narrower than the page.
+  // Never scale up past the page's real size on its own - only shrink to
+  // fit when the available space is genuinely narrower than the page.
+  // Reading a real scanned page shrunk to fit a narrow window can still be
+  // too small to read comfortably (small print, a two-page spread), so
+  // zoomLevel is a person-controlled multiplier on top of that baseline -
+  // 1 means "whatever fits", and the buttons below adjust it up or down
+  // from there.
   const fitScale = pageSize.width > 0 && containerWidth > 0 ? Math.min(1, containerWidth / pageSize.width) : 1;
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const finalScale = fitScale * zoomLevel;
+  const ZOOM_STEP = 0.25;
+  const MIN_ZOOM = 0.5;
+  const MAX_ZOOM = 3;
 
   const usingOcrLayer = Boolean(authoritativeWords && authoritativeWords.length > 0);
   const textRuns = usingOcrLayer ? runsFromWords(authoritativeWords!) : pdfTextRuns;
@@ -331,7 +341,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     if (!usingOcrLayer) return;
     const frame = frameRef.current;
     if (!frame) return;
-    dragStartRef.current = pointInFrame(event, frame, fitScale);
+    dragStartRef.current = pointInFrame(event, frame, finalScale);
     setDragRect(null);
   }
 
@@ -339,7 +349,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     if (!usingOcrLayer || !dragStartRef.current) return;
     const frame = frameRef.current;
     if (!frame) return;
-    setDragRect(rectFromPoints(dragStartRef.current, pointInFrame(event, frame, fitScale)));
+    setDragRect(rectFromPoints(dragStartRef.current, pointInFrame(event, frame, finalScale)));
   }
 
   function handleOcrMouseUp() {
@@ -442,7 +452,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     if (!selection || selection.rangeCount === 0 || !selectedText || !frame || !textLayer) return;
     const range = selection.getRangeAt(0);
     if (!textLayer.contains(range.commonAncestorContainer)) return;
-    const rects = rectsFor(range, frame, fitScale);
+    const rects = rectsFor(range, frame, finalScale);
     selection.removeAllRanges();
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
 
@@ -461,11 +471,35 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
 
   return (
     <div className="pdfReaderShell">
+      <div className="pdfZoomControls">
+        <button
+          type="button"
+          onClick={() => setZoomLevel((level) => Math.max(MIN_ZOOM, Math.round((level - ZOOM_STEP) * 100) / 100))}
+          disabled={zoomLevel <= MIN_ZOOM}
+          aria-label="Zoom out"
+        >
+          &minus;
+        </button>
+        <span className="pdfZoomLevel">{Math.round(finalScale * 100)}%</span>
+        <button
+          type="button"
+          onClick={() => setZoomLevel((level) => Math.min(MAX_ZOOM, Math.round((level + ZOOM_STEP) * 100) / 100))}
+          disabled={zoomLevel >= MAX_ZOOM}
+          aria-label="Zoom in"
+        >
+          +
+        </button>
+        {zoomLevel !== 1 ? (
+          <button type="button" className="pdfZoomReset" onClick={() => setZoomLevel(1)}>
+            Reset zoom
+          </button>
+        ) : null}
+      </div>
       {isLoading ? <div className="pdfLoading">Rendering PDF page…</div> : null}
       <div
         className="pdfFrameViewport"
         ref={viewportRef}
-        style={{ height: pageSize.height ? pageSize.height * fitScale : undefined }}
+        style={{ height: pageSize.height ? pageSize.height * finalScale : undefined }}
       >
         <div
           className="pdfPageFrame"
@@ -476,7 +510,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
           style={{
             width: pageSize.width || undefined,
             height: pageSize.height || undefined,
-            transform: fitScale < 1 ? `scale(${fitScale})` : undefined,
+            transform: finalScale !== 1 ? `scale(${finalScale})` : undefined,
             transformOrigin: "top left"
           }}
         >

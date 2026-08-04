@@ -48,12 +48,14 @@ textarea {
 }
 
 .autoGrowTextarea {
-  /* field-sizing: content (Chrome 123+) grows the textarea to fit its
-     content automatically, capped by min/max-height below - no more
-     manually dragging the resize handle every time a selection is longer
-     than the default rows. Older browsers ignore this property and simply
-     keep the existing fixed-rows + manual vertical resize behavior above,
-     so this is a pure enhancement with no fallback needed. */
+  /* The real auto-grow logic is JS now (see the autoResize function in
+     ScriptoriumMilestoneOnePersisted.tsx) - field-sizing: content alone
+     turned out to be unreliable across Chrome versions still in real use.
+     Kept here anyway as a harmless progressive enhancement (browsers that
+     support it just get the same result slightly earlier/smoother).
+     max-height + overflow-y apply either way, since a CSS max-height
+     always clamps an element's rendered size regardless of whether the
+     height came from field-sizing or a JS-set inline style. */
   field-sizing: content;
   min-height: 4.5em;
   max-height: 320px;
@@ -316,12 +318,54 @@ h2 {
 }
 
 .pdfFrameViewport {
-  /* Sized in JS to pageSize.height * fitScale (see PdfAnchoredPageReader) -
-     the CSS transform on .pdfPageFrame shrinks it visually to fit here
-     without shrinking its actual layout footprint, so this wrapper is what
-     actually reserves the (correctly reduced) amount of vertical space. */
+  /* Sized in JS to pageSize.height * finalScale (see PdfAnchoredPageReader)
+     - the CSS transform on .pdfPageFrame shrinks/grows it visually to fit
+     or zoom without changing its actual layout footprint, so this wrapper
+     is what actually reserves the (correctly adjusted) amount of vertical
+     space. overflow: visible (not hidden) so zooming in past "fit" can
+     overflow into .pdfPanel's own scroll area below, rather than clipping
+     the zoomed-in page. */
   width: 100%;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.pdfZoomControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pdfZoomControls button {
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.pdfZoomControls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pdfZoomLevel {
+  min-width: 3.5em;
+  text-align: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pdfZoomControls button.pdfZoomReset {
+  width: auto;
+  min-width: 0;
+  border-radius: 999px;
+  padding: 0 14px;
+  font-size: 0.85rem;
+  color: var(--accent-strong);
 }
 
 .pdfObject {

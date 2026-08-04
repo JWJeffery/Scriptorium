@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { highlightColors } from "../lib/highlights";
 import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
@@ -223,6 +223,31 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [selectedText, setSelectedText] = useState("");
   const [anchor, setAnchor] = useState<SelectionAnchor | undefined>();
   const [note, setNote] = useState("");
+  // field-sizing: content (CSS-only auto-grow) turned out to be unreliable
+  // across Chrome versions still in real use - stabilized late enough that
+  // it can't be counted on yet. This does the same job with plain JS,
+  // which works everywhere: measure the content's real height and set the
+  // textarea to match, capped by the CSS max-height (overflow-y: auto
+  // handles anything beyond that). Runs on every value change, not just
+  // onChange, because selectedText is set programmatically by
+  // capturePdfAnchor/captureTextAnchor - a real selection on the page, not
+  // the person typing - and onChange alone would never fire for that.
+  const selectedTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const noteTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  function autoResize(el: HTMLTextAreaElement | null) {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }
+
+  useEffect(() => {
+    autoResize(selectedTextAreaRef.current);
+  }, [selectedText]);
+
+  useEffect(() => {
+    autoResize(noteTextAreaRef.current);
+  }, [note]);
   const [style, setStyle] = useState<CitationStyle>("sbl-note");
   const [status, setStatus] = useState("Register a PDF, TXT, Markdown, or DOCX file to begin.");
   const [sourceSaveMessage, setSourceSaveMessage] = useState("");
@@ -536,8 +561,8 @@ export function ScriptoriumMilestoneOnePersisted() {
         <aside className="panel annotationPanel">
           <h3>Annotation</h3>
           <p>{isText(documentRecord) ? "Select text directly from the current extracted text snapshot so Scriptorium can store line and offset anchors for this version." : "Select text directly from the rendered PDF page, then verify the captured passage before saving."}</p>
-          <textarea className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} />
-          <textarea className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add your note." rows={5} disabled={!documentRecord} />
+          <textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} />
+          <textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} />
           <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option></select></label>
           <div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>
           {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
