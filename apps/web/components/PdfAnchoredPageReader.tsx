@@ -183,21 +183,21 @@ function normalizeForCompare(value: string) {
 // check either way, so it's skipped rather than risking a false "verified".
 const MIN_LENGTH_TO_CHECK = 8;
 
-function rectsFor(range: Range, frame: HTMLDivElement) {
+function rectsFor(range: Range, frame: HTMLDivElement, scale: number) {
   const frameRect = frame.getBoundingClientRect();
   return Array.from(range.getClientRects()).map((rect) => ({
-    left: rect.left - frameRect.left,
-    top: rect.top - frameRect.top,
-    width: rect.width,
-    height: rect.height
+    left: (rect.left - frameRect.left) / scale,
+    top: (rect.top - frameRect.top) / scale,
+    width: rect.width / scale,
+    height: rect.height / scale
   })).filter((rect) => rect.width > 0 && rect.height > 0);
 }
 
 type DragRect = { left: number; top: number; width: number; height: number };
 
-function pointInFrame(event: { clientX: number; clientY: number }, frame: HTMLDivElement) {
+function pointInFrame(event: { clientX: number; clientY: number }, frame: HTMLDivElement, scale: number) {
   const frameRect = frame.getBoundingClientRect();
-  return { x: event.clientX - frameRect.left, y: event.clientY - frameRect.top };
+  return { x: (event.clientX - frameRect.left) / scale, y: (event.clientY - frameRect.top) / scale };
 }
 
 function rectFromPoints(start: { x: number; y: number }, end: { x: number; y: number }): DragRect {
@@ -212,6 +212,7 @@ function rectFromPoints(start: { x: number; y: number }, end: { x: number; y: nu
 export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const documentRef = useRef<PdfDocument | null>(null);
   const [pdfTextRuns, setPdfTextRuns] = useState<TextRun[]>([]);
@@ -220,6 +221,31 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
   const [documentLoadKey, setDocumentLoadKey] = useState(0);
   const [dragRect, setDragRect] = useState<DragRect | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Real scanned pages - especially two-page spreads scanned as a single
+  // image, like this book - can be wider than the middle grid column has
+  // room for, at some perfectly normal browser window widths. Rather than
+  // letting the page overflow/clip or forcing a horizontal scrollbar
+  // that's easy to miss, this tracks how much width is actually available
+  // and shrinks the whole page (canvas, highlights, drag-selection layer -
+  // everything, via a single CSS transform on the shared parent) to fit,
+  // without changing anything about the pixel coordinate space every OCR
+  // word position, highlight rectangle, and drag rectangle is computed in.
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (typeof width === "number") setContainerWidth(width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  // Never scale up past the page's real size - only shrink to fit when the
+  // available space is genuinely narrower than the page.
+  const fitScale = pageSize.width > 0 && containerWidth > 0 ? Math.min(1, containerWidth / pageSize.width) : 1;
 
   const usingOcrLayer = Boolean(authoritativeWords && authoritativeWords.length > 0);
   const textRuns = usingOcrLayer ? runsFromWords(authoritativeWords!) : pdfTextRuns;
@@ -305,7 +331,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     if (!usingOcrLayer) return;
     const frame = frameRef.current;
     if (!frame) return;
-    dragStartRef.current = pointInFrame(event, frame);
+    dragStartRef.current = pointInFrame(event, frame, fitScale);
     setDragRect(null);
   }
 
@@ -313,7 +339,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     if (!usingOcrLayer || !dragStartRef.current) return;
     const frame = frameRef.current;
     if (!frame) return;
-    setDragRect(rectFromPoints(dragStartRef.current, pointInFrame(event, frame)));
+    setDragRect(rectFromPoints(dragStartRef.current, pointInFrame(event, frame, fitScale)));
   }
 
   function handleOcrMouseUp() {
@@ -416,7 +442,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     if (!selection || selection.rangeCount === 0 || !selectedText || !frame || !textLayer) return;
     const range = selection.getRangeAt(0);
     if (!textLayer.contains(range.commonAncestorContainer)) return;
-    const rects = rectsFor(range, frame);
+    const rects = rectsFor(range, frame, fitScale);
     selection.removeAllRanges();
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
 
@@ -437,35 +463,46 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     <div className="pdfReaderShell">
       {isLoading ? <div className="pdfLoading">Rendering PDF page…</div> : null}
       <div
-        className="pdfPageFrame"
-        onMouseUp={usingOcrLayer ? handleOcrMouseUp : captureSelection}
-        onMouseDown={usingOcrLayer ? handleOcrMouseDown : undefined}
-        onMouseMove={usingOcrLayer ? handleOcrMouseMove : undefined}
-        ref={frameRef}
-        style={{ width: pageSize.width || undefined, height: pageSize.height || undefined }}
+        className="pdfFrameViewport"
+        ref={viewportRef}
+        style={{ height: pageSize.height ? pageSize.height * fitScale : undefined }}
       >
-        <canvas ref={canvasRef} className="pdfCanvas" />
-        <div className="pdfHighlightLayer" aria-hidden="true">
-          {highlights.filter((highlight) => highlight.anchor.pageNumber === pageNumber).flatMap((highlight) =>
-            highlight.anchor.rects.map((rect, index) => (
-              <span className="pdfHighlightBox" key={`${highlight.id}-${index}`} style={{ background: highlight.color, left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
-            ))
-          )}
-          {usingOcrLayer && dragRect ? (
-            <span className="pdfDragRect" style={{ left: dragRect.left, top: dragRect.top, width: dragRect.width, height: dragRect.height }} />
-          ) : null}
-        </div>
         <div
-          className="pdfTextLayer"
-          aria-label="Selectable PDF text layer"
-          ref={textLayerRef}
-          style={usingOcrLayer ? { pointerEvents: "none", userSelect: "none", cursor: "default" } : undefined}
+          className="pdfPageFrame"
+          onMouseUp={usingOcrLayer ? handleOcrMouseUp : captureSelection}
+          onMouseDown={usingOcrLayer ? handleOcrMouseDown : undefined}
+          onMouseMove={usingOcrLayer ? handleOcrMouseMove : undefined}
+          ref={frameRef}
+          style={{
+            width: pageSize.width || undefined,
+            height: pageSize.height || undefined,
+            transform: fitScale < 1 ? `scale(${fitScale})` : undefined,
+            transformOrigin: "top left"
+          }}
         >
-          {textRuns.map((run) => (
-            <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
-              {run.text}
-            </span>
-          ))}
+          <canvas ref={canvasRef} className="pdfCanvas" />
+          <div className="pdfHighlightLayer" aria-hidden="true">
+            {highlights.filter((highlight) => highlight.anchor.pageNumber === pageNumber).flatMap((highlight) =>
+              highlight.anchor.rects.map((rect, index) => (
+                <span className="pdfHighlightBox" key={`${highlight.id}-${index}`} style={{ background: highlight.color, left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
+              ))
+            )}
+            {usingOcrLayer && dragRect ? (
+              <span className="pdfDragRect" style={{ left: dragRect.left, top: dragRect.top, width: dragRect.width, height: dragRect.height }} />
+            ) : null}
+          </div>
+          <div
+            className="pdfTextLayer"
+            aria-label="Selectable PDF text layer"
+            ref={textLayerRef}
+            style={usingOcrLayer ? { pointerEvents: "none", userSelect: "none", cursor: "default" } : undefined}
+          >
+            {textRuns.map((run) => (
+              <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
+                {run.text}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </div>

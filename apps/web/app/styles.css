@@ -47,6 +47,19 @@ textarea {
   resize: vertical;
 }
 
+.autoGrowTextarea {
+  /* field-sizing: content (Chrome 123+) grows the textarea to fit its
+     content automatically, capped by min/max-height below - no more
+     manually dragging the resize handle every time a selection is longer
+     than the default rows. Older browsers ignore this property and simply
+     keep the existing fixed-rows + manual vertical resize behavior above,
+     so this is a pure enhancement with no fallback needed. */
+  field-sizing: content;
+  min-height: 4.5em;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -300,6 +313,15 @@ h2 {
   overflow: auto;
   min-height: 760px;
   background: #eee5d7;
+}
+
+.pdfFrameViewport {
+  /* Sized in JS to pageSize.height * fitScale (see PdfAnchoredPageReader) -
+     the CSS transform on .pdfPageFrame shrinks it visually to fit here
+     without shrinking its actual layout footprint, so this wrapper is what
+     actually reserves the (correctly reduced) amount of vertical space. */
+  width: 100%;
+  overflow: hidden;
 }
 
 .pdfObject {
