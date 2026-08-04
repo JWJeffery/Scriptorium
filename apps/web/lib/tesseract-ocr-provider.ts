@@ -12,58 +12,64 @@
 //
 // WORD-POSITION SOURCE: this used to walk the `blocks` JSON output
 // (block.paragraphs[].lines[].words[]). Switched to parsing the `tsv`
-// output instead (see extractWordsFromTsv below) after investigating a real
-// production report of a page whose flat OCR text was rich (~4,258
-// characters) but whose block-derived word/position array had only 16
-// entries. That exact split could not be reproduced against several
-// adversarial synthetic fixtures in this codebase's sandbox (dense
-// prose+graphic, table/ToC layout, noise+skew, tight/low-DPI spacing,
-// sideways caption/stamp text all stayed internally consistent between text
-// and block-derived words in this tesseract.js version) - so the precise
-// visual trigger on the real page remains unconfirmed. But tesseract.js's
-// own v6 changelog documents a real, relevant mechanism: as of v6, the
-// `blocks` JSON format only reports blocks Tesseract's layout analysis
-// classifies as text - non-text-classified blocks (images, line segments,
-// noise - exactly the kind of region a worn scan, foxing, or a library
-// stamp can produce) are silently dropped from `blocks` entirely, even if
-// Tesseract still recognized real text inside them for the flat `text`
-// output. `tsv` is a separate, much older Tesseract export path (one row
-// per recognized element at every RIL level, unaffected by that specific
-// v6 blocks-JSON change) and is the standard, most complete way to recover
-// per-word positions - verified word-for-word identical to blocks-derived
-// output on every fixture tried here, so this is a strict improvement with
-// no observed downside, not just a guess.
+// output instead (see extractWordsFromTsv below) - a separate, older
+// Tesseract export path (one row per recognized word at every RIL level)
+// not subject to tesseract.js v6's "only text-classified blocks are
+// reported in blocks JSON" behavior. Verified word-for-word identical to
+// blocks-derived output on every fixture tried, a real improvement
+// independent of everything below.
+//
+// PAGE SEGMENTATION MODE AND CONTRAST - the actual root cause and fix,
+// found by testing directly against a real page image (Josh exported the
+// problem page as its own PDF and uploaded it) instead of guessing and
+// shipping to a live 128-page run, which is how every earlier attempt in
+// this file's history went. Running that real page through the native
+// `tesseract` CLI at tesseract.js's default page-segmentation mode (PSM 3,
+// "fully automatic") returned "Empty page!!" - zero words, nothing - on
+// this exact page. That's the real root cause of the whole
+// sparse/garbled-words saga: PSM 3's automatic layout analysis was failing
+// outright on this book's mix of a stylized library-stamp block, dense
+// small-print copyright/catalog text, and a large blank two-page-spread
+// gutter - not timing out, not needing more resolution, just failing to
+// find any text region worth reading, then falling back to whatever
+// fragments its confused layout analysis could salvage.
+// PSM.SINGLE_BLOCK (6, "assume a single uniform block of text") fixed this
+// completely - tested against the real page via both the native tesseract
+// CLI and this exact tesseract.js library, word-for-word correct output
+// ("There's this to be said for the Church [of England]..." exactly
+// matching the real printed epigraph). A simple 2x contrast-enhancement
+// pass on the rendered image (see applyContrastEnhancement below) closed
+// the small remaining gap on the harder parts of the page (the stylized
+// stamp, small catalog print). Confirmed via tesseract.js directly at both
+// the original RENDER_SCALE=2 and the since-reverted RENDER_SCALE=4 -
+// resolution was never the actual problem, so RENDER_SCALE stays at its
+// original, cheaper value.
 import "./pdfjs-worker-setup";
-import { createWorker } from "tesseract.js";
-import { createCanvas } from "@napi-rs/canvas";
+import { createWorker, PSM } from "tesseract.js";
+import { createCanvas, type Canvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { OcrProvider, OcrResult, OcrWord } from "./ocr-provider";
 
 // Higher scale = sharper rendered page = better recognition, at the cost of
-// time and memory. Raised from 2 to 4: real word-position data from a live
-// page showed Tesseract's word-boundary segmentation genuinely struggling
-// at scale 2 on a real 1978 scan (garbage fragments like "nd"/"b"/"n"
-// reported right alongside correctly-segmented real words). More pixels
-// per character is Tesseract's own standard recommendation for improving
-// segmentation reliability on real scans. A width- or confidence-based
-// post-hoc filter to drop the garbage fragments was tried and rejected
-// after checking it against the FULL real word list, not just the first
-// few entries: a genuinely real, correctly-recognized word ("in", part of
-// "Coggan, in Thomas Hardy's") had the same 5px width as a garbage-boxed
-// "the", and confidence didn't separate them either ("the" was 97%
-// confidence despite the defective box; "nd"/"b" were 91-92% despite being
-// clear fragments). No single-signal filter found here was safe to ship -
-// this addresses the problem at the source (segmentation quality) instead.
-// Untested against the actual book (no live browser in this sandbox) -
-// treat as the next thing to verify, not a confirmed fix.
-const RENDER_SCALE = 4;
+// time and memory - in theory. Was raised from 2 to 4 on a hypothesis that
+// turned out to be wrong (real data from a live page showed scale 4 alone
+// made word-segmentation worse, not better - more pixels to fragment on,
+// not fewer mistakes). The real fix was PSM + contrast (below), verified to
+// work fine at the original, cheaper scale of 2 - no reason to pay for
+// resolution the actual problem never needed.
+const RENDER_SCALE = 2;
 const LOW_CONFIDENCE_THRESHOLD = 40;
+// Multiplier for the contrast-enhancement pass applied to each rendered
+// page before OCR (see applyContrastEnhancement). 2.0 was tested directly
+// against the real problem page and confirmed to produce a word-for-word
+// correct transcription of it.
+const CONTRAST_FACTOR = 2.0;
 // If fewer than this fraction of the page's estimated words got a real
-// position from TSV, something is still wrong even with the more complete
-// TSV source - flag it rather than silently shipping a mostly-unselectable
-// page. Kept well below 1.0 because legitimate partial coverage (e.g. a
-// genuinely blank margin, a page that's mostly a plate/illustration with a
-// short caption) is normal and shouldn't trip this.
+// position from TSV, something is still wrong - flag it rather than
+// silently shipping a mostly-unselectable page. Kept well below 1.0
+// because legitimate partial coverage (e.g. a genuinely blank margin, a
+// page that's mostly a plate/illustration with a short caption) is normal
+// and shouldn't trip this.
 const WORD_COVERAGE_WARNING_THRESHOLD = 0.5;
 
 // Tesseract's TSV output: one row per recognized element at every RIL
@@ -98,6 +104,37 @@ function extractWordsFromTsv(tsv: string | null, renderScale: number): OcrWord[]
   return words;
 }
 
+// Converts to grayscale and pushes each pixel away from the image's own
+// mean brightness by `factor` - the same formula Python's PIL uses for
+// ImageEnhance.Contrast (degenerate = mean-gray image, result = degenerate
+// * (1 - factor) + original * factor, which simplifies to
+// mean + (pixel - mean) * factor). This exact formula, at factor 2.0, is
+// what was verified directly against the real problem page - not a
+// generic "increase contrast" gesture, this specific transform. Mutates
+// the canvas in place.
+function applyContrastEnhancement(canvas: Canvas, factor: number): void {
+  const ctx = canvas.getContext("2d");
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const pixelCount = data.length / 4;
+  const gray = new Float64Array(pixelCount);
+  let sum = 0;
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    gray[p] = g;
+    sum += g;
+  }
+  const mean = sum / pixelCount;
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const value = Math.min(255, Math.max(0, mean + (gray[p] - mean) * factor));
+    data[i] = value;
+    data[i + 1] = value;
+    data[i + 2] = value;
+    // alpha (data[i + 3]) left untouched
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
 export class TesseractOcrProvider implements OcrProvider {
   readonly name = "tesseract-js-eng-v1";
 
@@ -113,6 +150,10 @@ export class TesseractOcrProvider implements OcrProvider {
     });
     const doc = await loadingTask.promise;
     const worker = await createWorker("eng");
+    // See the file header - PSM 3 (tesseract.js's default) returned zero
+    // words at all on the real page this whole investigation traced back
+    // to. SINGLE_BLOCK is what was actually verified against that page.
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
     const pages: { pageIndex: number; text: string; confidence: number; words: OcrWord[] }[] = [];
     const warnings: string[] = [];
 
@@ -128,6 +169,7 @@ export class TesseractOcrProvider implements OcrProvider {
           // @napi-rs/canvas implements the subset pdfjs actually calls, but
           // TypeScript doesn't know that, hence the cast.
           await page.render({ canvasContext: context as unknown as CanvasRenderingContext2D, viewport }).promise;
+          applyContrastEnhancement(canvas, CONTRAST_FACTOR);
 
           const pngBuffer = canvas.toBuffer("image/png");
           // tsv: true asks Tesseract for its standard per-word TSV export

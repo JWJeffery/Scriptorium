@@ -803,3 +803,97 @@ width-per-character against the *median* of other words in the same block/line (
 undersized word should stand out relative to its neighbors, not against a fixed constant).
 Not attempted this session - the checked-and-rejected simple heuristics above should be
 consulted first so the same dead ends aren't retried.
+
+## RENDER_SCALE=4 tested live - made it WORSE, reverted to 2. Real page image needed for next session, not another blind guess.
+
+Josh re-ran OCR at RENDER_SCALE=4 and re-sent the on-page word dump. Result: total detected
+words on the page went from 16 to **48** - but nearly all of the new ones are more garbage
+fragments (`ne`, `Ld`, `indj`, `y&`, `sa`, `f`, `ir`, `M`, single/double-character noise),
+not real recovered words. The hypothesis that more resolution would help Tesseract segment
+this scan correctly was wrong - more pixels gave it more surface area to fragment on, not
+fewer mistakes to make. **Reverted `RENDER_SCALE` back to 2** in this same commit. This is a
+rollback based on direct evidence, not a new guess layered on top of an unconfirmed one.
+
+**The real structural problem with this whole investigation, named plainly**: every fix
+across this entire multi-session effort has been reasoned from aggregated text diagnostics
+(word counts, confidence numbers, bounding-box coordinates) and shipped blind to a real
+128-page, many-minutes-long production OCR run for Josh to test - because this sandbox has
+no live browser and never had the actual scanned page image to test against directly. That's
+an genuinely bad feedback loop for a problem this fiddly, and it's the real reason this has
+taken this many rounds without landing.
+
+**What should happen next, instead of another guess-and-ship round**: get the actual image
+of the problem page (a screenshot or export of page 3 at real resolution, not the app UI)
+uploaded directly into a session. With the real image in hand, real Tesseract experiments
+(different page-segmentation modes / `--psm` values, image preprocessing, thresholding) can
+be run and iterated on cheaply and fast in the sandbox against ground truth - checked against
+what the page actually says - before shipping anything to a full production run again. This
+was proposed to Josh directly this session. If a future session picks this up without that
+image yet in hand, ask for it before attempting another parameter-tweak guess - that's the
+actual lesson from this whole thread, not "try a different render scale."
+
+## FOUND IT. Root cause confirmed, fix doubly-verified, against the real page - not a guess.
+
+Josh uploaded the actual problem page as its own single-page PDF (exported from the app
+itself). This changed everything about how this session went: for the first time in this
+whole saga, real Tesseract experiments could be run directly against the real page and
+checked against what it actually says, instead of reasoning from aggregated diagnostics and
+shipping blind to a 128-page production run.
+
+**Root cause, found directly**: rasterized the real page and ran it through the native
+`tesseract` CLI at its (and tesseract.js's) default page-segmentation mode. Result:
+`Empty page!!` - literally zero words detected, on this exact real page. That's the actual
+root cause of the entire multi-session "sparse/garbled words" saga - PSM 3 ("fully automatic"
+layout analysis) was outright failing on this book's page layout: a two-page spread scanned
+as one image, mixing a stylized hand-drawn-style library-stamp block, dense small-print
+copyright/catalog text, and a large blank gutter between the two pages. Not a timeout, not a
+resolution problem, not a word-segmentation-quality problem in isolation - the automatic
+layout analysis was finding no text region worth reading at all, then whatever fragments
+leaked through were the "16 words" / "48 words" / garbage fragments chased across every
+earlier session.
+
+**The fix, tested systematically against the real page**:
+- Tried PSM 1, 3, 4, 6, 11, 12 directly. PSM 3 (default): empty. PSM 4: garbage. PSM 6
+  ("assume a single uniform block of text"): dramatically better - real, mostly-correct words
+  in correct reading order.
+- Tried image preprocessing on top of PSM 6: plain contrast enhancement (Python PIL's
+  `ImageEnhance.Contrast`, factor 2.0) took the result from "mostly correct with some
+  garbled words" to **word-for-word perfect** on the actual epigraph text: "There's this to
+  be said for the Church [of England], a man can belong to the Church and bide in his
+  cheerful old inn, and never trouble or worry his mind about doctrines at all. Coggan, in
+  Thomas Hardy's Far from the Madding Crowd" - exactly matching the real printed text.
+- Tested whether this needed the higher RENDER_SCALE=4 that had just been reverted: no -
+  confirmed via `tesseract.js` directly (not just the native CLI) that PSM 6 + contrast
+  works just as well at the original RENDER_SCALE=2. Resolution was never the actual
+  problem, so `RENDER_SCALE` stays reverted to 2 - no reason to pay the extra OCR time a
+  128-page book would cost for resolution the real problem never needed.
+
+**Shipped**: `tesseract-ocr-provider.ts` now sets `PSM.SINGLE_BLOCK` on the worker (once,
+after creation) and applies a `applyContrastEnhancement()` pass (replicating PIL's exact
+contrast formula: `mean + (pixel - mean) * factor`, factor 2.0) to each rendered page canvas
+before handing it to Tesseract.
+
+**Verification performed, in order of increasing fidelity to production**:
+1. Native `tesseract` CLI against the raw rasterized page, multiple PSM values compared.
+2. Native `tesseract` CLI against a manually-cropped version of just the epigraph region
+   (isolating it from the rest of the page) - confirmed PSM 6 alone gets close, contrast
+   enhancement closes the remaining gap.
+3. The actual `tesseract.js` library (not just the native CLI) run directly against both the
+   full real page and the cropped region, confirming the same fix works through the exact
+   JS/WASM path the app uses, not just the native binary.
+4. The real, **unmodified** `extractText()` function from `tesseract-ocr-provider.ts`
+   (only import-file-extension and a scratch-only `doc.destroy()` compatibility guard
+   changed, both cosmetic, needed only because this sandbox runs the file directly via
+   `node --experimental-strip-types` outside of Next.js/webpack) - run end-to-end against
+   the real uploaded PDF. Result: **100% word coverage, zero warnings, and the transcribed
+   epigraph is correct except a single character ("Englund" for "England")** - the rest of
+   the page (the stylized library stamp, dense small-print catalog data) has minor,
+   expected OCR imperfections but nothing resembling the fragment-soup from every earlier
+   round.
+
+**What Josh needs to do**: pull this, click "Re-run OCR" on the real 128-page book, and
+check that same page-3 selection one more time. Given the fix was verified against the
+literal real page (not a synthetic reconstruction, not a guess), this should actually be it
+- but "should be" still means it needs the real confirmation on the real book before this
+gets marked closed. If it's still wrong after this, the next session has real, concrete
+ground truth to test against for the same page rather than starting over.
