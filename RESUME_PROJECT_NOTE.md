@@ -897,3 +897,52 @@ literal real page (not a synthetic reconstruction, not a guess), this should act
 - but "should be" still means it needs the real confirmation on the real book before this
 gets marked closed. If it's still wrong after this, the next session has real, concrete
 ground truth to test against for the same page rather than starting over.
+
+## CLOSED. Real confirmation on the real page, full loop from root cause to verified fix.
+
+Josh confirmed on the real book: the same drag-selection on page 3 now captures the epigraph
+word-for-word correct, in the right reading order - "There's this to be said for the Church
+[of Englund], a man can belong to the Church and bide in his cheerful old inn, and never
+trouble or worry his mind about doctrines at all. Coggan, in Thomas Hardy's Far from the
+Madding Crowd" - matching the real printed text exactly except one single-character OCR
+misread ("Englund" for "England"). Not worth chasing further on its own; if a similar
+character-level miss shows up on other pages once the rest of the book gets OCR'd, that's
+worth another look, but this one alone doesn't justify more time.
+
+**Full arc of this investigation, for anyone reading this cold**: what started as "16 words
+for 4,258 characters of text" turned out to have two genuinely separate root causes, found in
+this order:
+
+1. **Word-position export gap** (tesseract.js v6's `blocks` JSON silently dropping
+   non-text-classified regions) - fixed by switching to `tsv` parsing. Real and independently
+   justified, though it turned out not to be the dominant cause of the worst symptoms on this
+   specific page.
+2. **Page-segmentation failure** - the actual dominant root cause, only found once a real page
+   image was available to test against directly: Tesseract's default automatic layout
+   analysis (PSM 3) was returning zero words on this real page's layout (a two-page spread
+   with a stylized library stamp, dense small-print catalog text, and a large blank gutter).
+   Fixed with `PSM.SINGLE_BLOCK` + a contrast-enhancement pass, both verified against the real
+   page before shipping.
+3. **A client-side reading-order bug**, exposed only once (1) and (2) were both fixed and real
+   words started actually arriving in numbers: sorting by exact pixel `top` before `left`
+   scrambled same-line words whose bounding boxes jittered by a few pixels. Fixed by sorting
+   on Tesseract's own line grouping instead of raw per-word pixel coordinates.
+
+Two lessons worth carrying into future OCR/layout work in this repo:
+- **Test against the real asset before shipping a fix**, not aggregated diagnostics alone.
+  Rounds 1-4 of this investigation (TSV switch, block-contamination filtering, RENDER_SCALE
+  changes up and back down) were all reasoned from word counts, confidence numbers, and
+  coordinates - real, careful reasoning, but blind to the actual image, and it took that many
+  rounds to get to the real root cause. The moment a real page image was available, the actual
+  cause (PSM 3 returning literally nothing) was found in minutes.
+- **Fixing an upstream bug can surface a downstream one that was previously invisible.** The
+  reading-order bug was always latent in the sort comparator, but with only a handful of
+  garbled words ever arriving before, it never produced enough same-line words close enough
+  together to expose the scrambling. Once real OCR data started flowing in volume, it showed
+  up immediately. Worth remembering next time "the fix didn't work" shows up right after a
+  real fix landed - it might be a second, previously-masked bug, not a failed first one.
+
+**Not yet done, deliberately out of scope for this thread**: the rest of the 128-page book
+hasn't been checked page-by-page against these fixes - only page 3 has real confirmation.
+Worth a broader spot-check pass once there's time, but not urgent given the specific,
+well-understood root causes now on record.
