@@ -40,8 +40,23 @@ import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { OcrProvider, OcrResult, OcrWord } from "./ocr-provider";
 
 // Higher scale = sharper rendered page = better recognition, at the cost of
-// time and memory. 2x is a reasonable middle ground for a scanned book page.
-const RENDER_SCALE = 2;
+// time and memory. Raised from 2 to 4: real word-position data from a live
+// page showed Tesseract's word-boundary segmentation genuinely struggling
+// at scale 2 on a real 1978 scan (garbage fragments like "nd"/"b"/"n"
+// reported right alongside correctly-segmented real words). More pixels
+// per character is Tesseract's own standard recommendation for improving
+// segmentation reliability on real scans. A width- or confidence-based
+// post-hoc filter to drop the garbage fragments was tried and rejected
+// after checking it against the FULL real word list, not just the first
+// few entries: a genuinely real, correctly-recognized word ("in", part of
+// "Coggan, in Thomas Hardy's") had the same 5px width as a garbage-boxed
+// "the", and confidence didn't separate them either ("the" was 97%
+// confidence despite the defective box; "nd"/"b" were 91-92% despite being
+// clear fragments). No single-signal filter found here was safe to ship -
+// this addresses the problem at the source (segmentation quality) instead.
+// Untested against the actual book (no live browser in this sandbox) -
+// treat as the next thing to verify, not a confirmed fix.
+const RENDER_SCALE = 4;
 const LOW_CONFIDENCE_THRESHOLD = 40;
 // If fewer than this fraction of the page's estimated words got a real
 // position from TSV, something is still wrong even with the more complete

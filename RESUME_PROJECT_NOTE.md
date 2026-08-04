@@ -752,3 +752,54 @@ the real page** - Josh needs to pull this commit, re-select the same spot again.
 citation-attribution fragments are gone but some in-paragraph fragments remain, that
 confirms the two-problem diagnosis above and means the next session should try the
 `RENDER_SCALE` increase before anything more invasive.
+
+## Real word-level data finally captured (on-page diagnostic worked) - root cause confirmed, one bad fix caught before shipping, RENDER_SCALE raised instead
+
+The on-page diagnostic (previous entry) worked - Josh sent back the actual per-word data
+instead of a screenshot of collapsed console objects, for the first time in four rounds.
+All 16 words Tesseract found on page 3: `the`(conf97,W5/H4) `Cl`(conf69,W9/H5)
+`nd`(conf91,W1/H2) `b`(conf92,W1/H2) `n`(conf91,W1/H3) `his`(conf97,W14/H16)
+`cheerful`(conf97,W75/H6) `old`(conf97,W14/H16) `inn`(conf97,W18/H16) `e\`(conf6,W7/H2)
+`(`(conf93,W2/H6) `in,`(conf64,W4/H2) `in`(conf95,W5/H14) `Thomas`(conf95,W33/H7)
+`Ha`(conf97,W12/H7) and one empty-text entry (conf0).
+
+**Root cause confirmed**: Tesseract's own word-boundary segmentation is genuinely failing on
+this real 1978 scan - correctly-sized, correctly-recognized real words (`his`, `cheerful`,
+`old`, `inn`, `Thomas`, `Ha`) sit right next to garbage micro-fragments (`nd`, `b`, `n`,
+`e\`) that got confidently mis-segmented and, in several cases, mis-recognized. This is
+exactly the segmentation-fragility mechanism flagged as unfixed two sessions ago - now with
+real evidence instead of a guess. Only 16 total word-boxes for a page with 45+ visible words
+confirms it's not isolated to this one selection.
+
+**A width-based filter looked clean at first, then wasn't - caught before shipping this
+time.** Real words in the sample were all >=12px wide; garbage fragments were all <=9px -
+a clean-looking gap, threshold of 10 in between. Before shipping it, checked it against the
+*entire* word list rather than the first few entries that suggested the pattern, and found a
+counter-example: `in` (real word, part of "Coggan, in Thomas Hardy's") is also only 5px
+wide - identical to garbage-boxed `the`. Confidence doesn't separate them either: `the` is
+97% confidence despite its defective box, while `nd`/`b` are 91-92% despite being obvious
+fragments. No single-signal filter (width, confidence, width-per-character - all three
+checked) cleanly separated real short words from garbage in this real sample. Shipping any
+of them would have silently deleted real content like `in` while looking like a fix in
+casual testing. Not shipped.
+
+**What was shipped instead**: `RENDER_SCALE` raised from 2 to 4 in
+`tesseract-ocr-provider.ts`. This addresses the problem at its source (giving Tesseract more
+pixels per character to segment correctly) rather than trying to filter bad segmentation
+after the fact - more principled, and doesn't have the false-positive risk the width filter
+had. Verified this doesn't regress anything on the five synthetic fixtures from two sessions
+ago (100% word coverage on all five, same as at scale 2) - confirms the earlier
+coverage-regression seen while testing the width filter was entirely the filter's fault, not
+the scale increase. **Not yet confirmed against the real book** - no live browser in this
+sandbox. Costs more render/recognition time per page (a real tradeoff on a 64-page book) -
+worth testing on page 3 alone via "Re-run OCR" before assuming it's fine at full-book scale.
+The on-page word diagnostic from the previous commit is still in place (not reverted) - after
+Josh re-runs OCR, re-selecting the same spot will show directly whether the garbage
+fragments are gone at the new resolution, without needing another round of this.
+
+**Next session, if RENDER_SCALE=4 doesn't fully fix it**: the segmentation problem may need
+a real per-block-context heuristic rather than a per-word one - e.g. comparing each word's
+width-per-character against the *median* of other words in the same block/line (a genuinely
+undersized word should stand out relative to its neighbors, not against a fixed constant).
+Not attempted this session - the checked-and-rejected simple heuristics above should be
+consulted first so the same dead ends aren't retried.
