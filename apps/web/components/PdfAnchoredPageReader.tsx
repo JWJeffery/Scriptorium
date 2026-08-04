@@ -325,17 +325,6 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     // A tiny drag (or a plain click) shouldn't be treated as a selection.
     if (rect.width < 3 && rect.height < 3) return;
 
-    // TEMPORARY, visible-on-page diagnostic (not just console.log): three
-    // rounds of relaying console output via screenshot have all lost the
-    // actual word text/coordinates to truncation ("Array(10)"), a crashed
-    // eager-evaluation paste, or collapsed object previews. This puts the
-    // real data directly into the status banner as plain text, so any
-    // screenshot of the page captures it completely - no DevTools
-    // interaction needed. Remove once the real cause is confirmed.
-    const describeWord = (word: PdfAuthoritativeWord) =>
-      `"${word.text}"(conf=${word.confidence.toFixed(0)},blk=${word.blockNum ?? "?"},L${word.left.toFixed(0)}/T${word.top.toFixed(0)}/W${word.width.toFixed(0)}/H${word.height.toFixed(0)})`;
-    const allWordsDump = authoritativeWords.map(describeWord).join(" ");
-
     // A word counts as selected if its center falls inside the dragged
     // rectangle - more predictable than "any overlap" for a person dragging
     // roughly across the words they mean to select.
@@ -344,12 +333,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
       const centerY = word.top + word.height / 2;
       return centerX >= rect.left && centerX <= rect.left + rect.width && centerY >= rect.top && centerY <= rect.top + rect.height;
     });
-    const matchedDump = rawMatched.map(describeWord).join(" ");
-    const debugSuffix = ` || [DEBUG] dragRect L${rect.left.toFixed(0)}/T${rect.top.toFixed(0)}/W${rect.width.toFixed(0)}/H${rect.height.toFixed(0)} pageSize ${pageSize.width.toFixed(0)}x${pageSize.height.toFixed(0)} | ALL ${authoritativeWords.length} WORDS ON PAGE: ${allWordsDump} | MATCHED (${rawMatched.length}): ${matchedDump}`;
-    if (rawMatched.length === 0) {
-      onStatusChange(`[DEBUG] No words matched this drag.${debugSuffix}`);
-      return;
-    }
+    if (rawMatched.length === 0) return;
 
     // A rectangle drag is drawn in screen space and has no idea it might be
     // geometrically sweeping across two visually separate things that
@@ -397,7 +381,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
       ? ` (${excludedOtherBlockCount} word${excludedOtherBlockCount === 1 ? "" : "s"} from an overlapping but visually separate region - e.g. a marginal note or citation - were excluded; redraw a tighter selection if you meant to include it.)`
       : "";
     onStatusChange(
-      `Captured ${sorted.length} word${sorted.length === 1 ? "" : "s"} and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from real OCR word positions (no browser text-selection involved).${coverageNote}${debugSuffix}`
+      `Captured ${sorted.length} word${sorted.length === 1 ? "" : "s"} and ${rects.length} anchor rectangle${rects.length === 1 ? "" : "s"} from real OCR word positions (no browser text-selection involved).${coverageNote}`
     );
   }
 
