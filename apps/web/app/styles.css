@@ -398,6 +398,16 @@ h2 {
   color: var(--accent-strong);
 }
 
+.pdfClearSelection {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--accent-strong);
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
 .pdfObject {
   width: 100%;
   min-height: 760px;

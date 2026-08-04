@@ -65,6 +65,10 @@ type Props = {
   // (buildTextRuns below) remains the fallback when this is absent, which
   // is the normal case for a genuinely good, non-scanned PDF.
   authoritativeWords?: PdfAuthoritativeWord[] | null;
+  // Lives in the parent because selectedText/anchor state lives there -
+  // this component just renders the button in its toolbar and calls back.
+  hasSelection?: boolean;
+  onClearSelection?: () => void;
 };
 
 function isTextItem(item: unknown): item is TextItemLike {
@@ -127,8 +131,18 @@ function runsFromWords(words: PdfAuthoritativeWord[]): TextRun[] {
   // OCR-derived runs in line with that. Word-level position data is still
   // what's stored server-side (useful for finer-grained needs later) - this
   // only changes how it's grouped for rendering the selectable layer.
+  //
+  // A column-detection pass (ordering lines by detected left/right column
+  // before top position, to fix native selection crossing between the two
+  // columns of this book's two-page-spread scans) was tried here and
+  // reverted - it checked out against a numerical simulation before
+  // shipping, but made real selection behavior on the actual page worse,
+  // not better, meaning the heuristic was wrong somewhere that simulation
+  // didn't catch. Rather than guess at another tuning pass blind, this is
+  // back to the simple, known baseline (sort by top only) while real
+  // evidence is gathered - see RESUME_PROJECT_NOTE.md.
   const sorted = [...words].sort((a, b) => a.top - b.top || a.left - b.left);
-  type Line = { words: PdfAuthoritativeWord[]; top: number; bottom: number; left: number; right: number };
+  type Line = { words: PdfAuthoritativeWord[]; top: number; bottom: number };
   const lines: Line[] = [];
   for (const word of sorted) {
     const wordMid = word.top + word.height / 2;
@@ -137,53 +151,12 @@ function runsFromWords(words: PdfAuthoritativeWord[]): TextRun[] {
       line.words.push(word);
       line.top = Math.min(line.top, word.top);
       line.bottom = Math.max(line.bottom, word.top + word.height);
-      line.left = Math.min(line.left, word.left);
-      line.right = Math.max(line.right, word.left + word.width);
     } else {
-      lines.push({ words: [word], top: word.top, bottom: word.top + word.height, left: word.left, right: word.left + word.width });
+      lines.push({ words: [word], top: word.top, bottom: word.top + word.height });
     }
   }
-
-  // Column detection: a page scanned as a two-page spread (this book's
-  // real layout - see RESUME_PROJECT_NOTE.md) has two visually separate
-  // columns whose lines can land at similar vertical positions. Sorting
-  // purely by top interleaves them in DOM order, and a browser Selection
-  // sweeps up everything BETWEEN a drag's start and end points *in DOM
-  // order* - not just what's visually between them - so a selection
-  // confined to one column on screen could silently pull in interleaved
-  // lines from the other column. This is exactly the failure mode that
-  // motivated the original rectangle-drag "selection box" workaround, and
-  // it resurfaces the moment native selection is DOM-order-sorted by top
-  // alone. Fix: detect a real column break (a horizontal gap between line
-  // centers that stands out sharply from the normal gaps caused by
-  // ordinary paragraph-width variance) and order all of one column's
-  // lines before the other's in the DOM, rather than interleaving by
-  // height. Falls back to simple top-based order when no such gap exists
-  // (the normal single-column case), so this only changes anything on
-  // pages that actually have two visually separate columns.
-  const centers = lines.map((line) => (line.left + line.right) / 2).sort((a, b) => a - b);
-  let splitPoint: number | null = null;
-  if (centers.length >= 2) {
-    const gaps = centers.slice(1).map((c, i) => ({ gap: c - centers[i], afterValue: centers[i] }));
-    const maxGapEntry = gaps.reduce((max, g) => (g.gap > max.gap ? g : max), gaps[0]);
-    const otherGaps = gaps.filter((g) => g !== maxGapEntry).map((g) => g.gap);
-    const avgOtherGap = otherGaps.length > 0 ? otherGaps.reduce((sum, g) => sum + g, 0) / otherGaps.length : 0;
-    // The gap has to both stand out sharply from the typical gap between
-    // lines (at least 4x) and be a real distance in absolute terms (not
-    // noise on a page with very few, very short lines) to count as a
-    // genuine column break rather than ordinary layout variance.
-    if (maxGapEntry.gap > 30 && (avgOtherGap === 0 || maxGapEntry.gap > avgOtherGap * 4)) {
-      splitPoint = maxGapEntry.afterValue + maxGapEntry.gap / 2;
-    }
-  }
-
-  const columnOf = (line: Line) => {
-    if (splitPoint === null) return 0;
-    return (line.left + line.right) / 2 <= splitPoint ? 0 : 1;
-  };
-
   return lines
-    .sort((a, b) => columnOf(a) - columnOf(b) || a.top - b.top)
+    .sort((a, b) => a.top - b.top)
     .map((line, index) => {
       const lineWords = [...line.words].sort((a, b) => a.left - b.left);
       const left = Math.min(...lineWords.map((word) => word.left));
@@ -250,7 +223,7 @@ function rectFromPoints(start: { x: number; y: number }, end: { x: number; y: nu
   };
 }
 
-export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords }: Props) {
+export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords, hasSelection, onClearSelection }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -567,6 +540,11 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
             </button>
           ) : null}
         </div>
+        {hasSelection ? (
+          <button type="button" className="pdfClearSelection" onClick={onClearSelection}>
+            Clear selection
+          </button>
+        ) : null}
       </div>
       {isLoading ? <div className="pdfLoading">Rendering PDF page…</div> : null}
       <div

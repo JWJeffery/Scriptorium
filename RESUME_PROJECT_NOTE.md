@@ -946,3 +946,41 @@ Two lessons worth carrying into future OCR/layout work in this repo:
 hasn't been checked page-by-page against these fixes - only page 3 has real confirmation.
 Worth a broader spot-check pass once there's time, but not urgent given the specific,
 well-understood root causes now on record.
+
+## Cross-column selection fix reverted - made real selection worse, not better
+
+Native highlight-and-select was restored as the default (previous session), which resurfaced
+a real bug: browser Selection sweeps up everything BETWEEN a drag's start/end points in DOM
+order, not visual order, and this book's two-page-spread scans have two visually separate
+columns whose lines can land at similar heights - sorted by top alone, they interleave in DOM
+order, so a selection confined to one column visually can pull in the other column's
+interleaved lines.
+
+A column-detection fix was built and shipped: order lines by a detected left/right column
+split (via a horizontal gap between line centers that stands out sharply from normal
+paragraph-width variance) before top position, instead of top alone. Verified against a
+numerical simulation using representative real coordinates from the actual page before
+shipping - correctly separated the two columns with a wide margin.
+
+**Josh tested it live: selection got worse, not better.** The simulation checking out doesn't
+mean the heuristic is actually correct against the real page/interaction - something is wrong
+that the simulation didn't catch, and rather than guess at another tuning pass blind (the
+exact mistake this whole investigation kept making earlier), **the column-detection logic was
+reverted back to the simple top-only sort** (the state before that attempt). This is a real,
+open, unresolved bug - not fixed, not disproven, just reverted to a known baseline while real
+evidence is gathered.
+
+**Next session should not attempt another heuristic tweak without real evidence first.** Get
+the same kind of ground truth that cracked the actual OCR root cause: ask Josh to reproduce
+the cross-column selection and describe or screenshot exactly what text ends up selected
+(the captured "Selected text appears here" box shows this directly) alongside where he
+actually dragged on the page. That real before/after data - not another simulation - is what
+should drive the next attempt.
+
+Also this session: moved "Clear selection" from the Annotation panel into the PDF reader's
+own toolbar (grouped with the highlight/box mode toggle and zoom controls) per request, since
+that's genuinely part of the same set of page-interaction tools rather than the
+save-a-citation workflow below it. Kept a corresponding button in the Annotation panel for
+non-PDF (TXT/Markdown/DOCX) documents specifically, since TextAnchoredReader has no equivalent
+toolbar to move it into - PDF documents no longer show the old panel button, avoiding
+duplication.
