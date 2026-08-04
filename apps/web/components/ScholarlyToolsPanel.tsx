@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 // This panel gives gates 14-17 their first screens. Until now they were
 // real, callable API routes with zero UI (see RESUME_PROJECT_NOTE.md,
@@ -488,10 +488,54 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
   const [results, setResults] = useState<OcrResult[]>([]);
   const [status, setStatus] = useState("Checks PDF versions for a likely missing text layer. Leave the id blank to check every PDF.");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [etaText, setEtaText] = useState<string | null>(null);
+  // Anchors the rate calculation to "time and page count when we first
+  // observed this run in progress" rather than needing a true server-side
+  // start timestamp - works identically whether this session started the
+  // OCR run itself or found one already running via "Check for scanned
+  // pages" and is just resuming progress checks on it. Reset whenever the
+  // completed count goes backwards (a new run started).
+  const rateAnchorRef = useRef<{ time: number; completed: number } | null>(null);
 
   useEffect(() => {
     if (currentRef.documentId) setDocumentId(currentRef.documentId);
   }, [currentRef.documentId]);
+
+  function formatDuration(ms: number): string {
+    const totalSeconds = Math.max(0, Math.round(ms / 1000));
+    if (totalSeconds < 60) return `${totalSeconds}s`;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+
+  function updateEta(progress: { completed: number; total: number }) {
+    const anchor = rateAnchorRef.current;
+    if (!anchor || progress.completed < anchor.completed) {
+      // First observation of this run, or the count went backwards
+      // (a new run started) - reset the anchor and don't show a number
+      // yet, since a rate needs at least one interval to be honest rather
+      // than a guess.
+      rateAnchorRef.current = { time: Date.now(), completed: progress.completed };
+      setEtaText(null);
+      return;
+    }
+    const pagesDoneSinceAnchor = progress.completed - anchor.completed;
+    if (pagesDoneSinceAnchor <= 0) {
+      // Still on the same page count as the anchor - not enough data yet
+      // for an honest rate. Leave whatever estimate is already showing
+      // rather than flickering to nothing between polls.
+      return;
+    }
+    const elapsedMs = Date.now() - anchor.time;
+    const msPerPage = elapsedMs / pagesDoneSinceAnchor;
+    const remainingPages = progress.total - progress.completed;
+    if (remainingPages <= 0) {
+      setEtaText(null);
+      return;
+    }
+    setEtaText(`~${formatDuration(msPerPage * remainingPages)} remaining`);
+  }
 
   async function lookUp() {
     setStatus("Checking for scanned pages...");
@@ -509,6 +553,7 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
       if (running) {
         setStatus(`${body.count ?? 0} PDF version(s) checked, ${body.likelyScannedCount ?? 0} likely scanned. OCR is already running on "${running.documentTitle}" - resuming progress checks...`);
         setBusyId(running.versionId);
+        rateAnchorRef.current = null;
         await pollUntilDone(running.versionId);
         return;
       }
@@ -520,6 +565,8 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
 
   async function attemptOcr(versionId: string) {
     setBusyId(versionId);
+    rateAnchorRef.current = null;
+    setEtaText(null);
     try {
       const response = await fetch("/api/milestone-sixteen/ocr-status", {
         method: "POST",
@@ -561,6 +608,7 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
           return;
         }
         if (match.ocrProgress && match.ocrProgress.total > 0) {
+          updateEta(match.ocrProgress);
           const percent = Math.round((match.ocrProgress.completed / match.ocrProgress.total) * 100);
           setStatus(`OCR running: page ${match.ocrProgress.completed} of ${match.ocrProgress.total} (${percent}%)...`);
         } else {
@@ -572,6 +620,8 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
         return;
       }
 
+      setEtaText(null);
+      rateAnchorRef.current = null;
       if (match?.extractionState === "tesseract-js-eng-v1-timed-out") {
         setStatus("OCR timed out - most likely the language-data download stalled. You can try again; it should be faster now that a partial download may already be cached.");
       } else if (match?.extractionState === "tesseract-js-eng-v1-failed") {
@@ -637,6 +687,7 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
                   <span className="toolsProgressLabel">
                     {result.ocrProgress.completed} / {result.ocrProgress.total} pages (
                     {Math.round((result.ocrProgress.completed / result.ocrProgress.total) * 100)}%)
+                    {result.versionId === busyId && etaText ? ` \u00b7 ${etaText}` : ""}
                   </span>
                 </div>
               ) : null}
