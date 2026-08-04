@@ -80,8 +80,12 @@
   overflow: auto;
   padding: 16px;
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  /* column, not the flex default (row) - .pdfZoomControls,
+     .pdfSelectionModeToggle, and .pdfFrameViewport are now siblings here
+     (added for the width-fit/zoom work) and need to stack top to bottom,
+     not sit side by side. */
+  flex-direction: column;
+  align-items: center;
 }
 
 .pdfLoading {
@@ -148,7 +152,16 @@
 
 .pdfTextLayer::selection,
 .pdfTextRun::selection {
-  background: transparent;
+  /* Real, visible highlight while dragging - not just a permanently-saved
+     highlight after the fact. This was forced fully transparent while OCR
+     word positions were still unreliable (a highlight bar in the wrong
+     place looks broken/confusing) - now that positions are confirmed
+     accurate against the real page, a visible highlight lands correctly
+     over the real scanned text underneath. The glyphs themselves
+     (.pdfTextRun's own color) stay transparent regardless - the visible
+     "text" is the scanned image below; this invisible layer exists only
+     to make it selectable, not to be read directly. */
+  background: rgb(93 70 49 / 35%);
   color: transparent;
 }
 

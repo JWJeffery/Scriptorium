@@ -329,11 +329,41 @@ h2 {
   overflow: visible;
 }
 
+.pdfToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+.pdfSelectionModeToggle {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.pdfSelectionModeToggle button {
+  border: 0;
+  background: #fff;
+  color: var(--muted);
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.pdfSelectionModeToggle button.active {
+  background: var(--accent-strong);
+  color: #fff;
+}
+
 .pdfZoomControls {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
 }
 
 .pdfZoomControls button {

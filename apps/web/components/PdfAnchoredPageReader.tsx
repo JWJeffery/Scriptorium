@@ -258,6 +258,18 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
   const MAX_ZOOM = 3;
 
   const usingOcrLayer = Boolean(authoritativeWords && authoritativeWords.length > 0);
+  // The rectangle-drag "selection box" mode exists because native browser
+  // text selection was unreliable on top of genuinely garbled OCR word
+  // data - it's not needed on its own merits now that the underlying OCR
+  // word positions and reading order are actually correct (see
+  // RESUME_PROJECT_NOTE.md for the full arc of getting there). Defaults
+  // back to normal highlight-and-select, the familiar behavior for every
+  // non-OCR page, with the box kept available as an explicit alternative
+  // for cases where a precise geometric drag is still genuinely useful
+  // (e.g. a page where OCR reading order is known to be off, or a region
+  // that's hard to cleanly text-select for some other reason).
+  const [selectionMode, setSelectionMode] = useState<"highlight" | "box">("highlight");
+  const useBoxSelection = usingOcrLayer && selectionMode === "box";
   const textRuns = usingOcrLayer ? runsFromWords(authoritativeWords!) : pdfTextRuns;
 
   useEffect(() => {
@@ -471,29 +483,49 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
 
   return (
     <div className="pdfReaderShell">
-      <div className="pdfZoomControls">
-        <button
-          type="button"
-          onClick={() => setZoomLevel((level) => Math.max(MIN_ZOOM, Math.round((level - ZOOM_STEP) * 100) / 100))}
-          disabled={zoomLevel <= MIN_ZOOM}
-          aria-label="Zoom out"
-        >
-          &minus;
-        </button>
-        <span className="pdfZoomLevel">{Math.round(finalScale * 100)}%</span>
-        <button
-          type="button"
-          onClick={() => setZoomLevel((level) => Math.min(MAX_ZOOM, Math.round((level + ZOOM_STEP) * 100) / 100))}
-          disabled={zoomLevel >= MAX_ZOOM}
-          aria-label="Zoom in"
-        >
-          +
-        </button>
-        {zoomLevel !== 1 ? (
-          <button type="button" className="pdfZoomReset" onClick={() => setZoomLevel(1)}>
-            Reset zoom
-          </button>
+      <div className="pdfToolbar">
+        {usingOcrLayer ? (
+          <div className="pdfSelectionModeToggle" role="group" aria-label="Text selection mode">
+            <button
+              type="button"
+              className={selectionMode === "highlight" ? "active" : undefined}
+              onClick={() => setSelectionMode("highlight")}
+            >
+              Highlight text
+            </button>
+            <button
+              type="button"
+              className={selectionMode === "box" ? "active" : undefined}
+              onClick={() => setSelectionMode("box")}
+            >
+              Selection box
+            </button>
+          </div>
         ) : null}
+        <div className="pdfZoomControls">
+          <button
+            type="button"
+            onClick={() => setZoomLevel((level) => Math.max(MIN_ZOOM, Math.round((level - ZOOM_STEP) * 100) / 100))}
+            disabled={zoomLevel <= MIN_ZOOM}
+            aria-label="Zoom out"
+          >
+            &minus;
+          </button>
+          <span className="pdfZoomLevel">{Math.round(finalScale * 100)}%</span>
+          <button
+            type="button"
+            onClick={() => setZoomLevel((level) => Math.min(MAX_ZOOM, Math.round((level + ZOOM_STEP) * 100) / 100))}
+            disabled={zoomLevel >= MAX_ZOOM}
+            aria-label="Zoom in"
+          >
+            +
+          </button>
+          {zoomLevel !== 1 ? (
+            <button type="button" className="pdfZoomReset" onClick={() => setZoomLevel(1)}>
+              Reset zoom
+            </button>
+          ) : null}
+        </div>
       </div>
       {isLoading ? <div className="pdfLoading">Rendering PDF page…</div> : null}
       <div
@@ -503,9 +535,9 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
       >
         <div
           className="pdfPageFrame"
-          onMouseUp={usingOcrLayer ? handleOcrMouseUp : captureSelection}
-          onMouseDown={usingOcrLayer ? handleOcrMouseDown : undefined}
-          onMouseMove={usingOcrLayer ? handleOcrMouseMove : undefined}
+          onMouseUp={useBoxSelection ? handleOcrMouseUp : captureSelection}
+          onMouseDown={useBoxSelection ? handleOcrMouseDown : undefined}
+          onMouseMove={useBoxSelection ? handleOcrMouseMove : undefined}
           ref={frameRef}
           style={{
             width: pageSize.width || undefined,
@@ -521,7 +553,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
                 <span className="pdfHighlightBox" key={`${highlight.id}-${index}`} style={{ background: highlight.color, left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
               ))
             )}
-            {usingOcrLayer && dragRect ? (
+            {useBoxSelection && dragRect ? (
               <span className="pdfDragRect" style={{ left: dragRect.left, top: dragRect.top, width: dragRect.width, height: dragRect.height }} />
             ) : null}
           </div>
@@ -529,13 +561,23 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
             className="pdfTextLayer"
             aria-label="Selectable PDF text layer"
             ref={textLayerRef}
-            style={usingOcrLayer ? { pointerEvents: "none", userSelect: "none", cursor: "default" } : undefined}
+            style={useBoxSelection ? { pointerEvents: "none", userSelect: "none", cursor: "default" } : undefined}
           >
-            {textRuns.map((run) => (
+            {textRuns.flatMap((run, index) => [
               <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
                 {run.text}
-              </span>
-            ))}
+              </span>,
+              // A real space text node between line-spans, not just visual
+              // gap from absolute positioning - without this, a selection
+              // dragged across multiple lines can join them with no space
+              // ("...doctrines at all.Coggan, in Thomas...") since these
+              // spans are plain DOM siblings with nothing textual between
+              // them. Harmless when a selection stays within one line
+              // (these are outside the highlight-mode selection anyway;
+              // captureSelection's existing whitespace normalization
+              // cleans up anything extra).
+              index < textRuns.length - 1 ? " " : null
+            ])}
           </div>
         </div>
       </div>
