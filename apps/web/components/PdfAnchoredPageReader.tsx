@@ -372,7 +372,30 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
     }
     if (matched.length === 0) return;
 
-    const sorted = [...matched].sort((a, b) => a.top - b.top || a.left - b.left);
+    // Reading order: words on the same visual line don't share an exact
+    // top coordinate - OCR bounding boxes jitter by a few pixels per word
+    // (ascenders, descenders, baseline noise), so sorting by raw top before
+    // left treats "There's" and "Church" (both landed at top=191) as
+    // belonging before "be said for the" (top=192) even though they're
+    // all on the same line - scrambling the reading order into something
+    // like "There's Church be said for the...". Tesseract's own
+    // blockNum/lineNum (from the TSV line-grouping, not per-word pixel
+    // noise) is the authoritative answer to "which line is this word on" -
+    // use that when every matched word has it. Falls back to a
+    // tolerance-based top comparison (same line if vertical midpoints are
+    // within a few pixels) for older stored OCR data that predates
+    // lineNum being captured, rather than crashing or guessing wrong.
+    const allHaveLineInfo = matched.every((word) => typeof word.blockNum === "number" && typeof word.lineNum === "number");
+    const sorted = allHaveLineInfo
+      ? [...matched].sort(
+          (a, b) => (a.blockNum as number) - (b.blockNum as number) || (a.lineNum as number) - (b.lineNum as number) || a.left - b.left
+        )
+      : [...matched].sort((a, b) => {
+          const aMid = a.top + a.height / 2;
+          const bMid = b.top + b.height / 2;
+          const sameLine = Math.abs(aMid - bMid) < Math.min(a.height, b.height) * 0.6;
+          return sameLine ? a.left - b.left : a.top - b.top;
+        });
     const selectedText = sorted.map((word) => word.text).join(" ");
     const rects = sorted.map((word) => ({ left: word.left, top: word.top, width: word.width, height: word.height }));
 
