@@ -46,6 +46,77 @@ scripts/                  Development and ingestion scripts
 .github/ISSUE_TEMPLATE/   Milestone issue templates
 ```
 
+## Getting started
+
+Run these in order from the repo root. This assumes a GitHub Codespace or similar dev
+container with Docker, Node, and pnpm already available.
+
+### 1. Start MySQL
+
+```bash
+docker compose up -d
+docker compose ps
+```
+
+Wait for `docker compose ps` to show `healthy`, not just `starting`, before continuing.
+
+**MySQL does not survive a Codespace restart** - this has to be run again at the start of
+every session. If `docker compose up -d` errors with something like `container with given ID
+already exists` (a stale container from a previous session), clear it first:
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+If that still fails, the more forceful fallback:
+
+```bash
+docker rm -f scriptorium-mysql-1
+docker compose up -d
+```
+
+### 2. Set up environment variables (first time only)
+
+```bash
+cp .env.example .env
+```
+
+### 3. Install dependencies and generate the Prisma client
+
+```bash
+pnpm install
+pnpm prisma:generate
+```
+
+### 4. Run database migrations
+
+```bash
+pnpm prisma:migrate:deploy
+```
+
+### 5. Start the dev server
+
+```bash
+pnpm dev
+```
+
+This runs `next dev` for the web app. In a Codespace, open the forwarded port from the
+"Ports" tab (default `3000`) or follow the prompt that appears.
+
+### Restarting a stuck dev server
+
+If `pnpm dev` seems hung or stale after a lot of edits, a clean restart:
+
+```bash
+pkill -f "next dev"
+rm -rf apps/web/.next
+pnpm dev
+```
+
+No need to restart MySQL or reinstall dependencies for this - it only clears the Next.js
+build cache and kills a stuck process.
+
 ## Development direction
 
 Do not begin with broad governance. Build one end-to-end reading workflow first. The test of the project is whether a theologian can open a document, mark a passage, preserve the correct book page number, attach a note, generate a citation, and recover the whole scholarly object later.
