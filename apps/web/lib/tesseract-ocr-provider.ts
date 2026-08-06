@@ -94,7 +94,7 @@ const WORD_COVERAGE_WARNING_THRESHOLD = 0.5;
 // format's own (separately versioned) shape.
 const TSV_WORD_LEVEL = 5;
 
-function extractWordsFromTsv(tsv: string | null, renderScale: number): OcrWord[] {
+function extractWordsFromTsv(tsv: string | null, renderScale: number, leftOffset = 0, blockOffset = 0): OcrWord[] {
   if (!tsv) return [];
   const rows = tsv.trim().split("\n").slice(1); // drop header row
   const words: OcrWord[] = [];
@@ -105,12 +105,19 @@ function extractWordsFromTsv(tsv: string | null, renderScale: number): OcrWord[]
     if (!text || !text.trim()) continue;
     words.push({
       text,
-      left: Number(cols[6]) / renderScale,
+      left: Number(cols[6]) / renderScale + leftOffset,
       top: Number(cols[7]) / renderScale,
       width: Number(cols[8]) / renderScale,
       height: Number(cols[9]) / renderScale,
       confidence: Number(cols[10]),
-      blockNum: Number(cols[2]),
+      // blockOffset guarantees the two halves' independently-numbered
+      // blocks (each half's Tesseract run starts numbering from 1) never
+      // collide - without it, "block 1" from the left half and "block 1"
+      // from the right half would look like the same block to any code
+      // grouping words by blockNum (see runsFromWords in
+      // PdfAnchoredPageReader.tsx), defeating the entire point of
+      // splitting them in the first place.
+      blockNum: Number(cols[2]) + blockOffset,
       lineNum: Number(cols[4])
     });
   }
@@ -146,6 +153,82 @@ function applyContrastEnhancement(canvas: Canvas, factor: number): void {
     // alpha (data[i + 3]) left untouched
   }
   ctx.putImageData(imageData, 0, 0);
+}
+
+// TWO-PAGE-SPREAD SPLITTING - a deterministic fix for the whole
+// cross-column selection saga, rather than continuing to reconstruct
+// column separation after the fact from OCR output (block detection,
+// gap heuristics - see PdfAnchoredPageReader.tsx and
+// RESUME_PROJECT_NOTE.md for that whole history). This book's pages are
+// scanned as two-page spreads - a real physical gutter runs down the
+// middle of the image. If that gutter is detected and the page is
+// literally split into two separate images BEFORE OCR runs, there is no
+// column-crossing problem left to reconstruct: each half is recognized
+// completely independently, so a word from the left half can never end
+// up positioned (or DOM-ordered) between two words from the right half,
+// because they were never in the same recognition pass to begin with.
+// This is a stronger guarantee than any post-hoc heuristic, which can
+// only ever be as reliable as Tesseract's own layout analysis or a
+// gap-detection algorithm's assumptions about what a "real" column break
+// looks like.
+//
+// GUTTER_MIN_BLANK_FRACTION: a real page gutter is blank across nearly
+// the *entire height* of the page, not just locally blank near one
+// paragraph (which is a normal, harmless occurrence with any ordinary
+// single-column page and must not trigger a split). Verified against the
+// real page this investigation has been using throughout: the genuine
+// gutter came out ~98% blank across full height, while checked-and-
+// rejected candidate columns nearby (blank only near a particular
+// paragraph, not the whole page) came out into the 70-90% range - a
+// clear, checkable gap between "real gutter" and "coincidental local
+// gap." 0.9 sits between those two groups with margin.
+const GUTTER_SEARCH_BAND = [0.3, 0.7] as const;
+const GUTTER_MIN_BLANK_FRACTION = 0.9;
+
+function findGutterSplit(canvas: Canvas): number | null {
+  const ctx = canvas.getContext("2d");
+  const { width, height } = canvas;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  const bandStart = Math.floor(width * GUTTER_SEARCH_BAND[0]);
+  const bandEnd = Math.ceil(width * GUTTER_SEARCH_BAND[1]);
+  let bestX = -1;
+  let bestFraction = 0;
+  for (let x = bandStart; x < bandEnd; x++) {
+    let blankCount = 0;
+    for (let y = 0; y < height; y++) {
+      const idx = (y * width + x) * 4;
+      // After applyContrastEnhancement, R/G/B are already equal
+      // (grayscale) - just read one channel.
+      if (data[idx] > 200) blankCount++;
+    }
+    const fraction = blankCount / height;
+    if (fraction > bestFraction) {
+      bestFraction = fraction;
+      bestX = x;
+    }
+  }
+  return bestFraction >= GUTTER_MIN_BLANK_FRACTION ? bestX : null;
+}
+
+function cropCanvas(source: Canvas, x0: number, x1: number): Canvas {
+  const width = x1 - x0;
+  const cropped = createCanvas(width, source.height);
+  const ctx = cropped.getContext("2d");
+  // @napi-rs/canvas's drawImage supports the 9-argument source-rect form
+  // same as the browser Canvas API.
+  (ctx as unknown as CanvasRenderingContext2D).drawImage(
+    source as unknown as CanvasImageSource,
+    x0,
+    0,
+    width,
+    source.height,
+    0,
+    0,
+    width,
+    source.height
+  );
+  return cropped;
 }
 
 export class TesseractOcrProvider implements OcrProvider {
@@ -189,15 +272,52 @@ export class TesseractOcrProvider implements OcrProvider {
           await page.render({ canvasContext: context as unknown as CanvasRenderingContext2D, viewport }).promise;
           applyContrastEnhancement(canvas, CONTRAST_FACTOR);
 
-          const pngBuffer = canvas.toBuffer("image/png");
-          // tsv: true asks Tesseract for its standard per-word TSV export
-          // (see extractWordsFromTsv above for why this replaced blocks:
-          // true) - real positioned words instead of trusting pdf.js's own
-          // (sometimes corrupted - see the NGUCA incident) text layer for
-          // pages OCR actually ran on.
-          const { data } = await worker.recognize(pngBuffer, {}, { tsv: true });
+          // See findGutterSplit above - if this page is a two-page spread
+          // with a real physical gutter, split it into two independent
+          // recognition passes rather than one. This is what eliminates
+          // cross-column selection at the source, instead of continuing
+          // to reconstruct column separation after the fact from a single
+          // pass's output (block detection, gap heuristics - the whole
+          // history in RESUME_PROJECT_NOTE.md).
+          const gutterX = findGutterSplit(canvas);
+          let data: { text: string; confidence: number; tsv: string | null };
+          let words: OcrWord[];
+          if (gutterX !== null) {
+            const leftHalf = cropCanvas(canvas, 0, gutterX);
+            const rightHalf = cropCanvas(canvas, gutterX, canvas.width);
+            const [leftResult, rightResult] = await Promise.all([
+              worker.recognize(leftHalf.toBuffer("image/png"), {}, { tsv: true }),
+              worker.recognize(rightHalf.toBuffer("image/png"), {}, { tsv: true })
+            ]);
+            const leftWords = extractWordsFromTsv(leftResult.data.tsv, RENDER_SCALE, 0, 0);
+            // Right-half block numbers offset by 10000 so they can never
+            // collide with left-half block numbers (each half's Tesseract
+            // run numbers its own blocks starting from 1).
+            const rightWords = extractWordsFromTsv(rightResult.data.tsv, RENDER_SCALE, gutterX / RENDER_SCALE, 10000);
+            words = [...leftWords, ...rightWords];
+            data = {
+              text: `${leftResult.data.text.trim()} ${rightResult.data.text.trim()}`.trim(),
+              // Weighted by word count, not a flat average - a half with
+              // more recognized words should count for more.
+              confidence:
+                leftWords.length + rightWords.length > 0
+                  ? (leftResult.data.confidence * leftWords.length + rightResult.data.confidence * rightWords.length) /
+                    (leftWords.length + rightWords.length)
+                  : (leftResult.data.confidence + rightResult.data.confidence) / 2,
+              tsv: null // already consumed into `words` above; not needed further
+            };
+          } else {
+            const pngBuffer = canvas.toBuffer("image/png");
+            // tsv: true asks Tesseract for its standard per-word TSV
+            // export (see extractWordsFromTsv above for why this replaced
+            // blocks: true) - real positioned words instead of trusting
+            // pdf.js's own (sometimes corrupted - see the NGUCA incident)
+            // text layer for pages OCR actually ran on.
+            const singleResult = await worker.recognize(pngBuffer, {}, { tsv: true });
+            data = singleResult.data;
+            words = extractWordsFromTsv(data.tsv, RENDER_SCALE);
+          }
           const text = data.text.trim();
-          const words = extractWordsFromTsv(data.tsv, RENDER_SCALE);
           pages.push({ pageIndex, text, confidence: data.confidence, words });
 
           // Persisted diagnostics, not just console.log: a prior session

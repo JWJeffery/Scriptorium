@@ -1095,3 +1095,50 @@ correct.
 **This needs a fresh OCR re-run to take effect** - stored word data from previous runs (under
 PSM.SINGLE_BLOCK) has `block_num=1` for everything, so the fallback gap-heuristic will keep
 handling those until pages are re-OCR'd under this change.
+
+## CLOSED (probably, for real this time): deterministic gutter-split, not another reconstruction heuristic
+
+Josh, fairly, ran out of patience with heuristic-after-heuristic and gave a direct
+instruction instead of another symptom report: split the two-page-spread scans in half before
+OCR runs at all, since that's what they actually are. This is a categorically different, and
+better, kind of fix than anything tried before in this saga - every earlier attempt
+(block-detection via PSM, gap-based XY-cut, blockNum preference) was a *probabilistic*
+reconstruction of column separation from a single recognition pass's output. This one is a
+*deterministic guarantee*: if the two halves are physically cropped into separate images
+before Tesseract ever sees them, a word from one half cannot end up positioned or DOM-ordered
+between two words from the other half, because they were never in the same recognition pass
+to begin with. No layout-analysis confidence, no gap-detection threshold, nothing left to
+misfire.
+
+**Implementation** (`tesseract-ocr-provider.ts`): `findGutterSplit()` scans a band of the
+rendered, contrast-enhanced page (30%-70% of width) for a column that's blank across *nearly
+the entire height* (>=90% of rows above a brightness threshold) - not just locally blank near
+one paragraph, which is normal on any single-column page and must never trigger a false
+split. Verified this threshold against the real page: the genuine gutter came out ~98% blank
+across full height; incidental nearby gaps (blank only near a specific paragraph) came out in
+the 70-90% range - a real, checkable gap between the two, not an arbitrary number picked out
+of thin air.
+
+When a gutter is found, the page is cropped into two canvases and recognized independently
+(in parallel via `Promise.all`, so wall-clock cost is roughly the slower half, not the sum of
+both). Results are merged back into the original page's coordinate space: the right half's
+`left` coordinates get the gutter's x-position added back, and its `block_num` values get a
++10000 offset so they can never collide with the left half's own block numbers (each half's
+Tesseract run numbers its own blocks starting from 1). When no gutter is found - the normal
+case for ordinary single-column pages, which is most of this 128-page book - falls back to
+exactly the previous single-pass behavior, unchanged.
+
+**Verified end-to-end** against the real page via the actual, unmodified `extractText()`
+function: 155 words, 100% coverage, confirmed **zero overlap** between the two halves'
+coordinate ranges (left half's rightmost word edge at 333.5, right half's leftmost word edge
+at 383.5 - a real, checkable, non-probabilistic gap). Epigraph text still comes out correct.
+`runsFromWords` on the client needed no changes - it already prefers `block_num` for column
+ordering when 2+ distinct blocks are present (from the previous session's PSM.AUTO work), and
+this now gives it a genuinely guaranteed-correct signal instead of a merely usually-correct
+one.
+
+**Needs the same fresh OCR re-run as the PSM.AUTO change** to take effect on already-processed
+pages, and needs real confirmation from Josh on the actual book (not just this sandbox's
+verification) before this is truly closed - but this is the first fix in the whole saga with
+a mathematical rather than probabilistic basis for correctness, which is a meaningfully
+different level of confidence than anything shipped before it.
