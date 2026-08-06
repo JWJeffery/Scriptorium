@@ -131,18 +131,8 @@ function runsFromWords(words: PdfAuthoritativeWord[]): TextRun[] {
   // OCR-derived runs in line with that. Word-level position data is still
   // what's stored server-side (useful for finer-grained needs later) - this
   // only changes how it's grouped for rendering the selectable layer.
-  //
-  // A column-detection pass (ordering lines by detected left/right column
-  // before top position, to fix native selection crossing between the two
-  // columns of this book's two-page-spread scans) was tried here and
-  // reverted - it checked out against a numerical simulation before
-  // shipping, but made real selection behavior on the actual page worse,
-  // not better, meaning the heuristic was wrong somewhere that simulation
-  // didn't catch. Rather than guess at another tuning pass blind, this is
-  // back to the simple, known baseline (sort by top only) while real
-  // evidence is gathered - see RESUME_PROJECT_NOTE.md.
   const sorted = [...words].sort((a, b) => a.top - b.top || a.left - b.left);
-  type Line = { words: PdfAuthoritativeWord[]; top: number; bottom: number };
+  type Line = { words: PdfAuthoritativeWord[]; top: number; bottom: number; left: number; right: number };
   const lines: Line[] = [];
   for (const word of sorted) {
     const wordMid = word.top + word.height / 2;
@@ -151,12 +141,53 @@ function runsFromWords(words: PdfAuthoritativeWord[]): TextRun[] {
       line.words.push(word);
       line.top = Math.min(line.top, word.top);
       line.bottom = Math.max(line.bottom, word.top + word.height);
+      line.left = Math.min(line.left, word.left);
+      line.right = Math.max(line.right, word.left + word.width);
     } else {
-      lines.push({ words: [word], top: word.top, bottom: word.top + word.height });
+      lines.push({ words: [word], top: word.top, bottom: word.top + word.height, left: word.left, right: word.left + word.width });
     }
   }
+
+  // Column detection: this book's real page layout (a two-page spread
+  // scanned as one image - see RESUME_PROJECT_NOTE.md) sandwiches the
+  // right column's content between two vertically-separated chunks of the
+  // left column's content when lines are ordered by top alone - traced
+  // and confirmed directly against the real page's actual word
+  // coordinates: [left, top~17-87] [RIGHT, top~191-253] [left,
+  // top~349-537]. A browser Selection sweeps up everything BETWEEN a
+  // drag's start/end points in DOM order, not visual order, so a drag
+  // confined to the left column (top block to bottom block) necessarily
+  // swept in the entire right-column epigraph sitting between them in the
+  // DOM. This was tried once before, reverted on a report that it made
+  // things worse, then re-verified by running this exact logic against
+  // the real page's actual coordinates (not approximated numbers) before
+  // re-shipping: it produces the correct grouping - all left-column lines
+  // together, then all right-column lines, no sandwiching. Falls back to
+  // simple top-based order when no such gap exists (the normal
+  // single-column case).
+  const centers = lines.map((line) => (line.left + line.right) / 2).sort((a, b) => a - b);
+  let splitPoint: number | null = null;
+  if (centers.length >= 2) {
+    const gaps = centers.slice(1).map((c, i) => ({ gap: c - centers[i], afterValue: centers[i] }));
+    const maxGapEntry = gaps.reduce((max, g) => (g.gap > max.gap ? g : max), gaps[0]);
+    const otherGaps = gaps.filter((g) => g !== maxGapEntry).map((g) => g.gap);
+    const avgOtherGap = otherGaps.length > 0 ? otherGaps.reduce((sum, g) => sum + g, 0) / otherGaps.length : 0;
+    // The gap has to both stand out sharply from the typical gap between
+    // lines (at least 4x) and be a real distance in absolute terms (not
+    // noise on a page with very few, very short lines) to count as a
+    // genuine column break rather than ordinary layout variance.
+    if (maxGapEntry.gap > 30 && (avgOtherGap === 0 || maxGapEntry.gap > avgOtherGap * 4)) {
+      splitPoint = maxGapEntry.afterValue + maxGapEntry.gap / 2;
+    }
+  }
+
+  const columnOf = (line: Line) => {
+    if (splitPoint === null) return 0;
+    return (line.left + line.right) / 2 <= splitPoint ? 0 : 1;
+  };
+
   return lines
-    .sort((a, b) => a.top - b.top)
+    .sort((a, b) => columnOf(a) - columnOf(b) || a.top - b.top)
     .map((line, index) => {
       const lineWords = [...line.words].sort((a, b) => a.left - b.left);
       const left = Math.min(...lineWords.map((word) => word.left));

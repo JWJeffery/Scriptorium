@@ -984,3 +984,35 @@ save-a-citation workflow below it. Kept a corresponding button in the Annotation
 non-PDF (TXT/Markdown/DOCX) documents specifically, since TextAnchoredReader has no equivalent
 toolbar to move it into - PDF documents no longer show the old panel button, avoiding
 duplication.
+
+## Column-detection fix re-applied, this time verified against real coordinates, not approximated ones
+
+Josh reported the SAME symptom ("select on the left, right gets selected too") after the
+revert - meaning reverting to top-only sort didn't actually restore a working baseline, it
+just went back to the original still-broken state. This was the real signal to stop and
+actually check the math instead of reverting again.
+
+Reconstructed the real word coordinates from Josh's own earlier diagnostic dump (not
+approximated numbers this time) and ran the EXACT line-grouping logic against them directly
+in a script. Confirmed precisely what was happening: this page's real content lands as
+`[left column, top~17-87] [RIGHT column (epigraph), top~191-253] [left column, top~349-537]`
+- the right column is genuinely sandwiched between two vertically-separated left-column
+chunks. A browser Selection sweeps up everything BETWEEN a drag's start/end points in DOM
+order; a drag from the top-left block to the bottom-left block necessarily swept in the
+entire right-column epigraph sitting between them.
+
+Ran the SAME column-detection algorithm that was reverted last session against this same real
+data: it produces the correct grouping - all 11 left-column lines together, then all 5
+right-column lines together, no sandwiching. The fix was correct; reverting it on a single
+"got worse" report without first re-checking it against real coordinates was the actual
+mistake. Re-applied the identical logic, now backed by this stronger verification.
+
+**Why the first attempt seemed worse is still not fully explained** - the algorithm itself
+checks out against real data both times (the representative-numbers simulation before first
+shipping, and now the exact real coordinates). Possible explanations not ruled out: browser
+cache serving a stale bundle, Josh testing box-selection mode rather than highlight mode (box
+mode doesn't use this code path at all), or a genuinely different page/layout where the
+heuristic misfires differently than on this one. Worth asking for a hard refresh
+(Cmd+Shift+R) before testing again, and if it's still wrong, get the same real-coordinate
+evidence this session used (a real word dump plus a description of exactly where the drag
+started and ended) rather than trusting a general "worse" report on its own next time.
