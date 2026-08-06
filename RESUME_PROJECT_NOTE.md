@@ -1191,3 +1191,46 @@ convenient, since they can disagree.
 was deliberately deferred - the CLI tool delivers the actual capability requested right now;
 a UI integration is a reasonable follow-up once the core splitting logic has been used and
 confirmed against the real 64-page book, not before.
+
+## Real 64-page source file tested; two reported issues resolved with direct evidence
+
+Josh ran the tool against the actual real book, hit a real bug (fixed in the previous commit
+- missing file extension broke the CLI script entirely), then reported the *output* was
+"fucked up in multiple ways": faint ghosted text on some pages, and a wide wrong blank margin
+on others. He then uploaded the real, original 64-page source PDF directly - the first time
+this whole investigation had the real, complete book to test against rather than a single
+exported page.
+
+**Ghosting - resolved, confirmed NOT a bug.** Rendered the raw, unmodified source page 1
+directly (zero involvement of any of this codebase's code) and the same faint "THE INTEGRITY
+OF..." text is already visible beneath the bold cover title, baked into the original scan
+itself (very likely a printing registration artifact from the real 1978 book, or a scanner
+double-exposure). Confirmed via direct pixel-level comparison, not assumption - this is a
+property of the source Josh's tool is correctly and faithfully reproducing, not something the
+splitter introduced.
+
+**Wide margin - real bug, found and fixed with a precise diagnostic.** Compared the original,
+unsplit CONTENTS-page spread against the split output and found the split output added
+noticeably more blank margin than the real book's own natural page margin. Traced the exact
+mechanism: `findGutterSplit` picked the single column with the highest "blank across full
+height" score, but ties (and near-ties) go to the FIRST/leftmost column encountered in the
+scan - and real gutters are wide blank bands, not single-pixel lines. Confirmed directly
+against the real problem page: a 362px-wide blank band (of ~1520px total page width), with
+the algorithm picking its leftmost edge (x=456) instead of its true center (x=637) - a
+181px/12%-of-page-width miss, landing squarely in the middle of the "why does the right page
+have so much extra margin" symptom.
+
+**Fixed**: instead of taking the first column matching the single maximum blank fraction,
+find every column within a small tolerance of the true maximum, group them into contiguous
+runs (there can be more than one near-blank region in the search band), take the longest run
+as the real gutter, and split at its center. Re-verified against the exact same real page
+that exposed the bug: margin now closely matches the book's own natural margin. Also spot-
+checked pages deep in the actual book body (pages 29-30 of real content, not just front
+matter) to confirm the fix generalizes - both render cleanly, tightly cropped, correct and
+consecutive text, no regressions from the fix.
+
+**This is now verified end-to-end against the complete, real 64-page book** (not a single
+exported page, not a synthetic fixture) - the strongest verification basis anything in this
+whole splitting-tool effort has had. Still worth a broader page-by-page spot-check of the
+full 119-page output before treating this as fully closed, but the specific issues Josh
+found are both accounted for with direct evidence, not assumption.

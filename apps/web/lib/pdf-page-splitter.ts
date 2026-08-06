@@ -62,20 +62,48 @@ function findGutterSplit(canvas: Canvas): number | null {
   };
   const bandStart = Math.floor(width * GUTTER_SEARCH_BAND[0]);
   const bandEnd = Math.ceil(width * GUTTER_SEARCH_BAND[1]);
-  let bestX = -1;
-  let bestFraction = 0;
+  const fractions: { x: number; fraction: number }[] = [];
+  let maxFraction = 0;
   for (let x = bandStart; x < bandEnd; x++) {
     let blankCount = 0;
     for (let y = 0; y < height; y++) {
       if (brightnessAt(x, y) > 200) blankCount++;
     }
     const fraction = blankCount / height;
-    if (fraction > bestFraction) {
-      bestFraction = fraction;
-      bestX = x;
+    fractions.push({ x, fraction });
+    if (fraction > maxFraction) maxFraction = fraction;
+  }
+  if (maxFraction < GUTTER_MIN_BLANK_FRACTION) return null;
+
+  // Real gutters are rarely a single-pixel-wide line at this render scale -
+  // they're a wide blank band (confirmed directly against a real page:
+  // 362px wide, on a page rendered at ~1520px total width). Taking the
+  // FIRST column that happens to hit the single highest blank fraction
+  // systematically picks the LEFT EDGE of that band, not its middle -
+  // this was the actual bug behind the inflated right-side margins Josh
+  // found, confirmed by direct diagnostic (leftmost qualifying column at
+  // x=456, true center of the same blank band at x=637, a 181px/12%-of-
+  // page-width difference). Instead: find every column within a small
+  // tolerance of the true maximum, group them into contiguous runs (there
+  // can be more than one blank-ish region in the search band), take the
+  // longest run as the real gutter, and split at ITS center - giving both
+  // resulting pages a symmetric, natural margin instead of one page
+  // getting nearly the whole blank band tacked onto its edge.
+  const tolerance = 0.01;
+  const nearMaxXs = fractions.filter((f) => f.fraction >= maxFraction - tolerance).map((f) => f.x);
+  const runs: number[][] = [];
+  let currentRun: number[] = [];
+  for (const x of nearMaxXs) {
+    if (currentRun.length === 0 || x === currentRun[currentRun.length - 1] + 1) {
+      currentRun.push(x);
+    } else {
+      runs.push(currentRun);
+      currentRun = [x];
     }
   }
-  if (bestFraction < GUTTER_MIN_BLANK_FRACTION || bestX < 0) return null;
+  if (currentRun.length > 0) runs.push(currentRun);
+  const longestRun = runs.reduce((best, run) => (run.length > best.length ? run : best), runs[0]);
+  const splitX = Math.round((longestRun[0] + longestRun[longestRun.length - 1]) / 2);
 
   // Confirm real content on both sides, sampling every few pixels rather
   // than every single one (this only runs once, on the winning candidate,
@@ -87,11 +115,11 @@ function findGutterSplit(canvas: Canvas): number | null {
   let rightInk = 0;
   let rightTotal = 0;
   for (let y = 0; y < height; y += SAMPLE_STEP) {
-    for (let x = 0; x < bestX; x += SAMPLE_STEP) {
+    for (let x = 0; x < splitX; x += SAMPLE_STEP) {
       leftTotal++;
       if (brightnessAt(x, y) <= 200) leftInk++;
     }
-    for (let x = bestX; x < width; x += SAMPLE_STEP) {
+    for (let x = splitX; x < width; x += SAMPLE_STEP) {
       rightTotal++;
       if (brightnessAt(x, y) <= 200) rightInk++;
     }
@@ -102,7 +130,7 @@ function findGutterSplit(canvas: Canvas): number | null {
     return null;
   }
 
-  return bestX;
+  return splitX;
 }
 
 export type SplitPdfResult = {
