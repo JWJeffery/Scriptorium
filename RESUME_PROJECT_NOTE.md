@@ -1016,3 +1016,36 @@ heuristic misfires differently than on this one. Worth asking for a hard refresh
 (Cmd+Shift+R) before testing again, and if it's still wrong, get the same real-coordinate
 evidence this session used (a real word dump plus a description of exactly where the drag
 started and ended) rather than trusting a general "worse" report on its own next time.
+
+## Column fix confirmed working; found and fixed a real (different) whitespace bug in the capture
+
+Josh tested the re-applied column fix and sent a real screenshot: selecting only left-column
+content (the stamp + copyright/catalog block) correctly captured ONLY left-column text - none
+of the right-column epigraph leaked in. The column-detection fix works. That part of this
+whole saga is genuinely closed now.
+
+But the capture itself had a real, different bug: words from separate lines were glued
+together with no space at all - "THEOLOGYAT CLAREMONTCalifornia1The Scabury Press£15" instead
+of "THEOLOGY AT CLAREMONT California 1978 The Seabury Press 815". Traced this to the earlier
+"insert a space text node between line-spans" fix (added two sessions ago specifically to
+prevent this) not actually being reliable: each `.pdfTextRun` span is `position: absolute`,
+so a plain space character sitting between two of them as a DOM sibling is outside normal
+flow relative to them and can get collapsed away by the browser rather than serialized as a
+real space in `Selection.toString()` - confirmed by this real capture showing exactly that
+failure at every line boundary.
+
+**Fixed properly this time**: `captureSelection()` no longer trusts `Selection.toString()`
+for the *text content* across multiple lines at all. It now finds which `.pdfTextRun`
+elements the Range actually touches (`Range.intersectsNode()`, a long-standing stable DOM
+API), and for every run strictly between the first and last touched one, uses that run's own
+stored `text` value directly from the `textRuns` array - no DOM serialization involved, so no
+possibility of the same collapsing bug. Only the first and last touched runs (which may be
+only partially selected, if the drag started or ended mid-line) still touch the DOM, and only
+via a sub-range that never crosses a line boundary - safe, since whitespace-collapsing only
+bites at boundaries *between* separately-positioned elements, not within one element's own
+single text node. Removed the now-unnecessary (and evidently unreliable) space-text-node
+insertion from the render.
+
+Not yet re-confirmed against the real book - this needs the same kind of real test Josh just
+ran to be sure it's actually fixed and not just reasoned-through-correctly like the "verified
+against a simulation" column-detection attempt was before it also needed real confirmation.

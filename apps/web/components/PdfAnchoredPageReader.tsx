@@ -503,12 +503,62 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
 
   function captureSelection() {
     const selection = window.getSelection();
-    const selectedText = selection?.toString().replace(/\s+/g, " ").trim();
     const frame = frameRef.current;
     const textLayer = textLayerRef.current;
-    if (!selection || selection.rangeCount === 0 || !selectedText || !frame || !textLayer) return;
+    if (!selection || selection.rangeCount === 0 || !frame || !textLayer) return;
     const range = selection.getRangeAt(0);
+    if (range.collapsed) return;
     if (!textLayer.contains(range.commonAncestorContainer)) return;
+
+    // Reconstruct the selected text from the structured textRuns array
+    // rather than trusting Selection.toString() across multiple lines.
+    // Real capture confirmed this breaking: "THEOLOGYAT CLAREMONTCalifornia"
+    // - words from different lines glued with no space at all. Each
+    // .pdfTextRun span is position:absolute, so a plain space text node
+    // sitting between two of them (tried as an earlier fix) sits outside
+    // normal flow relative to its siblings and can get collapsed away by
+    // the browser rather than serialized as a real space. Only the first
+    // and last touched runs (which may be only partially selected, if the
+    // drag started/ended mid-line) use a DOM sub-range - and only ever a
+    // sub-range that stays within a single run's own text node, which has
+    // no cross-run boundary and so can't hit the same collapsing issue.
+    // Every run strictly between them uses its full stored text directly,
+    // sidestepping the DOM/whitespace question entirely.
+    const runElements = Array.from(textLayer.querySelectorAll<HTMLElement>(".pdfTextRun"));
+    const touched = runElements.filter((el) => range.intersectsNode(el));
+    if (touched.length === 0) return;
+
+    const parts: string[] = [];
+    touched.forEach((el, i) => {
+      const runIndex = Number(el.dataset.textRunIndex);
+      const run = textRuns[runIndex];
+      const textNode = el.firstChild;
+      if (!run || !textNode) return;
+      const isFirst = i === 0;
+      const isLast = i === touched.length - 1;
+      if (isFirst && isLast) {
+        const subRange = document.createRange();
+        subRange.setStart(range.startContainer, range.startOffset);
+        subRange.setEnd(range.endContainer, range.endOffset);
+        parts.push(subRange.toString());
+      } else if (isFirst) {
+        const subRange = document.createRange();
+        subRange.setStart(range.startContainer, range.startOffset);
+        subRange.setEnd(textNode, textNode.textContent?.length ?? 0);
+        parts.push(subRange.toString());
+      } else if (isLast) {
+        const subRange = document.createRange();
+        subRange.setStart(textNode, 0);
+        subRange.setEnd(range.endContainer, range.endOffset);
+        parts.push(subRange.toString());
+      } else {
+        parts.push(run.text);
+      }
+    });
+
+    const selectedText = parts.join(" ").replace(/\s+/g, " ").trim();
+    if (!selectedText) return;
+
     const rects = rectsFor(range, frame, finalScale);
     selection.removeAllRanges();
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
@@ -613,21 +663,11 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
             ref={textLayerRef}
             style={useBoxSelection ? { pointerEvents: "none", userSelect: "none", cursor: "default" } : undefined}
           >
-            {textRuns.flatMap((run, index) => [
+            {textRuns.map((run) => (
               <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
                 {run.text}
-              </span>,
-              // A real space text node between line-spans, not just visual
-              // gap from absolute positioning - without this, a selection
-              // dragged across multiple lines can join them with no space
-              // ("...doctrines at all.Coggan, in Thomas...") since these
-              // spans are plain DOM siblings with nothing textual between
-              // them. Harmless when a selection stays within one line
-              // (these are outside the highlight-mode selection anyway;
-              // captureSelection's existing whitespace normalization
-              // cleans up anything extra).
-              index < textRuns.length - 1 ? " " : null
-            ])}
+              </span>
+            ))}
           </div>
         </div>
       </div>
