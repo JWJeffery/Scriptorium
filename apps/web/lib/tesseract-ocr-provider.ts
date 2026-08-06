@@ -19,31 +19,44 @@
 // blocks-derived output on every fixture tried, a real improvement
 // independent of everything below.
 //
-// PAGE SEGMENTATION MODE AND CONTRAST - the actual root cause and fix,
-// found by testing directly against a real page image (Josh exported the
-// problem page as its own PDF and uploaded it) instead of guessing and
-// shipping to a live 128-page run, which is how every earlier attempt in
-// this file's history went. Running that real page through the native
-// `tesseract` CLI at tesseract.js's default page-segmentation mode (PSM 3,
-// "fully automatic") returned "Empty page!!" - zero words, nothing - on
-// this exact page. That's the real root cause of the whole
-// sparse/garbled-words saga: PSM 3's automatic layout analysis was failing
-// outright on this book's mix of a stylized library-stamp block, dense
-// small-print copyright/catalog text, and a large blank two-page-spread
-// gutter - not timing out, not needing more resolution, just failing to
-// find any text region worth reading, then falling back to whatever
-// fragments its confused layout analysis could salvage.
-// PSM.SINGLE_BLOCK (6, "assume a single uniform block of text") fixed this
-// completely - tested against the real page via both the native tesseract
-// CLI and this exact tesseract.js library, word-for-word correct output
-// ("There's this to be said for the Church [of England]..." exactly
-// matching the real printed epigraph). A simple 2x contrast-enhancement
-// pass on the rendered image (see applyContrastEnhancement below) closed
-// the small remaining gap on the harder parts of the page (the stylized
-// stamp, small catalog print). Confirmed via tesseract.js directly at both
-// the original RENDER_SCALE=2 and the since-reverted RENDER_SCALE=4 -
-// resolution was never the actual problem, so RENDER_SCALE stays at its
-// original, cheaper value.
+// PAGE SEGMENTATION MODE AND CONTRAST - found by testing directly against
+// a real page image (Josh exported the problem page as its own PDF and
+// uploaded it) instead of guessing and shipping to a live 128-page run,
+// which is how every earlier attempt in this file's history went. Running
+// that real page through the native `tesseract` CLI at PSM 3 ("fully
+// automatic") on the RAW, non-contrast-enhanced image returned
+// "Empty page!!" - zero words. PSM.SINGLE_BLOCK (6) fixed that, and a 2x
+// contrast-enhancement pass (applyContrastEnhancement below) closed the
+// remaining accuracy gap - both were correct fixes for what was true at
+// the time.
+//
+// What wasn't caught then: PSM.SINGLE_BLOCK's fix for "empty page" was
+// never actually about forcing single-block layout - it was really the
+// SIDE EFFECT of how tesseract.js's setParameters call was tested, and
+// what actually mattered was image contrast. Once contrast enhancement
+// went in, PSM 3 (the standard "fully automatic" default) stopped
+// returning empty on this exact page too - confirmed via the native
+// tesseract CLI directly: comparable word count and accuracy to
+// PSM.SINGLE_BLOCK, but with a real benefit SINGLE_BLOCK was silently
+// throwing away: real, correct layout analysis that separates this
+// book's two-page-spread scans into distinct blocks matching the actual
+// visual columns (confirmed against the real page: 10 real blocks, no
+// sandwiching). SINGLE_BLOCK collapses everything into one block, which
+// is exactly why a custom column-detection heuristic (see runsFromWords
+// in PdfAnchoredPageReader.tsx) had to be hand-built and iterated on to
+// reconstruct what Tesseract's own layout engine already does correctly
+// once it's actually given the chance to run.
+//
+// One more thing this took an extra round to catch: simply *omitting* the
+// setParameters call (assuming tesseract.js's own default matches the
+// native CLI's PSM 3) does NOT work - confirmed by comparing the native
+// CLI against tesseract.js directly on the identical rendered image:
+// omitting the call gave only 1 block (the old collapsed behavior right
+// back again), while explicitly setting PSM.AUTO gave the correct 10
+// blocks matching the CLI. tesseract.js's actual internal default when
+// nothing is set is not the same as PSM.AUTO, despite that nominally
+// being "the standard default" - so it has to be set explicitly, not
+// assumed.
 import "./pdfjs-worker-setup";
 import { createWorker, PSM } from "tesseract.js";
 import { createCanvas, type Canvas } from "@napi-rs/canvas";
@@ -150,10 +163,15 @@ export class TesseractOcrProvider implements OcrProvider {
     });
     const doc = await loadingTask.promise;
     const worker = await createWorker("eng");
-    // See the file header - PSM 3 (tesseract.js's default) returned zero
-    // words at all on the real page this whole investigation traced back
-    // to. SINGLE_BLOCK is what was actually verified against that page.
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
+    // Explicitly set PSM.AUTO - confirmed via direct testing (comparing
+    // against the native tesseract CLI on the exact same real-pipeline
+    // image) that tesseract.js's actual internal default, when no
+    // parameter is set at all, is NOT the same as PSM.AUTO/3: omitting
+    // this call gave only 1 block (matching the old forced-SINGLE_BLOCK
+    // behavior) on a page the native CLI at real PSM 3 correctly splits
+    // into 10 blocks matching the real visual columns. Set explicitly,
+    // not omitted.
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
     const pages: { pageIndex: number; text: string; confidence: number; words: OcrWord[] }[] = [];
     const warnings: string[] = [];
 

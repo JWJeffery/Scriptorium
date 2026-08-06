@@ -148,43 +148,61 @@ function runsFromWords(words: PdfAuthoritativeWord[]): TextRun[] {
     }
   }
 
-  // Column detection: this book's real page layout (a two-page spread
-  // scanned as one image - see RESUME_PROJECT_NOTE.md) sandwiches the
-  // right column's content between two vertically-separated chunks of the
-  // left column's content when lines are ordered by top alone - traced
-  // and confirmed directly against the real page's actual word
-  // coordinates: [left, top~17-87] [RIGHT, top~191-253] [left,
-  // top~349-537]. A browser Selection sweeps up everything BETWEEN a
-  // drag's start/end points in DOM order, not visual order, so a drag
-  // confined to the left column (top block to bottom block) necessarily
-  // swept in the entire right-column epigraph sitting between them in the
-  // DOM. This was tried once before, reverted on a report that it made
-  // things worse, then re-verified by running this exact logic against
-  // the real page's actual coordinates (not approximated numbers) before
-  // re-shipping: it produces the correct grouping - all left-column lines
-  // together, then all right-column lines, no sandwiching. Falls back to
-  // simple top-based order when no such gap exists (the normal
-  // single-column case).
-  const centers = lines.map((line) => (line.left + line.right) / 2).sort((a, b) => a - b);
-  let splitPoint: number | null = null;
-  if (centers.length >= 2) {
-    const gaps = centers.slice(1).map((c, i) => ({ gap: c - centers[i], afterValue: centers[i] }));
-    const maxGapEntry = gaps.reduce((max, g) => (g.gap > max.gap ? g : max), gaps[0]);
-    const otherGaps = gaps.filter((g) => g !== maxGapEntry).map((g) => g.gap);
-    const avgOtherGap = otherGaps.length > 0 ? otherGaps.reduce((sum, g) => sum + g, 0) / otherGaps.length : 0;
-    // The gap has to both stand out sharply from the typical gap between
-    // lines (at least 4x) and be a real distance in absolute terms (not
-    // noise on a page with very few, very short lines) to count as a
-    // genuine column break rather than ordinary layout variance.
-    if (maxGapEntry.gap > 30 && (avgOtherGap === 0 || maxGapEntry.gap > avgOtherGap * 4)) {
-      splitPoint = maxGapEntry.afterValue + maxGapEntry.gap / 2;
+  // Column ordering: a page scanned as a two-page spread (this book's real
+  // layout - see RESUME_PROJECT_NOTE.md) sandwiches the right column's
+  // content between two vertically-separated chunks of the left column's
+  // content when lines are ordered by top alone - a browser Selection
+  // sweeps up everything BETWEEN a drag's start/end points in DOM order,
+  // not visual order, so a drag confined to one column could pull in the
+  // other column's interleaved lines.
+  //
+  // Tesseract's own block_num (server-side, now that PSM defaults to
+  // real automatic layout analysis instead of being forced into a single
+  // block - see tesseract-ocr-provider.ts) is the right, established
+  // answer to "which column is this on" - its layout engine actually
+  // examined the image, rather than reconstructing an approximation from
+  // word positions after the fact. Preferred whenever at least two
+  // distinct block numbers are actually present.
+  //
+  // Falls back to a largest-gap heuristic (classic XY-cut column
+  // detection - Nagy & Seth 1984) only when block_num data is missing or
+  // collapsed to a single value, which is what happens for OCR runs from
+  // before this file forced PSM.SINGLE_BLOCK (now reverted) - so older
+  // saved annotations/captures against not-yet-re-OCR'd pages still get
+  // reasonable behavior instead of breaking.
+  const distinctBlocks = new Set(lines.flatMap((line) => line.words.map((w) => w.blockNum).filter((b): b is number => typeof b === "number")));
+  let columnOf: (line: Line) => number;
+  if (distinctBlocks.size >= 2) {
+    columnOf = (line: Line) => {
+      const counts = new Map<number, number>();
+      for (const word of line.words) {
+        if (typeof word.blockNum !== "number") continue;
+        counts.set(word.blockNum, (counts.get(word.blockNum) ?? 0) + 1);
+      }
+      let best = line.words[0]?.blockNum ?? 0;
+      let bestCount = 0;
+      for (const [block, count] of counts) {
+        if (count > bestCount) {
+          best = block;
+          bestCount = count;
+        }
+      }
+      return best;
+    };
+  } else {
+    const centers = lines.map((line) => (line.left + line.right) / 2).sort((a, b) => a - b);
+    let splitPoint: number | null = null;
+    if (centers.length >= 2) {
+      const gaps = centers.slice(1).map((c, i) => ({ gap: c - centers[i], afterValue: centers[i] }));
+      const maxGapEntry = gaps.reduce((max, g) => (g.gap > max.gap ? g : max), gaps[0]);
+      const otherGaps = gaps.filter((g) => g !== maxGapEntry).map((g) => g.gap);
+      const avgOtherGap = otherGaps.length > 0 ? otherGaps.reduce((sum, g) => sum + g, 0) / otherGaps.length : 0;
+      if (maxGapEntry.gap > 30 && (avgOtherGap === 0 || maxGapEntry.gap > avgOtherGap * 4)) {
+        splitPoint = maxGapEntry.afterValue + maxGapEntry.gap / 2;
+      }
     }
+    columnOf = (line: Line) => (splitPoint === null ? 0 : (line.left + line.right) / 2 <= splitPoint ? 0 : 1);
   }
-
-  const columnOf = (line: Line) => {
-    if (splitPoint === null) return 0;
-    return (line.left + line.right) / 2 <= splitPoint ? 0 : 1;
-  };
 
   return lines
     .sort((a, b) => columnOf(a) - columnOf(b) || a.top - b.top)

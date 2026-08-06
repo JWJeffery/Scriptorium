@@ -1049,3 +1049,49 @@ insertion from the render.
 Not yet re-confirmed against the real book - this needs the same kind of real test Josh just
 ran to be sure it's actually fixed and not just reasoned-through-correctly like the "verified
 against a simulation" column-detection attempt was before it also needed real confirmation.
+
+## Switched to Tesseract's own native block detection (PSM.AUTO) instead of a hand-rolled column heuristic - caught a real gap before shipping
+
+Josh pushed back hard, and fairly: professional tools (Adobe, ABBYY, Apple Preview) don't
+have this class of selection bug, and asked directly whether real established techniques were
+being used or whether this was just guessing. Worth answering honestly: the column-detection
+heuristic (largest horizontal gap) is a real, established technique - it's the classic
+"XY-cut" algorithm (Nagy & Seth, 1984), still used in modern document layout systems, not
+invented from nothing. And even mature tools have real, documented bugs in this exact class
+(found a live GitHub issue where Apple Preview's own PDF-selection heuristic mis-identifies a
+column that isn't there). But the deeper, more honest point: professional tools don't
+reconstruct reading order from raw word coordinates in application code the way this had been
+doing - they use the OCR engine's own layout analysis directly. This codebase gave that up
+when PSM.SINGLE_BLOCK was forced to fix the original "empty page" bug, which is exactly why a
+hand-rolled heuristic had to be built at all.
+
+Tested whether Tesseract's real automatic layout analysis (PSM 3/AUTO) could work now that
+contrast enhancement exists (it didn't exist yet when PSM 3 first failed with "Empty page!!").
+Native `tesseract` CLI against the real page: comparable word count/accuracy to
+SINGLE_BLOCK, but with real, correct block separation - 10 distinct blocks matching the
+actual visual columns, no sandwiching.
+
+**Caught before shipping**: ran the real, unmodified `extractText()` function (not just the
+CLI) end-to-end and found a genuine discrepancy - it still collapsed everything into 1 block,
+contradicting the CLI result. Chased it down rather than shipping the CLI-verified version
+anyway: isolated that `tesseract.js`'s own internal default, when no `tessedit_pageseg_mode`
+is set at all, is *not* actually the same as `PSM.AUTO` despite that nominally being "the
+standard default" - confirmed directly by comparing the native CLI against tesseract.js on
+the identical rendered image: omitting the parameter gave 1 block, explicitly setting
+`PSM.AUTO` gave the correct 10. Fixed by setting it explicitly rather than assuming
+tesseract.js's default matches the CLI's.
+
+**Client-side**: `runsFromWords` now prefers Tesseract's own `block_num` for column ordering
+whenever at least two distinct blocks are present (the normal case going forward), falling
+back to the hand-rolled largest-gap heuristic only for older stored OCR data from before this
+change (which has every word collapsed to `block_num=1`). This should make future column
+issues Tesseract's own layout engine's problem to get right, not a heuristic reconstructed
+after the fact - a genuinely more standard, established approach than what came before it.
+
+**Verified**: the real `extractText()` function run end-to-end against the real page a second
+time, after the fix: 9 distinct blocks, 100% word coverage, zero warnings, epigraph text
+correct.
+
+**This needs a fresh OCR re-run to take effect** - stored word data from previous runs (under
+PSM.SINGLE_BLOCK) has `block_num=1` for everything, so the fallback gap-heuristic will keep
+handling those until pages are re-OCR'd under this change.
