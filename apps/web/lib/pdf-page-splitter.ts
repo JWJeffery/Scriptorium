@@ -19,7 +19,7 @@
 // out from under any page-map settings or annotations already saved
 // against the current page numbering. A person's own explicit "yes,
 // re-upload this as the working copy" step matters here.
-import "./pdfjs-worker-setup";
+import "./pdfjs-worker-setup.ts";
 import { PDFDocument } from "pdf-lib";
 import { createCanvas, type Canvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
