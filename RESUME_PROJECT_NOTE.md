@@ -1142,3 +1142,52 @@ pages, and needs real confirmation from Josh on the actual book (not just this s
 verification) before this is truly closed - but this is the first fix in the whole saga with
 a mathematical rather than probabilistic basis for correctness, which is a meaningfully
 different level of confidence than anything shipped before it.
+
+## New tool: physically split two-page-spread PDFs into real individual pages
+
+Josh's follow-up, after the internal (OCR-time-only) gutter split: he wants the actual PDF
+restructured - 64 two-page-spread pages becoming a real 128-page PDF, not just a fix that
+lives inside the OCR pipeline while the document itself stays as spreads. Fair, and a
+categorically bigger ask than anything else in this thread - it changes the document itself,
+not just how it's processed.
+
+**Deliberately shipped as a standalone conversion tool** (`scripts/split-two-page-spreads.mjs`
++ `apps/web/lib/pdf-page-splitter.ts`), not wired into the existing upload/document/OCR flow.
+Reasoning: an existing document's page-map settings and any saved annotations are tied to its
+current page numbering - silently restructuring an existing document's pages out from under
+that would break those without a clear moment where Josh consciously chose it. The tool
+produces a new PDF file; re-uploading it as a new document through the app's normal upload
+flow is Josh's own explicit step, and the original document is completely untouched.
+
+**How it works**: for each page, renders it (same technique as the OCR pipeline) and runs
+gutter-detection to find a real physical spine gutter. When found, uses `pdf-lib` to create
+two real, separate output pages from the one source page, each with its own `CropBox` set to
+one half - `CropBox` only changes what's *visible*, not the underlying embedded image, so
+this doesn't re-rasterize or duplicate any image data. When no gutter is found (a genuine
+single-column page), copies it through unchanged - not every page needs to be a spread.
+
+**A real false-positive bug found and fixed before shipping**: the same "blank across nearly
+the full height" gutter test used for the internal OCR-time split, tested against a synthetic
+sparse single-column page (a few short lines near the top, mostly blank below), incorrectly
+found a "gutter" - because a genuinely blank margin next to short text passes exactly the same
+test a real gutter does. Confirmed directly: the false-positive split had 0.0000 ink density
+on one side. Fixed by requiring real content (not just a blank divider) on *both* sides of a
+candidate split before accepting it - re-verified this doesn't break the real two-page-spread
+case (still splits correctly) and correctly rejects the sparse single-column false positive.
+Worth backporting the same safeguard into `tesseract-ocr-provider.ts`'s own internal gutter
+detection if this class of false positive ever shows up there in practice - not done yet,
+since that path hasn't shown this specific failure mode in real testing.
+
+**Verified end-to-end** with the actual CLI script (not just the underlying library function)
+against the real page: correctly split into 2 pages. Crucially, verified the *rendering*
+correctness using `pdfjs-dist` (the actual renderer this app uses) rather than the native
+`pdftoppm` CLI tool - `pdftoppm` does not respect the `CropBox` in this environment and
+initially made the fix look broken when it wasn't; `pdfjs-dist` renders each resulting page
+at exactly the right cropped dimensions and content. This was a real methodology trap worth
+remembering: verify against the actual rendering path the app uses, not whatever CLI tool is
+convenient, since they can disagree.
+
+**Not yet done**: wiring this into the app's UI (a button, rather than a manual CLI script)
+was deliberately deferred - the CLI tool delivers the actual capability requested right now;
+a UI integration is a reasonable follow-up once the core splitting logic has been used and
+confirmed against the real 64-page book, not before.
