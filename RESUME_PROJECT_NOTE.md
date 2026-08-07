@@ -1428,3 +1428,40 @@ ran the full process-isolated pipeline and got 64 of 64 pages correctly split (1
 pages) - every original page, including the ones that motivated this whole rewrite, no
 regressions found on a broad visual sweep across the actual generated output file (front
 matter, multiple chapters, both index pages, throughout).
+
+## Critical, previously-undiscovered bug: the output was never actually cropped in most viewers
+
+Josh's "What trash" reaction to the actual uploaded output turned out to have a real, severe
+cause underneath it - not a detection or margin problem at all. Rendered the actual uploaded
+file with `pdftoppm` (poppler, a hugely common PDF rendering path) instead of pdfjs-dist,
+the only renderer used to verify output throughout this entire investigation, and every
+single "split" page showed the FULL, ORIGINAL, UNSPLIT two-page spread - not the intended
+half. Confirmed across multiple pages, not a one-off.
+
+Root cause: every version of this tool, from the very first one, worked by setting each
+page's PDF CropBox and leaving the underlying page content (the full-spread image) entirely
+untouched. CropBox is advisory - a viewer is free to honor it or not. pdfjs-dist honors it;
+poppler/pdftoppm does not. This means every round of detection fixes in this whole
+investigation was real and necessary work, but it was solving the wrong layer of the
+problem the entire time: the split was only ever correct in the one specific renderer used
+to check it, and would have shown the full duplicate spread on every single page in a very
+large share of real-world PDF viewers and tools, likely including whatever the actual app
+uses internally.
+
+**Real fix**: physically crop the rendered pixels into separate left/right images and
+embed those as the actual content of new PDF pages, rather than cropping via metadata on an
+untouched image. `pdf-gutter-detect-worker.ts` now saves cropped JPEGs (matching the source
+scan's own JPEG encoding - confirmed via `pdfimages -list` on the real book - so this
+doesn't introduce a new class of quality loss, and keeps file size sane) to a shared temp
+directory in addition to reporting the gutter position; `pdf-page-splitter.ts` reads those
+back and embeds them into brand new pages sized to match, instead of copying the original
+page and setting its CropBox.
+
+**Verified specifically against the renderer that exposed the bug**: ran the complete
+pipeline against the real 64-page book (64/64 split, as before) and checked the actual
+output file with `pdftoppm` directly - the previously-broken pages now show only the correct
+half, confirmed across the front matter, both index pages, and a broad spread through the
+book's middle and end. Also re-confirmed pdfjs-dist still renders it correctly (hasn't
+regressed the path that was already working). Output file size is comparable to the
+CropBox-based version (~7% larger, not a meaningful bloat) despite now containing genuinely
+separate cropped images per page rather than shared references to untouched originals.
