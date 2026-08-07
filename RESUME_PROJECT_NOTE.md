@@ -1290,3 +1290,44 @@ a direct look at the source spread shows what does look like a genuine physical 
 just an unusually narrow one - this may be a real remaining edge case rather than a correct
 "no gutter" classification, not yet resolved. Flagged honestly rather than treated as fully
 closed; worth another look if it matters for this particular book.
+
+## Page 35 fixed (threshold recalibration); found and fixed a related "too tight" margin bug; found a further tight-margin case not yet resolved
+
+**Page 35 (book pages 58-59)**: the flagged narrow gutter. Checked the real blank-fraction
+value across all 64 real pages for calibration before touching anything: every other page's
+true gutter measures 0.9157 or higher; page 35 measures 0.8036, a clear, isolated outlier,
+not a page sitting at a fuzzy boundary. Lowered `GUTTER_MIN_BLANK_FRACTION` from 0.9 to 0.75
+(real margin below the outlier, more below everything else). This alone let a synthetic
+false-positive slip through (a single-column test page with a large blank margin) - the
+existing ink-density safeguard (`GUTTER_MIN_INK_FRACTION_PER_SIDE`) turned out to have been
+calibrated from a single "totally blank" case (0.001, essentially zero) and was too weak to
+catch a false positive with some incidental stray ink on the sparse side. Measured real ink
+density on both sides of a real split across the whole book for calibration (lowest genuine
+value: 3.59%) and raised the threshold to 0.03 - the synthetic false positive is now
+correctly rejected, and the real 64-page book still splits all 64 pages.
+
+**Separately, while doing a broader spot-check, Josh reported printed pages 29, 33, 35
+(original PDF pages 15, 17, 19) as cropped too close to real text.** Measured the true
+visual gutter extent directly (where left-page text truly ends, where right-page text truly
+begins) against what the algorithm was choosing, and found a real, distinct bug: on a page
+whose gutter is a gradual ramp (blank fraction climbing from ~0.82 to ~0.99 over ~25-30px on
+each side, not the sharp/flat kind seen elsewhere), the existing peak-tolerance of 0.01 only
+captured the flat top of that ramp, missing its real shoulders and landing the split point
+13px off the gutter's true center - confirmed directly against the true measured gutter
+span. Widened the tolerance to 0.15, validated against the three distinct gutter shapes
+already characterized in this investigation (wide plateau, narrow sharp peak, narrow
+gradual ramp) before shipping it, to make sure it fixed the new case without regressing the
+ones that motivated the original narrow number. Confirmed by direct visual check: all three
+originally-reported pages now show a normal, comfortable margin.
+
+**Found, but did NOT resolve, a further case while validating this broadly across all 64
+pages**: original pages in roughly the 51-64 range also show a tight right margin (as low
+as 6-16px). Investigated directly - measured the true gutter extent the same way, found the
+algorithm's answer landing well outside even the measured "true" span, tried the next-best
+candidate run as an alternative split point, and the alternative gave an almost identically
+tight result. This suggests these pages may genuinely have been printed with a tighter inner
+margin in this section of the real book, not a fixable detection bug - but this wasn't
+confirmed with the same confidence as the other cases above, and it's a real, visible
+tightness either way. Flagged honestly as unresolved rather than dismissed; worth a
+dedicated look (or asking Josh whether it's acceptable as genuine print variation) before
+treating the whole margin-quality question as closed.

@@ -13,17 +13,41 @@ import type { Canvas } from "@napi-rs/canvas";
 export const RENDER_SCALE = 2;
 export const CONTRAST_FACTOR = 2.0;
 const GUTTER_SEARCH_BAND = [0.3, 0.7] as const;
-const GUTTER_MIN_BLANK_FRACTION = 0.9;
+const GUTTER_MIN_BLANK_FRACTION = 0.75;
+// Originally 0.9, lowered after finding a real page this missed: a
+// genuine two-page spread whose gutter shows visible shadowing from the
+// physical curvature of the book near its spine (confirmed directly by
+// visual inspection of the source scan), not text - the shadow darkens
+// the gutter just enough that it stops counting as "blank" under the
+// stricter threshold, even though there's no real content there. Checked
+// the full real 64-page book directly before picking a new number: every
+// other page's true gutter measures 0.9157 or higher, and this one
+// measures 0.8036 - a clear, isolated outlier, not a page sitting right
+// at a fuzzy boundary. 0.75 sits with real margin below the outlier and
+// even more below everything else, while the separate ink-density check
+// immediately below remains the actual safeguard against false positives
+// on genuine single-column pages - lowering this threshold doesn't weaken
+// that safeguard, which doesn't depend on it.
+//
 // A candidate gutter also needs real content on BOTH sides of it - a
 // sparse single-column page with a short paragraph and a large blank
 // margin can otherwise look exactly like a two-column gutter (the blank
 // margin passes the "blank across nearly full height" test just as well
-// as a real gutter does). Caught this directly: a synthetic single-column
-// test page produced a false-positive split with 0.0000 ink density on
-// one side - genuine two-page spreads have substantial content on both
-// halves, so this threshold is set low enough to accept real but sparse
-// pages while rejecting "no content at all over here" splits.
-const GUTTER_MIN_INK_FRACTION_PER_SIDE = 0.001;
+// as a real gutter does). This threshold was raised from an original
+// 0.001 after lowering GUTTER_MIN_BLANK_FRACTION above exposed how weak
+// that number actually was: it was calibrated against a single totally-
+// blank false positive (0.0000 ink on one side) and never tested against
+// a more realistic one with some incidental content on the sparse side.
+// Built a synthetic single-column test page (real text confined to the
+// left ~40%, blank margin covering the rest) and it slipped through at
+// 0.001 - the "gutter" it found sat inside a natural word-wrap gap
+// within the text block itself, with enough stray ink on the sparse side
+// (2.13%) to clear that old bar easily. Checked real ink density on both
+// sides of a real spread's split, across the whole 64-page book, for
+// calibration: the lowest genuine value found was 3.59%. This threshold
+// sits with real margin below that real minimum and above the false
+// positive's value, and the synthetic test now correctly returns null.
+const GUTTER_MIN_INK_FRACTION_PER_SIDE = 0.03;
 
 export function applyContrastEnhancement(canvas: Canvas, factor: number): void {
   const ctx = canvas.getContext("2d");
@@ -105,7 +129,23 @@ export function findGutterSplit(canvas: Canvas): number | null {
   // regions tie on length, so using "which run contains the true peak" to
   // choose between them is deterministic where "longest run, first found"
   // was not.
-  const tolerance = 0.01;
+  //
+  // Tolerance around the peak was originally 0.01 (a "flat top only"
+  // reading), which broke on a real page whose gutter isn't a flat
+  // plateau but a gradual ramp - blank fraction climbs from ~0.82 near
+  // the edges of the gutter to a ~0.99 peak over about 25-30px on each
+  // side. 0.01 only captured the flat top of that ramp (a 29px span,
+  // missing its real shoulders), landing the split 13px off the gutter's
+  // true visual center - confirmed directly: text on the cropped output
+  // page sat almost flush against the crop edge on one side. Widened to
+  // 0.15 to capture those shoulders. Checked this doesn't regress the
+  // cases that motivated the narrower number in the first place: the
+  // wide-plateau page's computed center didn't move at all going from
+  // 0.01 to 0.15 (the plateau's falloff outside the true gutter is sharp
+  // enough that a wider relative tolerance doesn't reach past it), and
+  // the narrow-sharp-peak page's span only grew by a few pixels, still
+  // landing centered on the same peak.
+  const tolerance = 0.15;
   const nearMaxXs = fractions.filter((f) => f.fraction >= maxFraction - tolerance).map((f) => f.x);
   const peakX = fractions.find((f) => f.fraction === maxFraction)!.x;
   const runs: number[][] = [];
