@@ -13,21 +13,23 @@ import type { Canvas } from "@napi-rs/canvas";
 export const RENDER_SCALE = 2;
 export const CONTRAST_FACTOR = 2.0;
 const GUTTER_SEARCH_BAND = [0.3, 0.7] as const;
-const GUTTER_MIN_BLANK_FRACTION = 0.75;
-// Originally 0.9, lowered after finding a real page this missed: a
-// genuine two-page spread whose gutter shows visible shadowing from the
-// physical curvature of the book near its spine (confirmed directly by
-// visual inspection of the source scan), not text - the shadow darkens
-// the gutter just enough that it stops counting as "blank" under the
-// stricter threshold, even though there's no real content there. Checked
-// the full real 64-page book directly before picking a new number: every
-// other page's true gutter measures 0.9157 or higher, and this one
-// measures 0.8036 - a clear, isolated outlier, not a page sitting right
-// at a fuzzy boundary. 0.75 sits with real margin below the outlier and
-// even more below everything else, while the separate ink-density check
-// immediately below remains the actual safeguard against false positives
-// on genuine single-column pages - lowering this threshold doesn't weaken
-// that safeguard, which doesn't depend on it.
+const GUTTER_MIN_BLANK_FRACTION = 0.15;
+// This threshold is calibrated for the LONGEST-CONTIGUOUS-RUN scoring
+// signal below, not a simple aggregate blank fraction - a single
+// interruption (a shadow, a stray mark) cuts a longest-run score much
+// more severely than it dents an aggregate fraction, so this number
+// looks low compared to what an aggregate-fraction threshold would need
+// to be, and that's expected, not a mistake. Checked the full real
+// 64-page book directly before picking it: the lowest genuine value
+// found (a page whose gutter shows visible shadowing from the physical
+// curvature of the book near its spine, confirmed directly by visual
+// inspection of the source scan, not text) is 0.18, with the next-lowest
+// at 0.36 and a further cluster from 0.6 up to the normal ~0.97+ range
+// most pages sit in. 0.15 sits below the lowest genuine value with a
+// small margin, while the separate ink-density check immediately below
+// remains the actual safeguard against false positives on genuine
+// single-column pages - a low value here doesn't weaken that safeguard,
+// which doesn't depend on it.
 //
 // A candidate gutter also needs real content on BOTH sides of it - a
 // sparse single-column page with a short paragraph and a large blank
@@ -90,64 +92,71 @@ export function findGutterSplit(canvas: Canvas): number | null {
   };
   const bandStart = Math.floor(width * GUTTER_SEARCH_BAND[0]);
   const bandEnd = Math.ceil(width * GUTTER_SEARCH_BAND[1]);
-  const fractions: { x: number; fraction: number }[] = [];
-  let maxFraction = 0;
+
+  // Score each column by its LONGEST CONTIGUOUS run of blank pixels
+  // top-to-bottom, not by what fraction of the column is blank in total.
+  // This was a real architecture change, not a tuning tweak - looked at
+  // how established scan-splitting tools (ScanTailor) solve this exact
+  // problem before making it: they detect actual vertical line features
+  // (via edge detection + Hough transform) and pick the most central one,
+  // rather than treating "gutter" as a proxy for "mostly blank column" the
+  // way this file did until now. A full line-detector was more than this
+  // needed, but the underlying insight carries over directly: a real book
+  // gutter is a genuinely CONTINUOUS physical feature running almost the
+  // full height of the page (the spine doesn't stop partway down), which
+  // is a fundamentally different thing from "blank most of the time."
+  // Aggregate blank fraction can't tell those apart, and that's what was
+  // actually behind every distinct failure mode found in this
+  // investigation - a stray mark fragmenting a real gutter into two
+  // aggregate-blank regions, and a page's own internal index-column gap
+  // (not a real page-spread gutter at all) looking similarly blank in
+  // aggregate despite having no continuous physical feature behind it.
+  // Checked this change directly against every one of those cases before
+  // adopting it - the wide-plateau page, the narrow-sharp-peak page, the
+  // gradual-ramp page, the spine-shadow page, the stray-mark page, and
+  // the index-page false lead - and it got all of them right without the
+  // conflicting, hand-tuned patches those individual cases had been
+  // accumulating.
+  const scores: { x: number; longestRunFraction: number }[] = [];
+  let maxScore = 0;
   for (let x = bandStart; x < bandEnd; x++) {
-    let blankCount = 0;
+    let longestRun = 0;
+    let currentRun = 0;
     for (let y = 0; y < height; y++) {
-      if (brightnessAt(x, y) > 200) blankCount++;
+      if (brightnessAt(x, y) > 200) {
+        currentRun++;
+        if (currentRun > longestRun) longestRun = currentRun;
+      } else {
+        currentRun = 0;
+      }
     }
-    const fraction = blankCount / height;
-    fractions.push({ x, fraction });
-    if (fraction > maxFraction) maxFraction = fraction;
+    const longestRunFraction = longestRun / height;
+    scores.push({ x, longestRunFraction });
+    if (longestRunFraction > maxScore) maxScore = longestRunFraction;
   }
-  if (maxFraction < GUTTER_MIN_BLANK_FRACTION) return null;
+  if (maxScore < GUTTER_MIN_BLANK_FRACTION) return null;
 
   // Real gutters are rarely a single-pixel-wide line at this render scale -
-  // they're a wide blank band (confirmed directly against a real page:
-  // 362px wide, on a page rendered at ~1520px total width). Taking the
-  // FIRST column that happens to hit the single highest blank fraction
-  // systematically picks the LEFT EDGE of that band, not its middle -
-  // this was the actual bug behind the inflated right-side margins Josh
-  // found, confirmed by direct diagnostic (leftmost qualifying column at
-  // x=456, true center of the same blank band at x=637, a 181px/12%-of-
-  // page-width difference). Instead: find every column within a small
-  // tolerance of the true maximum, group them into contiguous runs (there
-  // can be more than one blank-ish region in the search band), and split
-  // at the center of whichever run actually contains the single highest-
-  // scoring column - giving both resulting pages a symmetric, natural
-  // margin instead of one page getting nearly the whole blank band tacked
-  // onto its edge.
+  // they're a wide blank band. Taking the FIRST column that happens to hit
+  // the single highest score systematically picks the LEFT EDGE of that
+  // band, not its middle - this was the actual bug behind the inflated
+  // right-side margins Josh found early in this investigation. Instead:
+  // find every column within a small tolerance of the true maximum, group
+  // them into contiguous runs (there can be more than one candidate region
+  // in the search band), and split at the center of whichever run actually
+  // contains the single highest-scoring column - giving both resulting
+  // pages a symmetric, natural margin instead of one page getting nearly
+  // the whole band tacked onto its edge.
   //
-  // On dense body-text pages, the real gutter can be genuinely narrow and
-  // there can be a second, unrelated near-max region elsewhere in the
-  // search band (confirmed directly on a real page: two separate 3px
-  // regions 26px apart, both technically tied for "longest run" -
-  // choosing whichever the scan happened to reach first picked the wrong
-  // one on that real page and caused a real split failure). The single
-  // highest-scoring column is unambiguous even when multiple candidate
-  // regions tie on length, so using "which run contains the true peak" to
-  // choose between them is deterministic where "longest run, first found"
-  // was not.
-  //
-  // Tolerance around the peak was originally 0.01 (a "flat top only"
-  // reading), which broke on a real page whose gutter isn't a flat
-  // plateau but a gradual ramp - blank fraction climbs from ~0.82 near
-  // the edges of the gutter to a ~0.99 peak over about 25-30px on each
-  // side. 0.01 only captured the flat top of that ramp (a 29px span,
-  // missing its real shoulders), landing the split 13px off the gutter's
-  // true visual center - confirmed directly: text on the cropped output
-  // page sat almost flush against the crop edge on one side. Widened to
-  // 0.15 to capture those shoulders. Checked this doesn't regress the
-  // cases that motivated the narrower number in the first place: the
-  // wide-plateau page's computed center didn't move at all going from
-  // 0.01 to 0.15 (the plateau's falloff outside the true gutter is sharp
-  // enough that a wider relative tolerance doesn't reach past it), and
-  // the narrow-sharp-peak page's span only grew by a few pixels, still
-  // landing centered on the same peak.
-  const tolerance = 0.15;
-  const nearMaxXs = fractions.filter((f) => f.fraction >= maxFraction - tolerance).map((f) => f.x);
-  const peakX = fractions.find((f) => f.fraction === maxFraction)!.x;
+  // Tolerance of 0.05 (5% of page height) was chosen empirically against
+  // every distinct real gutter shape found in this investigation - wide
+  // plateau, narrow sharp peak, narrow gradual ramp, shadow-darkened, and
+  // the two cases that motivated switching to this longest-contiguous-run
+  // scoring in the first place - and gave the visually correct split on
+  // all of them without needing a different number per shape.
+  const tolerance = 0.05;
+  const nearMaxXs = scores.filter((s) => s.longestRunFraction >= maxScore - tolerance).map((s) => s.x);
+  const peakX = scores.find((s) => s.longestRunFraction === maxScore)!.x;
   const runs: number[][] = [];
   let currentRun: number[] = [];
   for (const x of nearMaxXs) {
@@ -160,8 +169,8 @@ export function findGutterSplit(canvas: Canvas): number | null {
   }
   if (currentRun.length > 0) runs.push(currentRun);
   const peakRun = runs.find((run) => run.includes(peakX));
-  const longestRun = runs.reduce((best, run) => (run.length > best.length ? run : best), runs[0]);
-  const chosenRun = peakRun ?? longestRun;
+  const longestCandidateRun = runs.reduce((best, run) => (run.length > best.length ? run : best), runs[0]);
+  const chosenRun = peakRun ?? longestCandidateRun;
   const splitX = Math.round((chosenRun[0] + chosenRun[chosenRun.length - 1]) / 2);
 
   // Confirm real content on both sides, sampling every few pixels rather

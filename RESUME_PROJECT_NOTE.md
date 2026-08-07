@@ -1331,3 +1331,100 @@ confirmed with the same confidence as the other cases above, and it's a real, vi
 tightness either way. Flagged honestly as unresolved rather than dismissed; worth a
 dedicated look (or asking Josh whether it's acceptable as genuine print variation) before
 treating the whole margin-quality question as closed.
+
+## Pages 51-64: confirmed a real bug (not print variation as first guessed), found the mechanism, attempted a fix, reverted it after it caused a worse regression elsewhere
+
+Josh pushed back directly on the "genuine print variation" guess above - correctly. Redid
+the investigation properly this time: drew the actual computed split line directly onto the
+original, unsplit spread image for a real page in this range (page 51) and could see by
+direct comparison that it was landing well off from the true, visually obvious gutter.
+
+Root cause: a small stray mark (dust, a fleck, faint bleed-through - something on the order
+of a couple of pixels wide at its narrowest point) sits inside the true gutter on this page,
+fragmenting what should be one continuous near-max region into two separate candidate runs.
+The narrower of the two (closer to the true gutter's center) was being ignored in favor of
+the one containing the single highest-scoring column, by a margin of 0.0016 - essentially
+noise-level, but enough to flip which run got chosen. Confirmed the exact same dip shape
+does NOT appear on a different real page's gutter that's correctly detected (page 28): that
+page's gap between candidate runs has many consecutive columns of genuinely low blank
+fraction (real content, spread across ~8-10 columns), while this page's dip is a sharp,
+narrow spike that recovers within 1-2 columns - a real, measurable difference between "real
+second column of text nearby" and "a fleck sitting in the gutter."
+
+Implemented a fix along these lines: bridge two adjacent near-max runs into one when few
+columns in the gap between them are genuinely low (a narrow-spike test, not a blanket
+merge). Fixed page 51 and validated against all previously-characterized gutter shapes
+(wide plateau, narrow ramp, narrow sharp peak) before considering it - all still gave
+correct results. Then, before shipping, checked visually across a broader sample of the
+51-64 range and found a real, more serious regression: page 64 (the book's INDEX, formatted
+in its own internal two-column layout) got its split pulled from a safe 794 to a wrong 924,
+landing inside the index's own internal column gap rather than at the true page-spread
+gutter - visibly truncating real index entries. The bridging logic doesn't distinguish "a
+real page-spread gutter, fragmented by a stray mark" from "a real internal column gap on an
+index-style page, immediately adjacent to the true gutter" - both look like "a nearby
+near-max region worth merging in" to the same heuristic.
+
+Text getting cut off is a worse failure than a tight margin, so reverted the bridging change
+entirely rather than ship it. Currently shipped state is the tolerance=0.15 fix (pages 29,
+33, 35 fixed and reconfirmed after the revert) WITHOUT bridging - meaning page 51's specific
+issue, and however much of the 51-64 range shares its cause, is back to unresolved. This is
+a real, now-understood bug, not print variation - just not yet fixed in a way that's safe to
+ship. The right next step is probably a bridging rule that also checks whether the resulting
+merged region would run into a genuine internal-column-gap shape (e.g. by requiring the
+merged span to still be reasonably narrow, not just checking the gap's spike width in
+isolation) before more attempts, rather than reapplying the same one that just failed.
+
+## Rewrite based on actual research, not another hand-tuned patch
+
+Josh's correct pushback: the pattern above (patch a specific page, discover it breaks a
+different specific page, patch that too) was accumulating conflicting, narrowly-scoped
+heuristics rather than converging on anything. Told to research how this problem is actually
+solved before continuing - and it was the right call.
+
+Looked at ScanTailor, the established open-source tool for exactly this problem (splitting
+scanned book spreads). Its approach is fundamentally different from what this file had been
+doing: it does NOT treat "gutter" as a proxy for "mostly blank column" at all. It detects
+actual vertical LINE features (edge detection, then a Hough transform to find lines), and
+picks whichever detected line is most central. A full Hough-transform line detector was more
+machinery than this problem needed, but the underlying insight is exactly what was missing
+here: a real book gutter is a genuinely CONTINUOUS physical feature that runs almost the
+entire height of the page (the spine doesn't stop partway down), which is a fundamentally
+different thing from "blank most of the time in aggregate."
+
+That reframing directly explains every distinct failure mode hit in this investigation:
+- The wide-plateau page and the narrow-sharp-peak page: aggregate-blank-fraction-based
+  candidate generation worked fine here, coincidentally.
+- The gradual-ramp page (29/33/35 originally reported) and the shadow-darkened page (35):
+  aggregate fraction was diluted by the ramp/shadow even though the feature was genuinely
+  continuous top-to-bottom.
+- The stray-mark page (51) and the internal-index-column-gap page (64): these are the
+  clearest cases - aggregate blank fraction can be high for both a real, continuous gutter
+  interrupted by a small mark AND an unrelated internal whitespace gap that happens to be
+  blank across most (but not necessarily all, continuously) of the page height. Aggregate
+  fraction cannot tell these apart. Continuity can.
+
+**Rewrote the core scoring signal**: each candidate column is now scored by its LONGEST
+CONTIGUOUS run of blank pixels top-to-bottom, not by what fraction of the column is blank in
+total. Kept the existing near-max-tolerance + run-grouping + "prefer the run containing the
+true peak" selection logic on top of this new signal, rather than also replacing that in the
+same pass - it's a reasonable mechanism once given a better underlying score, and changing
+too much at once would have made it hard to attribute results to the right cause.
+
+Validated this directly, individually, against every distinct gutter shape characterized in
+this investigation before adopting it: the wide plateau, the narrow sharp peak, the narrow
+gradual ramp, the shadow-darkened gutter, the stray-mark-fragmented gutter, and the
+internal-index-column false lead. All six gave the visually correct split under ONE
+unified algorithm, with no per-case special handling. Recalibrated `GUTTER_MIN_BLANK_FRACTION`
+for the new signal (it's a different scale than the old aggregate fraction - a single
+interruption cuts a longest-run score much more severely than it dents an aggregate
+fraction, so the right number is lower, not comparable): checked the full 64-page book's
+distribution under the new signal directly rather than guessing, and set it with real margin
+below the lowest genuine value found (0.18, the shadow page) while leaving the independent
+ink-density-per-side check as the actual safeguard against false positives, same as before.
+Re-ran the synthetic single-column false-positive test - still correctly rejected.
+
+**Verified end-to-end against the complete real book, not just the six characterized cases**:
+ran the full process-isolated pipeline and got 64 of 64 pages correctly split (128 total
+pages) - every original page, including the ones that motivated this whole rewrite, no
+regressions found on a broad visual sweep across the actual generated output file (front
+matter, multiple chapters, both index pages, throughout).
