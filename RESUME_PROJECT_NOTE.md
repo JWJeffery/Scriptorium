@@ -1234,3 +1234,59 @@ exported page, not a synthetic fixture) - the strongest verification basis anyth
 whole splitting-tool effort has had. Still worth a broader page-by-page spot-check of the
 full 119-page output before treating this as fully closed, but the specific issues Josh
 found are both accounted for with direct evidence, not assumption.
+
+## Root cause of "failure to split" found: same-process rendering degradation, fixed via process isolation
+
+The margin-centering fix above did NOT resolve the "failure to split" pages Josh also
+reported (pages 28, 30, 31, 33-36, 38, 44 of the original 64 were being kept as single
+pages despite being real two-page spreads - confirmed directly by rendering page 28/44's
+original spread: dense body text filling both halves, no false positive).
+
+Extensive direct debugging (documented in full in the conversation, not just this note)
+traced this to something genuinely surprising: rendering many pages sequentially within
+one Node process was silently corrupting pdfjs-dist's rendered pixel data for later pages,
+with no error or warning. Confirmed by measuring the exact same real page's gutter-detection
+signal both ways: 0.982 (correct, matches direct visual inspection) when rendered as a
+single, isolated page; 0.891 (wrongly below the 0.9 detection threshold) at the identical
+point in a long sequential run - and this was perfectly reproducible, not flaky (same
+value, 0.8911620294599017, every single time).
+
+Ruled out, each confirmed directly rather than assumed, in this order:
+- Reusing one shared pdfjs document instance across all pages - fixed to open a fresh
+  instance per page; did NOT resolve it.
+- Interleaving pdf-lib's copyPages/addPage work with pdfjs rendering in one loop - fixed by
+  fully separating detection (pdfjs only) from output-building (pdf-lib only) into two
+  sequential phases; did NOT resolve it, even combined with the fresh-instance fix above.
+- GC/memory pressure - forced garbage collection between every page; did NOT resolve it.
+- What DID resolve it, tested directly: running each page's detection in a completely
+  separate OS process (via node:child_process, one `node --experimental-strip-types`
+  invocation per page) gave the correct value every time, for every previously-failing
+  page tested. The actual mechanism is most likely something in @napi-rs/canvas (a native
+  addon) or pdfjs-dist's own native/WASM bindings that degrades after enough canvases are
+  created within one process - genuine root cause wasn't fully pinned down beyond that, but
+  full process isolation removes it categorically rather than requiring one.
+
+**Architecture change**: `pdf-page-splitter.ts` no longer renders pages itself. Shared
+gutter-detection logic moved to `pdf-page-splitter-shared.ts` (imported by both places that
+need it). A new `pdf-gutter-detect-worker.ts` renders and detects the gutter for exactly one
+page, run as its own child process. The main function writes the PDF to a temp file (so each
+worker process can read it without command-line size limits), spawns one worker process per
+page via `child_process.execFile`, collects the JSON result from each, then builds the output
+PDF from pdf-lib in a separate pass once all detection is done.
+
+**Real cost**: re-parsing the PDF and starting a fresh Node process per page is genuinely
+slower - about 74 seconds for the real 64-page book, versus near-instant before. This is a
+one-time, manually-run conversion tool, not a hot path, so correctness was judged to matter
+more than speed here.
+
+**Verified against the real 64-page book**: 63 of 64 pages now correctly detected as
+two-page spreads and split (up from 55/64), including direct visual confirmation on
+several of the specific pages that were previously failing (page 28/44's real spread now
+renders as two separate, correctly-cropped, correctly-flowing pages with real matching
+content - "Te Deum or the Gloria..." continuing correctly from page 44 into page 45).
+
+**One remaining page** (original page 35, book pages 58-59) is still not being split, and
+a direct look at the source spread shows what does look like a genuine physical gutter,
+just an unusually narrow one - this may be a real remaining edge case rather than a correct
+"no gutter" classification, not yet resolved. Flagged honestly rather than treated as fully
+closed; worth another look if it matters for this particular book.
