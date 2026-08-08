@@ -11,3 +11,8 @@ coverage
 storage
 *.tsbuildinfo
 *.traineddata
+# Output files from scripts/split-two-page-spreads.mjs - large, generated,
+# user-specific PDFs, not source. Don't belong in git history - run the
+# script to regenerate rather than committing the output.
+/*.pdf
+output-*.pdf
