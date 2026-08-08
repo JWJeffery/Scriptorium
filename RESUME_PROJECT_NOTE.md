@@ -1465,3 +1465,61 @@ book's middle and end. Also re-confirmed pdfjs-dist still renders it correctly (
 regressed the path that was already working). Output file size is comparable to the
 CropBox-based version (~7% larger, not a meaningful bloat) despite now containing genuinely
 separate cropped images per page rather than shared references to untouched originals.
+
+## Josh found three more real bugs (pages 35, 36, 74) after the CropBox fix - two distinct root causes, both now fixed
+
+Ran the fixed pipeline against the real book, checked with pdftoppm specifically (the
+renderer that exposed the CropBox bug), and found genuine text-splitting errors on three
+pages Josh flagged directly. Traced both to source pages, diagnosed precisely rather than
+guessing.
+
+**Source page 18** (real cause: sparse, widely-spaced footnote text creating a false
+candidate). Footnotes with hanging indents wrap to very different lengths line to line,
+leaving a wide column range where most lines don't reach that far right - this reads as a
+long, real, but only moderately-scoring "blank run" under the previous algorithm, and it
+narrowly out-scored the true, narrower gutter right next to the real text (0.716 vs 0.716,
+functionally tied, with the false one winning by which one the scan happened to reach
+first). Confirmed directly: cropping at the wrong position split "16. From Gore to Temple"
+across both halves.
+
+**Source page 37** (a different, more fundamental gap): the true gutter here is a visible
+physical shadow from the book's spine curvature - genuinely continuous top-to-bottom, but
+continuously DARK, not continuously blank. The previous algorithm only ever scored longest
+runs of BLANK pixels, so a real, continuous, but dark gutter scored near zero - identical to
+what dense text would score - and the algorithm confidently (0.987) picked an unrelated
+column instead. This wasn't a low-confidence/ambiguous case that cross-page correction could
+catch; it was confidently wrong.
+
+**Two fixes, one architectural, one signal-level:**
+
+1. Two-pass detection in `pdf-page-splitter.ts`: pass 1 detects every page independently;
+   the book's typical gutter position is computed from pages detected with high confidence;
+   pass 2 re-runs just the low-confidence, multi-candidate pages using that expected
+   position as a tiebreaker. This is a real, principled use of the fact that a physical
+   book's binding sits at a consistent position from page to page - and it's what resolves
+   the page 18 case. It does NOT resolve page 37, though, because that page's wrong answer
+   wasn't low-confidence.
+
+2. The deeper fix, in `findGutterSplit` itself: rescored every column by its longest run of
+   CONSISTENT brightness (whether uniformly bright or uniformly dark), not longest run of
+   blank specifically. A real gutter's defining property is continuity, not brightness -
+   confirmed directly, at the true gutter on page 37, average brightness drops from ~200
+   (paper white) to ~175-190 (shadow) and STAYS there for nearly the full page height, while
+   the column the old algorithm had been confidently choosing varies constantly (real text).
+   This single change handles bright gutters and shadow gutters with one signal instead of
+   the shadow case needing its own separately-tuned, lower threshold as a special case.
+
+Recalibrated `GUTTER_MIN_BLANK_FRACTION` for this new signal's scale, checked directly
+against the real book rather than guessed: 63 of 64 pages score 0.9861+ under it, one mild
+outlier at 0.7905 (itself confirmed correct by direct visual check) - a far tighter, more
+consistent distribution than any earlier signal produced.
+
+**Validated individually against every distinct gutter shape found across this entire
+investigation before shipping** - wide plateau, narrow sharp peak, gradual ramp, the
+original shadow case, the new shadow case, the stray-mark case, the sparse-footnote false
+lead, and the internal-index-column false lead - eight cases, one unified algorithm, no
+per-case patches. Re-ran the synthetic false-positive safety test (still correctly rejects a
+sparse single-column page). Ran the complete two-pass pipeline against the real 64-page book
+(64/64 split, 128 pages) and verified with pdftoppm specifically: the three originally-
+flagged pages (35, 36, 74) now render correctly, and a broad sweep across the front matter,
+multiple chapters, and both index pages found no regressions.

@@ -42,6 +42,31 @@ export type SplitPdfResult = {
   splitOriginalPageNumbers: number[];
 };
 
+type WorkerResult = { gutterX: number | null; confidence: number | null; widthPixels: number; heightPixels: number };
+
+async function runWorker(
+  workerPath: string,
+  tempPdfPath: string,
+  pageIndex: number,
+  tempDir: string,
+  expectedRatio?: number
+): Promise<WorkerResult> {
+  const args = [
+    "--experimental-strip-types",
+    workerPath,
+    tempPdfPath,
+    String(pageIndex),
+    tempDir,
+    ...(expectedRatio !== undefined ? [String(expectedRatio)] : [])
+  ];
+  const { stdout } = await execFileAsync(process.execPath, args, { maxBuffer: 1024 * 1024 * 50 });
+  // The worker may emit warnings on stdout/stderr from pdfjs-dist
+  // (missing embedded font glyphs, etc. - harmless, seen throughout this
+  // whole investigation); only the last line is the actual JSON result.
+  const lastLine = stdout.trim().split("\n").pop() ?? "";
+  return JSON.parse(lastLine) as WorkerResult;
+}
+
 export async function splitTwoPageSpreadPdf(pdfBytes: Buffer | Uint8Array): Promise<SplitPdfResult> {
   const bytes = pdfBytes instanceof Buffer ? new Uint8Array(pdfBytes) : pdfBytes;
 
@@ -54,47 +79,69 @@ export async function splitTwoPageSpreadPdf(pdfBytes: Buffer | Uint8Array): Prom
   // pdf-gutter-detect-worker.ts for why process isolation is required).
   // The cropped images are written to a shared temp directory and read
   // back here to embed into the output PDF as brand new pages with their
-  // own correctly-sized MediaBox.
-  //
-  // This - actually cropping pixels, not just setting each page's
-  // CropBox and leaving the underlying image untouched - is not the
-  // original design. The CropBox approach was shipped, extensively
-  // tested, and wrong in a way that only showed up outside the one
-  // viewer (pdfjs-dist) used to verify it throughout this whole
-  // investigation: CropBox is advisory, and poppler's pdftoppm - a very
-  // common rendering path - ignores it outright, showing the full
-  // original two-page spread for every single "split" page. Confirmed
-  // directly against the real output file before rewriting this.
+  // own correctly-sized MediaBox, rather than the original CropBox
+  // approach (advisory metadata that not all PDF viewers respect -
+  // confirmed directly that poppler's pdftoppm ignores it outright).
   const tempDir = await mkdtemp(join(tmpdir(), "scriptorium-split-"));
   const tempPdfPath = join(tempDir, "source.pdf");
   const workerPath = join(__dirname, "pdf-gutter-detect-worker.ts");
-  const gutterResults: { gutterX: number | null }[] = [];
   try {
     await writeFile(tempPdfPath, bytes);
+
+    // PASS 1: detect (and, for split pages, crop) every page without any
+    // cross-page context. This is right for the overwhelming majority of
+    // pages - a genuine gutter usually scores unambiguously higher than
+    // anything else on the same page. It's not always enough on its own,
+    // though: found a real page where sparse, widely-spaced footnote
+    // text created a wide but only moderately-scoring false candidate
+    // that beat the true, narrower gutter next to it by a razor-thin
+    // margin, because a single page's own pixel data has no way to
+    // settle a tie that close. Confirmed directly against that page:
+    // cropping at the wrong candidate split real footnote text across
+    // both halves.
+    const results: WorkerResult[] = [];
     for (let pageIndex = 1; pageIndex <= originalPageCount; pageIndex++) {
-      const { stdout } = await execFileAsync(
-        process.execPath,
-        ["--experimental-strip-types", workerPath, tempPdfPath, String(pageIndex), tempDir],
-        { maxBuffer: 1024 * 1024 * 50 }
-      );
-      // The worker may emit warnings on stdout/stderr from pdfjs-dist
-      // (missing embedded font glyphs, etc. - harmless, seen throughout
-      // this whole investigation); only the last line is the actual
-      // JSON result this process cares about.
-      const lastLine = stdout.trim().split("\n").pop() ?? "";
-      const result = JSON.parse(lastLine) as { gutterX: number | null };
-      gutterResults.push(result);
+      results.push(await runWorker(workerPath, tempPdfPath, pageIndex, tempDir));
     }
 
-    // Build the output PDF from the cropped images (or, for pages with
-    // no detected gutter, a straight copy of the original page - no
-    // cropping involved there, so the existing CropBox-free copyPages
-    // approach is already fully correct for those).
+    // A real book's binding sits at a physically consistent position
+    // from page to page, so the fix is cross-page: compute the book's
+    // typical gutter position from the pages that WERE detected with
+    // high confidence, then re-run just the ambiguous ones (low
+    // confidence, i.e. the top candidate wasn't a clear winner) with
+    // that expected position as a tiebreaker. High-confidence pages are
+    // left exactly as pass 1 found them - this only touches pages pass 1
+    // was already unsure about.
+    const HIGH_CONFIDENCE_THRESHOLD = 0.85;
+    const confidentRatios: number[] = [];
+    for (const r of results) {
+      if (r.gutterX !== null && r.confidence !== null && r.confidence >= HIGH_CONFIDENCE_THRESHOLD && r.widthPixels) {
+        confidentRatios.push(r.gutterX / r.widthPixels);
+      }
+    }
+    let expectedRatio: number | undefined;
+    if (confidentRatios.length > 0) {
+      const sorted = [...confidentRatios].sort((a, b) => a - b);
+      expectedRatio = sorted[Math.floor(sorted.length / 2)];
+    }
+
+    if (expectedRatio !== undefined) {
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        const pageIndex = i + 1;
+        const isAmbiguous = r.gutterX !== null && r.confidence !== null && r.confidence < HIGH_CONFIDENCE_THRESHOLD;
+        if (isAmbiguous) {
+          results[i] = await runWorker(workerPath, tempPdfPath, pageIndex, tempDir, expectedRatio);
+        }
+      }
+    }
+
+    // Build the output PDF from the (possibly pass-2-corrected) results.
     const outputDoc = await PDFDocument.create();
     const splitOriginalPageNumbers: number[] = [];
 
     for (let pageIndex = 1; pageIndex <= originalPageCount; pageIndex++) {
-      const { gutterX } = gutterResults[pageIndex - 1];
+      const { gutterX } = results[pageIndex - 1];
       const sourcePageIndex = pageIndex - 1; // pdf-lib is 0-indexed
 
       if (gutterX === null) {
@@ -110,8 +157,8 @@ export async function splitTwoPageSpreadPdf(pdfBytes: Buffer | Uint8Array): Prom
       const rightImage = await outputDoc.embedJpg(rightBytes);
 
       // Pixel dimensions back to PDF point space, same conversion this
-      // file has used since the CropBox version - only what happens
-      // with the number changed, not the math itself.
+      // file has used since the CropBox version - only what happens with
+      // the number changed, not the math itself.
       const leftWidthPoints = leftImage.width / RENDER_SCALE;
       const leftHeightPoints = leftImage.height / RENDER_SCALE;
       const rightWidthPoints = rightImage.width / RENDER_SCALE;

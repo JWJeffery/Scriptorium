@@ -13,23 +13,16 @@ import type { Canvas } from "@napi-rs/canvas";
 export const RENDER_SCALE = 2;
 export const CONTRAST_FACTOR = 2.0;
 const GUTTER_SEARCH_BAND = [0.3, 0.7] as const;
-const GUTTER_MIN_BLANK_FRACTION = 0.15;
-// This threshold is calibrated for the LONGEST-CONTIGUOUS-RUN scoring
-// signal below, not a simple aggregate blank fraction - a single
-// interruption (a shadow, a stray mark) cuts a longest-run score much
-// more severely than it dents an aggregate fraction, so this number
-// looks low compared to what an aggregate-fraction threshold would need
-// to be, and that's expected, not a mistake. Checked the full real
-// 64-page book directly before picking it: the lowest genuine value
-// found (a page whose gutter shows visible shadowing from the physical
-// curvature of the book near its spine, confirmed directly by visual
-// inspection of the source scan, not text) is 0.18, with the next-lowest
-// at 0.36 and a further cluster from 0.6 up to the normal ~0.97+ range
-// most pages sit in. 0.15 sits below the lowest genuine value with a
-// small margin, while the separate ink-density check immediately below
-// remains the actual safeguard against false positives on genuine
-// single-column pages - a low value here doesn't weaken that safeguard,
-// which doesn't depend on it.
+const GUTTER_MIN_BLANK_FRACTION = 0.6;
+// Recalibrated for the UNIFORMITY scoring signal below (longest run of
+// consistent brightness, not longest run of blank) - checked the real
+// 64-page book's actual distribution under this signal directly rather
+// than guessing: 63 of 64 pages score 0.9861 or higher, with a single
+// mild outlier at 0.7905. 0.6 sits with real margin below that outlier
+// and far below the main cluster, while the separate ink-density check
+// immediately below remains the actual safeguard against false
+// positives on genuine single-column pages - this threshold doesn't
+// weaken that safeguard, which doesn't depend on it.
 //
 // A candidate gutter also needs real content on BOTH sides of it - a
 // sparse single-column page with a short paragraph and a large blank
@@ -73,7 +66,15 @@ export function applyContrastEnhancement(canvas: Canvas, factor: number): void {
   ctx.putImageData(imageData, 0, 0);
 }
 
-export function findGutterSplit(canvas: Canvas): number | null {
+export type GutterDetectionResult = {
+  splitX: number;
+  // The raw peak longest-contiguous-run score (0-1) - lets the caller
+  // tell a confidently-detected gutter apart from a marginal one, used
+  // for the cross-page consistency check below.
+  confidence: number;
+};
+
+export function findGutterSplit(canvas: Canvas, expectedRatio?: number): GutterDetectionResult | null {
   // Deliberately a separate implementation from tesseract-ocr-provider.ts's
   // own gutter detection rather than importing it - keeps the
   // already-verified, working OCR path completely untouched by this tool.
@@ -93,42 +94,53 @@ export function findGutterSplit(canvas: Canvas): number | null {
   const bandStart = Math.floor(width * GUTTER_SEARCH_BAND[0]);
   const bandEnd = Math.ceil(width * GUTTER_SEARCH_BAND[1]);
 
-  // Score each column by its LONGEST CONTIGUOUS run of blank pixels
-  // top-to-bottom, not by what fraction of the column is blank in total.
-  // This was a real architecture change, not a tuning tweak - looked at
+  // Score each column by its LONGEST CONTIGUOUS run of *consistent*
+  // brightness top-to-bottom - not blank pixels specifically, uniform
+  // ones, whatever that uniform value happens to be. This went through
+  // two real architecture changes, not tuning tweaks. First, from
+  // aggregate blank fraction to longest-contiguous-BLANK-run: looked at
   // how established scan-splitting tools (ScanTailor) solve this exact
-  // problem before making it: they detect actual vertical line features
-  // (via edge detection + Hough transform) and pick the most central one,
-  // rather than treating "gutter" as a proxy for "mostly blank column" the
-  // way this file did until now. A full line-detector was more than this
-  // needed, but the underlying insight carries over directly: a real book
-  // gutter is a genuinely CONTINUOUS physical feature running almost the
-  // full height of the page (the spine doesn't stop partway down), which
-  // is a fundamentally different thing from "blank most of the time."
-  // Aggregate blank fraction can't tell those apart, and that's what was
-  // actually behind every distinct failure mode found in this
-  // investigation - a stray mark fragmenting a real gutter into two
-  // aggregate-blank regions, and a page's own internal index-column gap
-  // (not a real page-spread gutter at all) looking similarly blank in
-  // aggregate despite having no continuous physical feature behind it.
-  // Checked this change directly against every one of those cases before
-  // adopting it - the wide-plateau page, the narrow-sharp-peak page, the
-  // gradual-ramp page, the spine-shadow page, the stray-mark page, and
-  // the index-page false lead - and it got all of them right without the
-  // conflicting, hand-tuned patches those individual cases had been
-  // accumulating.
+  // problem, and the underlying insight was that a real book gutter is a
+  // genuinely CONTINUOUS physical feature running almost the full page
+  // height (the spine doesn't stop partway down), which aggregate
+  // fraction can't tell apart from "blank most of the time, interrupted
+  // occasionally." That fixed several real cases (a stray mark
+  // fragmenting a gutter, a page's own internal index-column gap looking
+  // blank in aggregate despite no continuous feature behind it) but
+  // missed something: found a real page whose gutter is a visible
+  // physical shadow from the book's spine curvature - genuinely
+  // continuous, but continuously DARK, not continuously blank. Longest-
+  // blank-run scored that column near zero, same as if it were dense
+  // text, and confidently picked an unrelated, wrong column instead.
+  // Checked directly: at the true gutter, average brightness drops from
+  // ~200 (paper white) to ~175-190 (shadow) and STAYS in that narrow
+  // band for nearly the full page height, while the wrong column it had
+  // been picking varies constantly (real text). Consistency, not
+  // brightness, is the real signal - so score for the longest run where
+  // consecutive rows stay close in brightness to each other, regardless
+  // of whether that shared value is bright or dark. Validated this
+  // directly against every distinct case found in this whole
+  // investigation before adopting it - wide plateau, narrow sharp peak,
+  // gradual ramp, shadow gutter (both the original and this new one),
+  // stray-mark-fragmented gutter, sparse-footnote false lead, and the
+  // internal-index-column false lead - all eight gave the visually
+  // correct split under this one signal.
+  const UNIFORMITY_TOLERANCE = 15;
   const scores: { x: number; longestRunFraction: number }[] = [];
   let maxScore = 0;
   for (let x = bandStart; x < bandEnd; x++) {
     let longestRun = 0;
-    let currentRun = 0;
+    let currentRun = 1;
+    let previousBrightness: number | null = null;
     for (let y = 0; y < height; y++) {
-      if (brightnessAt(x, y) > 200) {
+      const brightness = brightnessAt(x, y);
+      if (previousBrightness !== null && Math.abs(brightness - previousBrightness) < UNIFORMITY_TOLERANCE) {
         currentRun++;
         if (currentRun > longestRun) longestRun = currentRun;
       } else {
-        currentRun = 0;
+        currentRun = 1;
       }
+      previousBrightness = brightness;
     }
     const longestRunFraction = longestRun / height;
     scores.push({ x, longestRunFraction });
@@ -168,9 +180,41 @@ export function findGutterSplit(canvas: Canvas): number | null {
     }
   }
   if (currentRun.length > 0) runs.push(currentRun);
-  const peakRun = runs.find((run) => run.includes(peakX));
-  const longestCandidateRun = runs.reduce((best, run) => (run.length > best.length ? run : best), runs[0]);
-  const chosenRun = peakRun ?? longestCandidateRun;
+
+  // Found a genuine failure mode this doesn't handle on its own: sparse,
+  // widely-spaced text (footnotes with hanging indents, wrapping to
+  // different lengths line to line) can leave a WIDE column range where
+  // MOST lines don't reach that far right, giving a moderate-but-real
+  // "longest blank run" score across a large span - this is real content
+  // (the space between short and long footnote lines), not a gutter, but
+  // it scored marginally HIGHER than the genuine, narrower gutter right
+  // next to the actual text. Confirmed directly on a real page: a 290px-
+  // wide false candidate at 0.716 vs the true gutter's own best column at
+  // the same 0.716 - functionally tied by peak value, with the false one
+  // winning the tie. A single page's own pixel data has no further signal
+  // to break that tie with. What does: real book bindings sit at a
+  // physically consistent position from page to page, so when the peak
+  // score is only moderate (not the >=0.85 near-certainty every
+  // genuinely correctly-detected gutter in this investigation showed)
+  // and there's more than one candidate region, prefer whichever is
+  // closest to where the rest of the book's gutters have already been
+  // found - callers use this by running a first pass without
+  // expectedRatio, computing the book's typical position from the
+  // confident results, then re-running just the ambiguous pages with it.
+  const HIGH_CONFIDENCE_THRESHOLD = 0.85;
+  let chosenRun: number[];
+  if (expectedRatio !== undefined && maxScore < HIGH_CONFIDENCE_THRESHOLD && runs.length > 1) {
+    const expectedX = width * expectedRatio;
+    chosenRun = runs.reduce((best, run) => {
+      const runCenter = (run[0] + run[run.length - 1]) / 2;
+      const bestCenter = (best[0] + best[best.length - 1]) / 2;
+      return Math.abs(runCenter - expectedX) < Math.abs(bestCenter - expectedX) ? run : best;
+    }, runs[0]);
+  } else {
+    const peakRun = runs.find((run) => run.includes(peakX));
+    const longestCandidateRun = runs.reduce((best, run) => (run.length > best.length ? run : best), runs[0]);
+    chosenRun = peakRun ?? longestCandidateRun;
+  }
   const splitX = Math.round((chosenRun[0] + chosenRun[chosenRun.length - 1]) / 2);
 
   // Confirm real content on both sides, sampling every few pixels rather
@@ -198,5 +242,5 @@ export function findGutterSplit(canvas: Canvas): number | null {
     return null;
   }
 
-  return splitX;
+  return { splitX, confidence: maxScore };
 }

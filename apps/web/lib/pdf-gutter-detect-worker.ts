@@ -1,7 +1,7 @@
-// Renders exactly ONE page, detects its gutter, and - this is the part
-// that changed - physically crops the rendered pixels into separate
-// left/right images and writes them to disk, rather than relying on
-// PDF CropBox to hide the un-wanted half at view time.
+// Renders exactly ONE page, detects its gutter, and physically crops the
+// rendered pixels into separate left/right images written to disk,
+// rather than relying on PDF CropBox to hide the un-wanted half at view
+// time.
 //
 // That CropBox approach was a real, serious mistake, found only after
 // shipping several rounds of detection fixes: pdfjs-dist (used
@@ -9,10 +9,18 @@
 // CropBox, but poppler's pdftoppm - a hugely common rendering path,
 // likely including whatever the actual app uses - does not. Confirmed
 // directly: every single "split" page, opened through pdftoppm, showed
-// the full original two-page spread, not the intended half. All of the
-// detection work in this investigation was real and necessary, but it
-// was solving the wrong layer of the problem - the split was only ever
-// correct in one specific viewer.
+// the full original two-page spread, not the intended half.
+//
+// Accepts an optional 5th argument, expectedRatio (0-1, the book's
+// typical gutter position as a fraction of page width) - passed through
+// to findGutterSplit for pages whose own pixel data is genuinely
+// ambiguous (see pdf-page-splitter-shared.ts for the real case that
+// motivated this: sparse, widely-spaced footnote text creating a wide
+// but only moderately-scoring false candidate that narrowly out-scored
+// the true, narrower gutter next to it). The caller runs a first pass
+// without this, computes the book's typical position from the
+// confidently-detected pages, then re-invokes just the ambiguous ones
+// with it.
 //
 // Run as its own separate OS process, one per page - see
 // pdf-page-splitter.ts for why process isolation is required here, not
@@ -26,10 +34,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { findGutterSplit, RENDER_SCALE, applyContrastEnhancement, CONTRAST_FACTOR } from "./pdf-page-splitter-shared.ts";
 
-const [, , pdfPath, pageArg, outputDir] = process.argv;
+const [, , pdfPath, pageArg, outputDir, expectedRatioArg] = process.argv;
 const pageIndex = Number(pageArg);
+const expectedRatio = expectedRatioArg !== undefined ? Number(expectedRatioArg) : undefined;
 if (!pdfPath || !Number.isInteger(pageIndex) || pageIndex < 1 || !outputDir) {
-  console.error("Usage: node pdf-gutter-detect-worker.ts <pdfPath> <pageIndex> <outputDir>");
+  console.error("Usage: node pdf-gutter-detect-worker.ts <pdfPath> <pageIndex> <outputDir> [expectedRatio]");
   process.exit(1);
 }
 
@@ -53,14 +62,15 @@ try {
     const detectionCanvas: Canvas = createCanvas(width, height);
     detectionCanvas.getContext("2d").drawImage(canvas as unknown as CanvasImageSource, 0, 0);
     applyContrastEnhancement(detectionCanvas, CONTRAST_FACTOR);
-    const gutterX = findGutterSplit(detectionCanvas);
+    const result = findGutterSplit(detectionCanvas, expectedRatio);
 
-    if (gutterX !== null) {
-      const leftCanvas: Canvas = createCanvas(gutterX, height);
-      leftCanvas.getContext("2d").drawImage(canvas as unknown as CanvasImageSource, 0, 0, gutterX, height, 0, 0, gutterX, height);
-      const rightWidth = width - gutterX;
+    if (result !== null) {
+      const { splitX } = result;
+      const leftCanvas: Canvas = createCanvas(splitX, height);
+      leftCanvas.getContext("2d").drawImage(canvas as unknown as CanvasImageSource, 0, 0, splitX, height, 0, 0, splitX, height);
+      const rightWidth = width - splitX;
       const rightCanvas: Canvas = createCanvas(rightWidth, height);
-      rightCanvas.getContext("2d").drawImage(canvas as unknown as CanvasImageSource, gutterX, 0, rightWidth, height, 0, 0, rightWidth, height);
+      rightCanvas.getContext("2d").drawImage(canvas as unknown as CanvasImageSource, splitX, 0, rightWidth, height, 0, 0, rightWidth, height);
 
       // JPEG, matching the source scan's own encoding (confirmed via
       // pdfimages -list on the real book: 150ppi JPEG). The source is
@@ -73,7 +83,12 @@ try {
       writeFileSync(join(outputDir, `page-${pageIndex}-right.jpg`), rightCanvas.toBuffer("image/jpeg", JPEG_QUALITY));
     }
 
-    console.log(JSON.stringify({ gutterX, widthPixels: width, heightPixels: height }));
+    console.log(JSON.stringify({
+      gutterX: result?.splitX ?? null,
+      confidence: result?.confidence ?? null,
+      widthPixels: width,
+      heightPixels: height
+    }));
   } finally {
     page.cleanup();
   }
