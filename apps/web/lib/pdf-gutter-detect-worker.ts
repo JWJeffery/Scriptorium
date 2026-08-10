@@ -60,17 +60,17 @@ try {
     await page.render({ canvasContext: context as unknown as CanvasRenderingContext2D, viewport }).promise;
 
     const detectionCanvas: Canvas = createCanvas(width, height);
-    detectionCanvas.getContext("2d").drawImage(canvas as unknown as CanvasImageSource, 0, 0);
+    detectionCanvas.getContext("2d").drawImage(canvas, 0, 0);
     applyContrastEnhancement(detectionCanvas, CONTRAST_FACTOR);
     const result = findGutterSplit(detectionCanvas, expectedRatio);
 
     if (result !== null) {
       const { splitX } = result;
       const leftCanvas: Canvas = createCanvas(splitX, height);
-      leftCanvas.getContext("2d").drawImage(canvas as unknown as CanvasImageSource, 0, 0, splitX, height, 0, 0, splitX, height);
+      leftCanvas.getContext("2d").drawImage(canvas, 0, 0, splitX, height, 0, 0, splitX, height);
       const rightWidth = width - splitX;
       const rightCanvas: Canvas = createCanvas(rightWidth, height);
-      rightCanvas.getContext("2d").drawImage(canvas as unknown as CanvasImageSource, splitX, 0, rightWidth, height, 0, 0, rightWidth, height);
+      rightCanvas.getContext("2d").drawImage(canvas, splitX, 0, rightWidth, height, 0, 0, rightWidth, height);
 
       // JPEG, matching the source scan's own encoding (confirmed via
       // pdfimages -list on the real book: 150ppi JPEG). The source is

@@ -67,7 +67,10 @@ async function runWorker(
   return JSON.parse(lastLine) as WorkerResult;
 }
 
-export async function splitTwoPageSpreadPdf(pdfBytes: Buffer | Uint8Array): Promise<SplitPdfResult> {
+export async function splitTwoPageSpreadPdf(
+  pdfBytes: Buffer | Uint8Array,
+  onProgress?: (completed: number, total: number) => void
+): Promise<SplitPdfResult> {
   const bytes = pdfBytes instanceof Buffer ? new Uint8Array(pdfBytes) : pdfBytes;
 
   const sourceDoc = await PDFDocument.load(bytes);
@@ -99,9 +102,17 @@ export async function splitTwoPageSpreadPdf(pdfBytes: Buffer | Uint8Array): Prom
     // settle a tie that close. Confirmed directly against that page:
     // cropping at the wrong candidate split real footnote text across
     // both halves.
+    //
+    // Progress is reported against pass 1 only (0..originalPageCount) -
+    // pass 2 only touches the rare ambiguous page and pass 1 is where
+    // nearly all of the wall-clock time goes (one full render per page,
+    // in its own process), so a progress bar driven by pass 1 alone
+    // tracks the real work closely enough without needing to know pass
+    // 2's page count in advance.
     const results: WorkerResult[] = [];
     for (let pageIndex = 1; pageIndex <= originalPageCount; pageIndex++) {
       results.push(await runWorker(workerPath, tempPdfPath, pageIndex, tempDir));
+      onProgress?.(pageIndex, originalPageCount);
     }
 
     // A real book's binding sits at a physically consistent position

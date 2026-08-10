@@ -1523,3 +1523,70 @@ sparse single-column page). Ran the complete two-pass pipeline against the real 
 (64/64 split, 128 pages) and verified with pdftoppm specifically: the three originally-
 flagged pages (35, 36, 74) now render correctly, and a broad sweep across the front matter,
 multiple chapters, and both index pages found no regressions.
+
+## Wired the splitter into the UI - a real screen, not just a CLI script
+
+Josh asked for this to become an actual usable tool in the app, not something run by hand
+from a terminal. Followed the app's own established pattern for exactly this kind of job
+(long-running, real background work, needs progress reporting) rather than inventing a new
+one - the OCR tool (gate 17, milestone-sixteen/ocr-status) already solves the same shape of
+problem: a PDF-processing job that can easily outrun a reverse proxy's request timeout, so it
+runs detached in the background, tracks progress in memory, and the client polls until done.
+
+**Backend**: `pdf-page-splitter.ts` now takes an optional `onProgress(completed, total)`
+callback, the same signature `tesseractOcrProvider.extractText` already uses - reported
+against pass 1 (one render per page, in its own process) since that's where nearly all the
+wall-clock time goes; pass 2 only ever touches the rare ambiguous page. New API surface at
+`/api/milestone-seventeen/page-split`: GET reports per-PDF-version status and progress, POST
+starts a background split job and returns immediately (202), matching the OCR route's
+GET/POST shape field-for-field where the same operations are needed - checked by direct
+side-by-side comparison, not just "seemed similar." A `download` sub-route serves the
+finished result, matching the existing `files/[documentId]` route's exact
+`readStoredPdfFile` + `new NextResponse(new Uint8Array(bytes), ...)` pattern instead of
+inventing a new way to stream PDF bytes back.
+
+Split-job state (status, progress, the eventual result's storage key) lives in-memory only,
+the same as OCR's own progress map - deliberate, not a shortcut: a split result is meant to
+be a reviewable, disposable artifact (see this file's own much earlier note on why the
+CLI tool was built to never silently overwrite a document's working PDF), not something
+that needs to survive a server restart. Needed its own tiny module
+(`lib/page-split-jobs.ts`) to hold that map, because Next.js App Router route files may only
+export the small set of recognized handler names - unlike the OCR route (which keeps its
+map as a private, non-exported module variable and never needed to share it), the split
+tool's download route needs to read the same map the main route writes to, so it had to move
+somewhere both could import from.
+
+**Frontend**: a new "Split two-page spreads" tab in the existing Scholarly Tools panel
+(`ScholarlyToolsPanel.tsx`), built by adapting `OcrStatusSection` closely rather than writing
+new patterns from scratch - same ETA/rate-limiting logic, same polling loop, same progress
+bar markup and CSS classes, so it looks and behaves consistently with the tool already next
+to it. Finishing touch beyond a bare download link: a "Create as new document" button that
+fetches the finished split PDF and re-POSTs it to the existing upload endpoint
+(`/api/milestone-one/files`) - exactly what re-uploading the CLI tool's output file by hand
+was already doing, just without leaving the browser. The original document, its page-map
+settings, and any saved annotations stay completely untouched either way.
+
+**Verification, given real constraints**: this sandbox has no live MySQL and no network
+access to Prisma's engine binaries, so a real dev server or a full `next build` genuinely
+couldn't be run here. Did what was actually achievable instead of skipping verification
+altogether: typechecked the frontend component in full isolation (zero dependency on Prisma,
+so this was a completely real, clean check - zero errors under the project's own strict
+tsconfig); for the backend, stubbed just the Prisma client shape actually used
+(`documentVersion.findMany`/`findUnique`) and typechecked everything else for real, which
+caught two genuine bugs before they shipped rather than after: a `Uint8Array`-to-`BlobPart`
+assignment that needed an explicit cast (TypeScript's stricter ArrayBuffer/SharedArrayBuffer
+distinction in this version), and a pre-existing (from before this session) wrong cast in
+the gutter-detection worker that was casting into the DOM's `CanvasImageSource` type when
+`@napi-rs/canvas`'s `drawImage` actually wants its own native `Canvas` type - harmless under
+the CLI script's `--experimental-strip-types` path (which strips types without checking
+them) but would have surfaced as a real build error the first time this ran through Next's
+actual build pipeline. Also independently double-checked every Prisma query shape by direct,
+line-by-line comparison against the OCR route's already-proven-working calls. Re-ran the
+actual splitter end-to-end after both fixes (progress callback firing correctly, 64/64 pages
+split, 128-page result) and re-verified pages 35/36 with pdftoppm one more time to make sure
+neither fix had changed real behavior.
+
+**Not yet done**: no live end-to-end test of the actual UI flow (upload click through to a
+new document appearing in the library) was possible in this sandbox for the reasons above -
+worth a real run-through once there's a working dev environment, particularly the "Create as
+new document" path end to end.

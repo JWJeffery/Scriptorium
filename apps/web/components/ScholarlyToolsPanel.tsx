@@ -27,13 +27,14 @@ function readCurrentDocumentRef(): CurrentDocumentRef {
   }
 }
 
-type ToolsTab = "source-editor" | "regeneration" | "export" | "ocr";
+type ToolsTab = "source-editor" | "regeneration" | "export" | "ocr" | "page-split";
 
 const TABS: { key: ToolsTab; label: string }[] = [
   { key: "source-editor", label: "Expanded citation source" },
   { key: "regeneration", label: "Citation regeneration" },
   { key: "export", label: "Corpus export" },
-  { key: "ocr", label: "OCR scan detection" }
+  { key: "ocr", label: "OCR scan detection" },
+  { key: "page-split", label: "Split two-page spreads" }
 ];
 
 export function ScholarlyToolsPanel() {
@@ -86,6 +87,7 @@ export function ScholarlyToolsPanel() {
         {tab === "regeneration" ? <CitationRegenerationSection currentRef={currentRef} /> : null}
         {tab === "export" ? <CorpusExportSection /> : null}
         {tab === "ocr" ? <OcrStatusSection currentRef={currentRef} /> : null}
+        {tab === "page-split" ? <PageSplitSection currentRef={currentRef} /> : null}
       </div>
     </section>
   );
@@ -711,6 +713,316 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
                   </small>
                 ) : null}
               </div>
+            </article>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Split two-page spreads (apps/web/lib/pdf-page-splitter.ts) - a real,
+// separate physical-page split for scanned book-spread PDFs, not to be
+// confused with the gutter-split OCR already does internally on gates
+// 16/17. That one only changes what OCR sees; this one produces an
+// actual new PDF where each spread becomes two real, individually-
+// navigable pages. See RESUME_PROJECT_NOTE.md for the full history of
+// getting the detection itself right - this section is just the first
+// screen for a tool that, until now, only existed as a CLI script.
+//
+// Deliberately does NOT overwrite the original document or its existing
+// page-map/annotations - same reasoning pdf-page-splitter.ts has stated
+// from the start. The split result is a reviewable, downloadable
+// artifact; only an explicit "Create as new document" click (which
+// reuses the exact same upload endpoint a person would hit re-uploading
+// the CLI tool's output by hand) makes anything durable.
+// ---------------------------------------------------------------------------
+
+type PageSplitResult = {
+  versionId: string;
+  documentId: string;
+  documentTitle: string;
+  hasStoredPdf: boolean;
+  splitRunning: boolean;
+  splitReady: boolean;
+  splitFailed: boolean;
+  splitError: string | null;
+  splitProgress: { completed: number; total: number } | null;
+  splitSummary: { originalPageCount: number; newPageCount: number; splitOriginalPageNumbers: number[] } | null;
+};
+
+function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
+  const [documentId, setDocumentId] = useState(currentRef.documentId ?? "");
+  const [results, setResults] = useState<PageSplitResult[]>([]);
+  const [status, setStatus] = useState(
+    "Physically splits a two-page-spread scan into one real page per book page. Leave the id blank to check every PDF."
+  );
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [etaText, setEtaText] = useState<string | null>(null);
+  const [importBusyId, setImportBusyId] = useState<string | null>(null);
+  const [importedTitle, setImportedTitle] = useState<string | null>(null);
+  // Same anchoring approach as the OCR section's ETA - "time and page
+  // count when this run was first observed" rather than a true
+  // server-side start timestamp, so it works the same whether this
+  // session started the split or is just resuming progress checks on
+  // one already running.
+  const rateAnchorRef = useRef<{ time: number; completed: number } | null>(null);
+
+  useEffect(() => {
+    if (currentRef.documentId) setDocumentId(currentRef.documentId);
+  }, [currentRef.documentId]);
+
+  function formatDuration(ms: number): string {
+    const totalSeconds = Math.max(0, Math.round(ms / 1000));
+    if (totalSeconds < 60) return `${totalSeconds}s`;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+
+  function updateEta(progress: { completed: number; total: number }) {
+    const anchor = rateAnchorRef.current;
+    if (!anchor || progress.completed < anchor.completed) {
+      rateAnchorRef.current = { time: Date.now(), completed: progress.completed };
+      setEtaText(null);
+      return;
+    }
+    const pagesDoneSinceAnchor = progress.completed - anchor.completed;
+    if (pagesDoneSinceAnchor <= 0) return;
+    const elapsedMs = Date.now() - anchor.time;
+    const msPerPage = elapsedMs / pagesDoneSinceAnchor;
+    const remainingPages = progress.total - progress.completed;
+    if (remainingPages <= 0) {
+      setEtaText(null);
+      return;
+    }
+    setEtaText(`~${formatDuration(msPerPage * remainingPages)} remaining`);
+  }
+
+  async function lookUp() {
+    setStatus("Checking for PDFs...");
+    try {
+      const query = documentId.trim() ? `?documentId=${encodeURIComponent(documentId.trim())}` : "";
+      const response = await fetch(`/api/milestone-seventeen/page-split${query}`);
+      const body = (await response.json()) as { count?: number; results?: PageSplitResult[]; error?: string };
+      if (!response.ok) {
+        setStatus(body.error ?? "Lookup failed.");
+        setResults([]);
+        return;
+      }
+      setResults(body.results ?? []);
+      const running = body.results?.find((result) => result.splitRunning);
+      if (running) {
+        setStatus(`${body.count ?? 0} PDF version(s) checked. A split is already running on "${running.documentTitle}" - resuming progress checks...`);
+        setBusyId(running.versionId);
+        rateAnchorRef.current = null;
+        await pollUntilDone(running.versionId);
+        return;
+      }
+      setStatus(`${body.count ?? 0} PDF version(s) checked.`);
+    } catch {
+      setStatus("Lookup failed - the server did not respond.");
+    }
+  }
+
+  async function startSplit(versionId: string) {
+    setBusyId(versionId);
+    rateAnchorRef.current = null;
+    setEtaText(null);
+    setImportedTitle(null);
+    try {
+      const response = await fetch("/api/milestone-seventeen/page-split", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ versionId })
+      });
+      const body = (await response.json()) as { splitStarted?: boolean; error?: string };
+      if (!response.ok || !body.splitStarted) {
+        setStatus(body.error ?? "Could not start the split.");
+        setBusyId(null);
+        return;
+      }
+      setStatus("Split started. This renders every page in the book, one at a time, so it can take a while for a long book. Checking progress...");
+      await pollUntilDone(versionId);
+    } catch {
+      setStatus("Could not start the split - the server did not respond.");
+      setBusyId(null);
+    }
+  }
+
+  async function pollUntilDone(versionId: string, attempt = 0) {
+    const MAX_ATTEMPTS = 195; // ~13 minutes at 4s apart, same bound OCR uses for the same reason
+    try {
+      const query = documentId.trim() ? `?documentId=${encodeURIComponent(documentId.trim())}` : "";
+      const response = await fetch(`/api/milestone-seventeen/page-split${query}`);
+      const body = (await response.json()) as { results?: PageSplitResult[] };
+      const match = body.results?.find((result) => result.versionId === versionId);
+      setResults(body.results ?? []);
+
+      if (match?.splitRunning) {
+        if (attempt >= MAX_ATTEMPTS) {
+          setStatus("Still running after a while - it hasn't failed, just taking longer than expected. Click \"Check for PDFs\" again in a bit.");
+          setBusyId(null);
+          return;
+        }
+        if (match.splitProgress && match.splitProgress.total > 0) {
+          updateEta(match.splitProgress);
+          const percent = Math.round((match.splitProgress.completed / match.splitProgress.total) * 100);
+          setStatus(`Splitting: page ${match.splitProgress.completed} of ${match.splitProgress.total} (${percent}%)...`);
+        } else {
+          setStatus("Starting up - rendering the first page...");
+        }
+        setTimeout(() => {
+          pollUntilDone(versionId, attempt + 1);
+        }, 4000);
+        return;
+      }
+
+      setEtaText(null);
+      rateAnchorRef.current = null;
+      if (match?.splitFailed) {
+        setStatus(match.splitError ?? "The split failed. Check the server terminal for the actual error.");
+      } else if (match?.splitReady && match.splitSummary) {
+        const { originalPageCount, newPageCount, splitOriginalPageNumbers } = match.splitSummary;
+        setStatus(
+          `Done. ${splitOriginalPageNumbers.length} of ${originalPageCount} original page(s) were two-page spreads and got split into ${newPageCount} total pages.`
+        );
+      } else {
+        setStatus("Split finished, but no result was found - try again.");
+      }
+      setBusyId(null);
+    } catch {
+      setStatus("Lost track of split progress - the server did not respond. Click \"Check for PDFs\" to see the current state.");
+      setBusyId(null);
+    }
+  }
+
+  async function createAsNewDocument(result: PageSplitResult) {
+    setImportBusyId(result.versionId);
+    setImportedTitle(null);
+    try {
+      const downloadResponse = await fetch(`/api/milestone-seventeen/page-split/download?versionId=${encodeURIComponent(result.versionId)}`);
+      if (!downloadResponse.ok) {
+        setStatus("Could not fetch the split result to import it.");
+        setImportBusyId(null);
+        return;
+      }
+      const blob = await downloadResponse.blob();
+      const title = `${result.documentTitle} (split)`;
+      const file = new File([blob], "split-two-page-spreads.pdf", { type: "application/pdf" });
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("title", title);
+      const uploadResponse = await fetch("/api/milestone-one/files", { method: "POST", body: formData });
+      const body = (await uploadResponse.json()) as { document?: { id: string }; error?: string };
+      if (!uploadResponse.ok || !body.document) {
+        setStatus(body.error ?? "Import failed - the split file downloaded fine, but creating the new document did not succeed.");
+        setImportBusyId(null);
+        return;
+      }
+      setImportedTitle(title);
+      setStatus(`Created "${title}" as a new document (id ${body.document.id}). The original document is untouched - find the new one in your document library.`);
+    } catch {
+      setStatus("Import failed - the server did not respond.");
+    } finally {
+      setImportBusyId(null);
+    }
+  }
+
+  return (
+    <div className="toolsFormLayout">
+      <div className="toolsForm">
+        <label>
+          Document id (optional)
+          <input value={documentId} onChange={(event) => setDocumentId(event.target.value)} placeholder="Leave blank to check every PDF" />
+        </label>
+        <button className="primaryButton" type="button" onClick={lookUp}>
+          Check for PDFs
+        </button>
+        <p className="statusLine toolsStatusLine">{status}</p>
+      </div>
+      <div className="toolsResultsStack">
+        {results.length === 0 ? (
+          <p className="emptyAnnotationState">No versions checked yet.</p>
+        ) : (
+          results.map((result) => (
+            <article className="toolsResultRow" key={result.versionId}>
+              <div className="toolsResultRowHeader">
+                {result.splitRunning ? (
+                  <span className="toolsBadge toolsBadgeStale">Splitting&hellip;</span>
+                ) : result.splitReady ? (
+                  <span className="toolsBadge toolsBadgeFresh">Split ready</span>
+                ) : result.splitFailed ? (
+                  <span className="toolsBadge toolsBadgeStale">Split failed</span>
+                ) : (
+                  <span className="toolsBadge">Not split yet</span>
+                )}
+                <strong>{result.documentTitle}</strong>
+              </div>
+              {!result.hasStoredPdf ? <p>No server-stored PDF file is available for this version, so there&apos;s nothing to split.</p> : null}
+              {result.splitRunning && result.splitProgress && result.splitProgress.total > 0 ? (
+                <div>
+                  <div
+                    className="toolsProgressTrack"
+                    role="progressbar"
+                    aria-valuenow={result.splitProgress.completed}
+                    aria-valuemin={0}
+                    aria-valuemax={result.splitProgress.total}
+                  >
+                    <div
+                      className="toolsProgressFill"
+                      style={{ width: `${Math.round((result.splitProgress.completed / result.splitProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="toolsProgressLabel">
+                    {result.splitProgress.completed} / {result.splitProgress.total} pages (
+                    {Math.round((result.splitProgress.completed / result.splitProgress.total) * 100)}%)
+                    {result.versionId === busyId && etaText ? ` \u00b7 ${etaText}` : ""}
+                  </span>
+                </div>
+              ) : null}
+              {result.splitReady && result.splitSummary ? (
+                <small>
+                  {result.splitSummary.splitOriginalPageNumbers.length} of {result.splitSummary.originalPageCount} original page(s)
+                  split &middot; {result.splitSummary.newPageCount} total pages in the result
+                </small>
+              ) : null}
+              <div className="toolsResultRowActions">
+                <button
+                  className="secondaryButton"
+                  type="button"
+                  disabled={!result.hasStoredPdf || busyId === result.versionId || result.splitRunning}
+                  onClick={() => startSplit(result.versionId)}
+                >
+                  {result.splitRunning ? "Running\u2026" : result.splitReady ? "Re-run split" : "Split this document"}
+                </button>
+                {result.splitReady ? (
+                  <a
+                    className="secondaryButton"
+                    href={`/api/milestone-seventeen/page-split/download?versionId=${encodeURIComponent(result.versionId)}`}
+                    download
+                  >
+                    Download split PDF
+                  </a>
+                ) : null}
+                {result.splitReady ? (
+                  <button
+                    className="primaryButton"
+                    type="button"
+                    disabled={importBusyId === result.versionId}
+                    onClick={() => createAsNewDocument(result)}
+                  >
+                    {importBusyId === result.versionId ? "Creating\u2026" : "Create as new document"}
+                  </button>
+                ) : null}
+              </div>
+              {result.splitReady && importedTitle ? (
+                <small className="toolsHint">
+                  Imported as &quot;{importedTitle}&quot;. Refine its citation source in the &quot;Expanded citation source&quot; tab if needed - the
+                  new document starts with only a title.
+                </small>
+              ) : null}
             </article>
           ))
         )}
