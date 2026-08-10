@@ -34,8 +34,44 @@ function safeDocumentId(documentId: string) {
   return safeSegment(documentId, "document");
 }
 
+export function safeStorageSegment(value: string, fallback: string) {
+  return safeSegment(value, fallback);
+}
+
 function safeChecksum(checksum: string) {
   return /^[a-f0-9]{64}$/i.test(checksum) ? checksum.toLowerCase() : "snapshot";
+}
+
+// Deliberately generic - a small key/value JSON blob under an arbitrary,
+// already-sanitized-by-the-caller storage key. Exists for
+// page-split-jobs.ts, which needs to persist a completed job's result
+// (which storage key holds the output PDF, how many pages split) to
+// somewhere that survives a Next.js dev-mode module reload - unlike an
+// in-memory Map, which turned out to get cleared by exactly that in
+// practice (confirmed directly: a real "download not found" after a
+// visibly-completed split, with dev-mode Fast Refresh rebuilds in the
+// browser console at the same time). Reuses this file's existing
+// path-safety handling instead of duplicating it in a second module.
+export async function writeStorageJson(storageKey: string, value: unknown): Promise<void> {
+  const absolutePath = resolveStorageKey(storageKey);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, JSON.stringify(value), "utf8");
+}
+
+export async function readStorageJson<T>(storageKey: string): Promise<T | null> {
+  try {
+    const absolutePath = resolveStorageKey(storageKey);
+    const raw = await readFile(absolutePath, "utf8");
+    return JSON.parse(raw) as T;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+export async function deleteStorageFile(storageKey: string): Promise<void> {
+  const absolutePath = resolveStorageKey(storageKey);
+  await unlink(absolutePath).catch(() => undefined);
 }
 
 export function getStorageRoot() {

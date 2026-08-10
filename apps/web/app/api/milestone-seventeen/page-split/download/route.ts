@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readStoredPdfFile } from "../../../../../lib/server-storage";
-import { splitJobs } from "../../../../../lib/page-split-jobs";
+import { getJob } from "../../../../../lib/page-split-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "versionId is required." }, { status: 400 });
   }
 
-  const job = splitJobs.get(versionId);
+  const job = await getJob(versionId);
   if (!job || job.status !== "ready" || !job.resultStorageKey) {
     return NextResponse.json({ error: "No completed split result is available for that version." }, { status: 404 });
   }

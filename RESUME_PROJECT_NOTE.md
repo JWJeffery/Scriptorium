@@ -1590,3 +1590,52 @@ neither fix had changed real behavior.
 new document appearing in the library) was possible in this sandbox for the reasons above -
 worth a real run-through once there's a working dev environment, particularly the "Create as
 new document" path end to end.
+
+## Real bug found in that first UI attempt: completed job state could vanish before "Download" got clicked
+
+Confirmed exactly what the "not yet done" note above was worried about needing a real
+run-through for. Josh tried it against a real document: the split ran to completion (progress
+bar, completion message, and summary all showed correctly), but clicking "Download split PDF"
+right after failed - Chrome's download history showed a JSON file, not a PDF, with "File
+wasn't available on site". The browser console showed several "Fast Refresh rebuilding"
+cycles around the same time.
+
+Root cause: job state (including the finished, "ready" state with the result's storage key)
+lived only in an in-memory `Map`, matching the OCR tool's own progress-tracking pattern. That
+was a reasonable pattern to copy, but it turned out not to be safe for this specific tool:
+Next.js dev-mode Fast Refresh can re-evaluate an API route's module on a hot rebuild, which
+resets any module-level state like that Map, even though the underlying server process never
+restarts. If a rebuild happens in the (possibly long, given a real split still takes over a
+minute) window between a job finishing and the person clicking "Download", the completed job's
+record is just gone - the download route then correctly reports "not found", which is exactly
+what got seen.
+
+Confirmed the mechanism directly with an isolated test before shipping a fix, not just
+reasoned about it: wrote a job's finished state, then read it back from a completely separate
+Node process (mirroring exactly what a module reload does to in-memory state) - reproduced the
+loss cleanly.
+
+**Fix**: the finished (ready/failed) state - specifically the part that needs to survive an
+unpredictable gap before someone clicks download - is now ALSO written to a small JSON file on
+disk, right next to the actual result PDF, via two new generic helpers added to
+`server-storage.ts` (`writeStorageJson`/`readStorageJson`, reusing the file's existing path-
+safety handling rather than duplicating it). `page-split-jobs.ts` was rewritten around this:
+`getJob()` checks memory first, falls back to disk, and warms the in-memory copy either way.
+"Running" state deliberately still only lives in memory and is never persisted - a stale
+in-progress record has no way to ever be updated again if it survived a restart, so it's
+correctly transient. Both routes were updated to use the new async job-lookup API instead of
+touching the raw Map.
+
+**Verified the actual fix, not just the reasoning behind it**: wrote the same isolated
+reproduction as a real test - job finished in one process, read back from a second, completely
+separate process (the same test that reproduced the original bug) - now correctly recovers the
+full state from disk. Also verified a genuinely unknown version still correctly returns
+nothing (not a false positive), that "running" state correctly never touches disk, and that
+`clearJob` removes both the in-memory and persisted copies. Re-ran the complete real split
+pipeline end-to-end afterward (progress callback, 64/64 pages split, 128-page result,
+re-checked with pdftoppm) to confirm none of this touched the actual splitting logic.
+
+One real mistake caught and fixed along the way: while adding a new exported helper to
+`server-storage.ts`, an editing slip briefly deleted the existing `safeDocumentId` function
+definition while its call sites remained - caught immediately by the file's own brace-balance
+check and fixed before it went any further.
