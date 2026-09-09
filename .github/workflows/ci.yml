@@ -94,6 +94,9 @@ jobs:
       - name: Verify searchable PDF export
         run: node --experimental-strip-types scripts/verify-searchable-pdf-export.mjs
 
+      - name: Verify storage-root recovery
+        run: node --experimental-strip-types scripts/verify-storage-root-recovery.mjs
+
       - name: Typecheck web app
         id: typecheck
         run: |
