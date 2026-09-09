@@ -390,7 +390,11 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
         if (cancelled) return;
         setPageSize({ width: viewport.width, height: viewport.height });
         setPdfTextRuns(runs);
-        onStatusChange(`Rendered PDF page ${safePageNumber} with selectable text layer.`);
+        onStatusChange(
+          runs.length > 0
+            ? `Rendered PDF page ${safePageNumber} with selectable text layer.`
+            : `Rendered image-only PDF page ${safePageNumber}. Run OCR before attempting to select text.`
+        );
       } catch {
         if (!cancelled) onStatusChange("Could not render this PDF page.");
       } finally {

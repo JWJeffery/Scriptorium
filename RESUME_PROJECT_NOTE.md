@@ -1727,3 +1727,34 @@ status instead of incorrectly saying only that the server did not respond.
 The live API verifier now exercises this server-side import route. TypeScript, ESLint, the
 production build, and every non-live verifier pass locally; the MySQL-backed API verifier
 remains the GitHub Actions gate because this workspace has no Docker/MySQL daemon.
+
+## Post-split OCR handoff, searchable-PDF export, and visible live selection
+
+The first successful real split/import clarified three remaining workflow defects. A split
+PDF is deliberately reconstructed from page images, so the prior OCR TextSpans (anchored to
+64 spread pages) cannot safely be attached to the new 128-page version. However, the UI did
+not explain that transition: its scan check correctly reported zero extracted text but gave
+no split-specific next step, while the reader incorrectly announced a selectable text layer
+even when PDF.js returned no text runs.
+
+Split imports now persist a browser-side pending-OCR handoff before opening the new document.
+On reload, Scholarly tools opens the OCR tab and displays a prominent explanation that zero
+words is expected for the newly reconstructed image PDF, plus an explicit route to run OCR.
+The prompt is cleared only when that exact imported version reaches the successful Tesseract
+state. The reader's render status now distinguishes a real PDF text layer from an image-only
+page instead of always claiming selection is available.
+
+OCR'd versions now expose **Download searchable PDF**. The new export route reads the stored
+PDF and persisted word boxes, converts Tesseract's top-left coordinates to PDF's bottom-left
+coordinates, and embeds each recognized word as invisible PDF text over the unchanged scan.
+This is an actual portable PDF text layer, not a browser-only Scriptorium overlay. A new
+executable verifier begins with an image-only PDF, confirms it has zero extractable text,
+adds the OCR layer through the production module, and then proves an independent PDF.js parse
+can read `The integrity of Anglicanism` from the exported file.
+
+Finally, the apparent live-highlighting support was contradicted by its CSS: the entire text
+layer had `opacity: 0`, which also makes `::selection` backgrounds invisible. The parent layer
+is now opaque while the synthetic OCR glyphs themselves remain transparent. Native selection
+color therefore appears continuously during the drag, like a normal PDF reader, without
+drawing duplicate text over the scanned page. TypeScript, ESLint, the new executable export
+verifier, and the production build all pass after these changes.

@@ -145,7 +145,13 @@
   z-index: 3;
   overflow: hidden;
   line-height: 1;
-  opacity: 0;
+  /* Keep the layer itself opaque so the browser's native ::selection
+     background is visible continuously while the person drags. Individual
+     OCR glyphs stay transparent below, leaving only the scanned page image
+     visible until a selection highlight is painted. Parent opacity: 0 used
+     to hide both the glyphs AND the selection background, forcing people to
+     guess what their drag had covered until mouse-up. */
+  opacity: 1;
   user-select: text;
   cursor: text;
 }
@@ -168,7 +174,7 @@
 .pdfTextRun {
   position: absolute;
   white-space: pre;
-  color: #000;
+  color: transparent;
   transform-origin: 0 0;
   user-select: text;
 }
