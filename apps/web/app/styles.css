@@ -146,7 +146,7 @@ h2 {
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  align-items: start;
+  align-items: flex-start;
   margin-bottom: 18px;
 }
 
@@ -545,7 +545,7 @@ h2 {
   display: grid;
   grid-template-columns: 280px minmax(420px, 1fr) 360px;
   gap: 18px;
-  align-items: start;
+  align-items: flex-start;
 }
 
 @media (max-width: 1180px) {
@@ -573,7 +573,7 @@ h2 {
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  align-items: start;
+  align-items: flex-start;
   margin-bottom: 18px;
 }
 
@@ -624,7 +624,7 @@ h2 {
   display: grid;
   grid-template-columns: minmax(320px, 420px) 1fr;
   gap: 20px;
-  align-items: start;
+  align-items: flex-start;
 }
 
 .toolsForm {
@@ -673,6 +673,16 @@ h2 {
 
 .toolsResultRow small {
   color: var(--muted);
+}
+
+.toolsWarnings {
+  margin: 0;
+  padding: 10px 12px 10px 30px;
+  border: 1px solid #d7b58f;
+  border-radius: 12px;
+  background: #fff8ed;
+  color: #70421f;
+  line-height: 1.45;
 }
 
 .toolsResultRowHeader {

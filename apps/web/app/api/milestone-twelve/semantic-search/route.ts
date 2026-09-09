@@ -104,7 +104,11 @@ export async function GET(request: NextRequest) {
     .filter((candidate) => candidate.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map(({ text, ...result }) => result);
+    .map((candidate) => {
+      const { text, ...result } = candidate;
+      void text;
+      return result;
+    });
 
   await prisma.queryLog.create({
     data: {

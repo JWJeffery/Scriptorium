@@ -31,6 +31,12 @@ function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function ocrWarningsFromAnchor(anchor: unknown): string[] {
+  if (typeof anchor !== "object" || anchor === null || !("ocrWarnings" in anchor)) return [];
+  const warnings = (anchor as { ocrWarnings?: unknown }).ocrWarnings;
+  return Array.isArray(warnings) ? warnings.filter((warning): warning is string => typeof warning === "string") : [];
+}
+
 export async function GET(request: NextRequest) {
   const documentId = clean(request.nextUrl.searchParams.get("documentId"));
 
@@ -49,6 +55,7 @@ export async function GET(request: NextRequest) {
     const pageCount = version.textSpans.length || version.pages.length || 1;
     const detection = detectLikelyScanned({ extractedTextLength, pageCount });
     const ocrRunning = version.extractionState === RUNNING_STATE;
+    const ocrWarnings = Array.from(new Set(version.textSpans.flatMap((span) => ocrWarningsFromAnchor(span.anchor))));
 
     return {
       versionId: version.id,
@@ -57,6 +64,7 @@ export async function GET(request: NextRequest) {
       extractionState: version.extractionState,
       ocrRunning,
       ocrProgress: ocrRunning ? ocrProgress.get(version.id) ?? null : null,
+      ocrWarnings,
       pageCount,
       extractedTextLength,
       ...detection
@@ -100,7 +108,6 @@ export async function POST(request: NextRequest) {
   ocrProgress.delete(versionId);
 
   runOcrInBackground(versionId, version.snapshotKey).catch((error) => {
-    // eslint-disable-next-line no-console
     console.error(`Background OCR failed for version ${versionId}:`, error);
   });
 
@@ -134,10 +141,16 @@ async function runOcrInBackground(versionId: string, snapshotKey: string) {
       await prisma.$transaction([
         prisma.textSpan.deleteMany({ where: { versionId } }),
         prisma.textSpan.createMany({
-          data: result.pages.map((page) => ({
+          data: result.pages.map((page, index) => ({
             versionId,
             text: page.text,
-            anchor: { pdfPageIndex: page.pageIndex, ocr: true, confidence: page.confidence, words: page.words }
+            anchor: {
+              pdfPageIndex: page.pageIndex,
+              ocr: true,
+              confidence: page.confidence,
+              words: page.words,
+              ...(index === 0 && result.warnings.length > 0 ? { ocrWarnings: result.warnings } : {})
+            }
           }))
         }),
         prisma.documentVersion.update({

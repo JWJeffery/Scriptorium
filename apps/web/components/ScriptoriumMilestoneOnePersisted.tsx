@@ -64,6 +64,10 @@ function fileKind(file: File): DocumentKind | null {
 }
 
 function citation(document: StoredDocument, locator: string, style: CitationStyle) {
+  // Both currently-supported note styles intentionally share this compact
+  // book-note shape; retain the parameter because it is persisted as part
+  // of the citation record and the formatter can diverge by style later.
+  void style;
   const source = document.source;
   const author = source.author.trim() || "Unknown author";
   const title = source.title.trim() || document.title;
