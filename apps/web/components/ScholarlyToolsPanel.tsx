@@ -912,29 +912,29 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
     setImportBusyId(result.versionId);
     setImportedTitle(null);
     try {
-      const downloadResponse = await fetch(`/api/milestone-seventeen/page-split/download?versionId=${encodeURIComponent(result.versionId)}`);
-      if (!downloadResponse.ok) {
-        setStatus("Could not fetch the split result to import it.");
-        setImportBusyId(null);
-        return;
-      }
-      const blob = await downloadResponse.blob();
       const title = `${result.documentTitle} (split)`;
-      const file = new File([blob], "split-two-page-spreads.pdf", { type: "application/pdf" });
-      const formData = new FormData();
-      formData.set("file", file);
-      formData.set("title", title);
-      const uploadResponse = await fetch("/api/milestone-one/files", { method: "POST", body: formData });
-      const body = (await uploadResponse.json()) as {
+      const importResponse = await fetch("/api/milestone-seventeen/page-split/import", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ versionId: result.versionId, title })
+      });
+      const responseText = await importResponse.text();
+      let body: {
         document?: { id: string; storageKey?: string | null };
         version?: { id: string; snapshotKey?: string | null };
         source?: { id: string };
         pageMap?: { id: string };
-        storedFile?: { storageKey: string };
+        storedFile?: { storageKey: string; size?: number };
         error?: string;
-      };
-      if (!uploadResponse.ok || !body.document || !body.version || !body.source || !body.pageMap) {
-        setStatus(body.error ?? "Import failed - the split file downloaded fine, but creating the new document did not succeed.");
+      } = {};
+      try {
+        body = JSON.parse(responseText) as typeof body;
+      } catch {
+        // Preserve a useful status below even if a proxy returns an HTML error
+        // page instead of the route's normal JSON response.
+      }
+      if (!importResponse.ok || !body.document || !body.version || !body.source || !body.pageMap) {
+        setStatus(body.error ?? `Import failed (server returned ${importResponse.status}). The completed split PDF is still available to download.`);
         setImportBusyId(null);
         return;
       }
@@ -954,7 +954,7 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
           filename: "split-two-page-spreads.pdf",
           kind: "PDF",
           mediaType: "application/pdf",
-          size: blob.size,
+          size: body.storedFile?.size ?? 0,
           source: { author: "", title, place: "", publisher: "", year: "" },
           pageMap: { basePdfPageIndex: 1, baseBookPage: 1, currentPdfPageIndex: 1 },
           server: {
