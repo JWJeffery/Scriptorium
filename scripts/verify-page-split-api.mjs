@@ -80,10 +80,13 @@ const splitBytes = new Uint8Array(await download.arrayBuffer());
 const splitPdf = await PDFDocument.load(splitBytes);
 assert.equal(splitPdf.getPageCount(), 2, "download must contain two physical PDF pages");
 
-const importForm = new FormData();
-importForm.set("file", new File([splitBytes], "split-two-page-spreads.pdf", { type: "application/pdf" }));
-importForm.set("title", "CI two-page spread (split)");
-const imported = await json(await fetch(`${baseUrl}/api/milestone-one/files`, { method: "POST", body: importForm }));
+const imported = await json(
+  await fetch(`${baseUrl}/api/milestone-seventeen/page-split/import`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ versionId: uploaded.version.id, title: "CI two-page spread (split)" })
+  })
+);
 assert.notEqual(imported.document.id, uploaded.document.id, "import must create a new document and preserve the original");
 
 const reopened = await json(

@@ -1700,3 +1700,30 @@ the built production server returned the complete home page over HTTP. The datab
 live API smoke test is deliberately executed in GitHub Actions, where this repository's real
 MySQL 8.4 service exists (this sandbox has no Docker/MySQL daemon). Record the resulting CI
 run here once the commit is pushed and the workflow finishes.
+
+## Real-book import failure: remove the browser/proxy round trip
+
+The full workflow repair above passed GitHub Actions and was merged as PR #36, but the first
+real 64-spread/128-page use exposed a scale-dependent hole in the new-document handoff. The
+split itself completed successfully and its result remained durable in server storage, but
+clicking **Create as new document** reported `Import failed - the server did not respond.`
+
+Root cause: the browser implementation downloaded the entire completed split PDF from the
+server into a `Blob`, wrapped those same bytes in a multipart `File`, and uploaded the book
+back through the Codespaces proxy to the ordinary PDF-ingestion endpoint. The small synthetic
+CI fixture tolerated that unnecessary round trip; the real book did not. The server already
+had the exact file, so routing book-sized bytes through Chrome twice was both fragile and
+architecturally pointless.
+
+The import now sends only `{ versionId, title }` to a dedicated server-side endpoint. That
+endpoint resolves the durable completed job, reads the existing split artifact directly from
+server storage, and reuses the normal Milestone 1 PDF upload handler internally. This retains
+the established transaction, distinct `Document`/`DocumentVersion`/`Source`/`PageMap`
+creation, text-layer extraction, cleanup behavior, and new-document storage layout while
+eliminating the proxy upload limit. The download button remains as an independent way to save
+a review copy. The UI also now tolerates non-JSON proxy errors and reports the actual HTTP
+status instead of incorrectly saying only that the server did not respond.
+
+The live API verifier now exercises this server-side import route. TypeScript, ESLint, the
+production build, and every non-live verifier pass locally; the MySQL-backed API verifier
+remains the GitHub Actions gate because this workspace has no Docker/MySQL daemon.
