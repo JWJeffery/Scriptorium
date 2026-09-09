@@ -26,11 +26,13 @@ await assert.rejects(
 );
 
 const route = await readFile("apps/web/app/api/milestone-sixteen/ocr-status/route.ts", "utf8");
-for (const term of ["detectLikelyScanned", "nullOcrProvider", "OcrNotConfiguredError", "501"]) {
+for (const term of ["detectLikelyScanned", "tesseractOcrProvider", "RUNNING_STATE", "TIMEOUT_STATE", "202"]) {
   assert.ok(route.includes(term), `ocr-status route missing contract term: ${term}`);
 }
 
-const providerModule = await readFile("apps/web/lib/ocr-provider.ts", "utf8");
-assert.ok(!/tesseract|google.?vision|aws.?textract/i.test(providerModule), "this gate must not silently bundle a real OCR engine — the contract must stay honestly unimplemented until a provider is deliberately wired in");
+const providerModule = await readFile("apps/web/lib/tesseract-ocr-provider.ts", "utf8");
+for (const term of ["createWorker", "PSM.AUTO", "tsv: true", "onPageComplete", "worker.terminate", "doc.destroy"]) {
+  assert.ok(providerModule.includes(term), `real OCR provider missing contract term: ${term}`);
+}
 
-console.log("Milestone 17 OCR pipeline contract verifier passed (detection logic real; OCR engine intentionally not implemented).");
+console.log("Milestone 17 OCR pipeline verifier passed (scan detection plus bounded asynchronous Tesseract provider contract).");

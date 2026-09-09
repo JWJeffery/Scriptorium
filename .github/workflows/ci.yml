@@ -88,6 +88,9 @@ jobs:
       - name: Verify Milestone 18 non-Latin script tokenization
         run: node --experimental-strip-types scripts/verify-milestone-18-non-latin-tokenization.mjs
 
+      - name: Verify page-split workflow
+        run: node --experimental-strip-types scripts/verify-page-split-workflow.mjs
+
       - name: Typecheck web app
         id: typecheck
         run: |
@@ -123,6 +126,9 @@ jobs:
       - name: Fail if typecheck failed
         if: steps.typecheck.outputs.exit_code != '0'
         run: exit 1
+
+      - name: Lint web app
+        run: pnpm lint
 
       - name: Build web app
         id: build
@@ -206,3 +212,26 @@ jobs:
 
       - name: Deploy MySQL migration
         run: pnpm prisma:migrate:deploy
+
+      - name: Build web app for live API smoke test
+        run: pnpm build
+
+      - name: Verify page-split API end to end
+        run: |
+          pnpm --filter @scriptorium/web exec next start -H 127.0.0.1 -p 3100 > next-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3100/ > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if ! curl --fail --silent http://127.0.0.1:3100/ > /dev/null; then
+            cat next-server.log
+            exit 1
+          fi
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-page-split-api.mjs || {
+            cat next-server.log
+            exit 1
+          }

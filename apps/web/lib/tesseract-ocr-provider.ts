@@ -329,7 +329,6 @@ export class TesseractOcrProvider implements OcrProvider {
           // line) rather than only stdout.
           const naiveTextWordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
           const wordCoverage = naiveTextWordCount > 0 ? words.length / naiveTextWordCount : 1;
-          // eslint-disable-next-line no-console
           console.log(
             `[OCR-SERVER-DEBUG] page ${pageIndex}/${doc.numPages}: confidence=${data.confidence.toFixed(1)} textLength=${text.length} naiveTextWordCount=${naiveTextWordCount} tsvWordCount=${words.length} coverage=${(wordCoverage * 100).toFixed(0)}% gutterSplit=${gutterX !== null ? `yes(x=${gutterX})` : "no"}`
           );

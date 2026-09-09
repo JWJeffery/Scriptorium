@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { readStoredPdfFile, storePdfFile } from "../../../../lib/server-storage";
 import { splitTwoPageSpreadPdf } from "../../../../lib/pdf-page-splitter";
-import { getJob, isJobRunning, setFinishedJob, setRunningJob } from "../../../../lib/page-split-jobs";
+import { beginJob, getJob, isJobRunning, setFinishedJob, setRunningJob } from "../../../../lib/page-split-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,10 +86,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  setRunningJob(versionId, null);
+  await beginJob(versionId);
 
   runSplitInBackground(versionId, version.snapshotKey, version.documentId).catch((error) => {
-    // eslint-disable-next-line no-console
     console.error(`Background page-split failed for version ${versionId}:`, error);
   });
 

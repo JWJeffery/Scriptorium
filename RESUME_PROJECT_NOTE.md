@@ -1639,3 +1639,64 @@ One real mistake caught and fixed along the way: while adding a new exported hel
 `server-storage.ts`, an editing slip briefly deleted the existing `safeDocumentId` function
 definition while its call sites remained - caught immediately by the file's own brace-balance
 check and fixed before it went any further.
+
+## Full workflow repair: red CI, reload-safe jobs, real import handoff, and executable end-to-end coverage
+
+The next session opened by checking the repository's actual state rather than assuming the
+previous note's local verification meant the build was healthy. Both commits that added the
+splitter UI and tried to preserve completed job state were red in GitHub Actions (runs
+31411748966 and 31419648849). The current checkout reproduced the failure immediately:
+`pnpm typecheck` and `next build` both failed. Three newer constructs had been added to an
+ES5 TypeScript configuration without updating the contract: `Map` iteration, explicit `.ts`
+imports needed by the raw Node worker, and top-level `await` in that worker. Updated the web
+target to ES2017 and enabled `allowImportingTsExtensions` (safe here because the project is
+`noEmit` and Next owns emission). Typecheck and the production build now pass.
+
+The CI suite had a second independent hard failure: the Milestone 17 verifier still asserted
+that the OCR route used `nullOcrProvider`, returned 501, and deliberately bundled no OCR
+engine, even though many later commits had wired in the real asynchronous Tesseract provider.
+Rewrote that verifier to enforce the current real contract (scan detection, Tesseract,
+explicit PSM, TSV word positions, progress callback, cleanup, bounded asynchronous route)
+instead of a superseded milestone state.
+
+The previous completed-job persistence fix was necessary but incomplete in two ways:
+
+1. The live job `Map` was still module-local, so Fast Refresh could erase running progress
+   exactly as it had erased completed state. It now lives on `globalThis`, matching the
+   already-established Prisma-client pattern, so module re-evaluation in the same server
+   process keeps the active job.
+2. Starting a re-run left the previous persisted `ready` JSON on disk. If a reload happened
+   during that new run, the server could resurrect the OLD result and falsely report the new
+   run complete. New `beginJob()` invalidates that stale durable status before POST returns.
+
+The UI had a more basic end-to-end break: **Create as new document** created a valid database
+document, then told Josh to find it in a document library that is not actually mounted or
+functional in this app. The newly-created split PDF was therefore stranded. The import path
+now writes the exact current-document record the main workspace already knows how to restore,
+clears the prior document's browser-only annotation state, and reloads directly into the new
+split document. The original server document and its annotations remain untouched.
+
+Also closed a documentation-versus-reality gap in OCR quality reporting. The OCR provider
+generated low-confidence and sparse-word-position warnings and comments claimed they were
+visible in the panel, but the route discarded them. Warnings are now persisted with the OCR
+TextSpan data, returned by GET, summarized after completion, and displayed in the UI.
+
+Added executable coverage instead of another string-matching claim:
+
+- `verify-page-split-workflow.mjs` builds an image-backed synthetic two-page spread and runs
+  the real process-isolated detector, physical JPEG crop, and PDF reconstruction. It also
+  proves completed job state survives a separate Node process and that a re-run cannot
+  resurrect stale ready state.
+- `verify-page-split-api.mjs` is a live-server/MySQL smoke test covering upload -> background
+  split -> polling -> PDF download -> import as a distinct new document -> reopen. The MySQL
+  CI job now builds the app, starts the production server, and runs this complete flow.
+- Restored a real non-interactive lint command for Next 15/ESLint 9 (`eslint .` with flat
+  config) and added lint to CI; the old `next lint` script stopped for an interactive setup
+  prompt and could never serve as an automated gate.
+
+Local verification at the end of the repair: all milestone verifiers plus the new real
+splitter verifier passed; TypeScript passed; ESLint passed; the production build passed; and
+the built production server returned the complete home page over HTTP. The database-backed
+live API smoke test is deliberately executed in GitHub Actions, where this repository's real
+MySQL 8.4 service exists (this sandbox has no Docker/MySQL daemon). Record the resulting CI
+run here once the commit is pushed and the workflow finishes.

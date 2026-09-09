@@ -34,7 +34,18 @@ export type SplitJobState = {
   splitOriginalPageNumbers?: number[];
 };
 
-const splitJobs = new Map<string, SplitJobState>();
+// Keep the live map on globalThis, the same pattern used by lib/prisma.ts.
+// Next.js Fast Refresh can re-evaluate this module without restarting the
+// process; a module-local Map is replaced in that case, which was the root
+// cause of the real "completed, then download says not found" failure.
+// The disk copy below remains the durable fallback across full process
+// restarts, while globalThis preserves live progress through hot reloads.
+const globalForSplitJobs = globalThis as unknown as {
+  scriptoriumSplitJobs?: Map<string, SplitJobState>;
+};
+
+const splitJobs = globalForSplitJobs.scriptoriumSplitJobs ?? new Map<string, SplitJobState>();
+globalForSplitJobs.scriptoriumSplitJobs = splitJobs;
 
 function statusStorageKey(versionId: string) {
   const versionSegment = safeStorageSegment(versionId, "version");
@@ -43,6 +54,16 @@ function statusStorageKey(versionId: string) {
 
 export function setRunningJob(versionId: string, progress: { completed: number; total: number } | null) {
   splitJobs.set(versionId, { status: "running", progress });
+}
+
+export async function beginJob(versionId: string) {
+  // A re-run must invalidate the previous persisted "ready" record before
+  // the request returns. Otherwise a module reload during the new run can
+  // recover the old result from disk and falsely report the new job as
+  // complete. The actual result PDF can stay in place until the new run
+  // atomically overwrites it; only its stale status record is removed.
+  setRunningJob(versionId, null);
+  await deleteStorageFile(statusStorageKey(versionId));
 }
 
 export async function setFinishedJob(versionId: string, state: SplitJobState) {

@@ -478,6 +478,7 @@ type OcrResult = {
   extractionState: string;
   ocrRunning: boolean;
   ocrProgress: { completed: number; total: number } | null;
+  ocrWarnings: string[];
   pageCount: number;
   extractedTextLength: number;
   likelyScanned: boolean;
@@ -629,7 +630,9 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
       } else if (match?.extractionState === "tesseract-js-eng-v1-failed") {
         setStatus("OCR failed. Check the server terminal for the actual error.");
       } else if (match && !match.likelyScanned) {
-        setStatus(`OCR complete. ${match.extractedTextLength} character(s) recognized.`);
+        setStatus(
+          `OCR complete. ${match.extractedTextLength} character(s) recognized.${match.ocrWarnings.length ? ` ${match.ocrWarnings.length} quality warning(s) need review.` : ""}`
+        );
       } else {
         setStatus("OCR finished running, but the page still doesn't have a usable text layer - it may be a poor-quality scan.");
       }
@@ -672,6 +675,13 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
               <small>
                 {result.pageCount} page(s) &middot; {result.extractedTextLength} extracted character(s) &middot; extraction state {result.extractionState}
               </small>
+              {result.ocrWarnings.length > 0 ? (
+                <ul className="toolsWarnings" aria-label="OCR quality warnings">
+                  {result.ocrWarnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              ) : null}
               {result.ocrRunning && result.ocrProgress && result.ocrProgress.total > 0 ? (
                 <div>
                   <div
@@ -915,14 +925,53 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
       formData.set("file", file);
       formData.set("title", title);
       const uploadResponse = await fetch("/api/milestone-one/files", { method: "POST", body: formData });
-      const body = (await uploadResponse.json()) as { document?: { id: string }; error?: string };
-      if (!uploadResponse.ok || !body.document) {
+      const body = (await uploadResponse.json()) as {
+        document?: { id: string; storageKey?: string | null };
+        version?: { id: string; snapshotKey?: string | null };
+        source?: { id: string };
+        pageMap?: { id: string };
+        storedFile?: { storageKey: string };
+        error?: string;
+      };
+      if (!uploadResponse.ok || !body.document || !body.version || !body.source || !body.pageMap) {
         setStatus(body.error ?? "Import failed - the split file downloaded fine, but creating the new document did not succeed.");
         setImportBusyId(null);
         return;
       }
+
+      // Make the newly-created PDF the active reading document immediately.
+      // The first implementation claimed it would appear in a "document
+      // library", but no live library is mounted in this app; that stranded
+      // a successfully-created database document with no UI path to open it.
+      // This writes the exact current-document shape the main workspace
+      // already restores on load, then reloads into the new PDF. The original
+      // document and its annotations remain untouched in server storage.
+      localStorage.setItem(
+        DOCUMENT_KEY,
+        JSON.stringify({
+          id: body.document.id,
+          title,
+          filename: "split-two-page-spreads.pdf",
+          kind: "PDF",
+          mediaType: "application/pdf",
+          size: blob.size,
+          source: { author: "", title, place: "", publisher: "", year: "" },
+          pageMap: { basePdfPageIndex: 1, baseBookPage: 1, currentPdfPageIndex: 1 },
+          server: {
+            documentId: body.document.id,
+            versionId: body.version.id,
+            sourceId: body.source.id,
+            pageMapId: body.pageMap.id,
+            storageKey: body.storedFile?.storageKey ?? body.document.storageKey ?? undefined,
+            snapshotKey: body.version.snapshotKey ?? undefined
+          }
+        })
+      );
+      localStorage.setItem("scriptorium.annotations", "[]");
+      localStorage.removeItem("scriptorium.currentTextContent");
       setImportedTitle(title);
-      setStatus(`Created "${title}" as a new document (id ${body.document.id}). The original document is untouched - find the new one in your document library.`);
+      setStatus(`Created "${title}" as a new document. Opening it now; the original document remains untouched.`);
+      window.location.reload();
     } catch {
       setStatus("Import failed - the server did not respond.");
     } finally {

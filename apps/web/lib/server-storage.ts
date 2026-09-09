@@ -179,7 +179,6 @@ export type StoredFileEntry = { storageKey: string; size: number; modifiedAt: st
  * originals and text snapshots live on disk, so a full backup needs both.
  */
 export async function listStoredFiles(): Promise<StoredFileEntry[]> {
-  const root = getStorageRoot();
   const entries: StoredFileEntry[] = [];
 
   async function walk(relativeDir: string) {

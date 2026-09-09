@@ -1,16 +1,10 @@
 // OCR pipeline contract (Milestone 16).
 //
-// FILE_INGESTION.md lists "OCR pipeline for scanned PDFs" under "Later" —
-// this module builds the detection logic and the provider hook so that
-// slice can be wired in later without touching call sites, but it does NOT
-// implement real OCR (no bundled OCR engine, no external OCR service call).
-// Scope is deliberately limited to:
-//   1. detecting that a document version is likely a scanned/image-only PDF
-//      with no real text layer, and
-//   2. a pluggable provider interface that a real OCR implementation can
-//      satisfy later.
-// Calling the null provider is meant to fail loudly and explain why, not to
-// silently pretend OCR happened.
+// The concrete English Tesseract implementation lives in
+// tesseract-ocr-provider.ts. This module holds the provider-neutral types,
+// scan-detection heuristic, and an explicit null provider for environments
+// that deliberately choose not to configure an OCR engine. Calling that
+// fallback must fail loudly rather than pretending an empty result is OCR.
 
 export type OcrWord = {
   text: string;
