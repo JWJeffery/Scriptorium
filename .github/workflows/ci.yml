@@ -91,6 +91,9 @@ jobs:
       - name: Verify page-split workflow
         run: node --experimental-strip-types scripts/verify-page-split-workflow.mjs
 
+      - name: Verify searchable PDF export
+        run: node --experimental-strip-types scripts/verify-searchable-pdf-export.mjs
+
       - name: Typecheck web app
         id: typecheck
         run: |

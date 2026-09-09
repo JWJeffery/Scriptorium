@@ -13,17 +13,30 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 // Gate 17  -> /api/milestone-sixteen/ocr-status            (folder name predates gate renumbering)
 
 const DOCUMENT_KEY = "scriptorium.currentDocument";
+const PENDING_SPLIT_OCR_KEY = "scriptorium.pendingSplitOcr";
 
-type CurrentDocumentRef = { documentId?: string; sourceId?: string; title?: string };
+type CurrentDocumentRef = { documentId?: string; versionId?: string; sourceId?: string; title?: string };
+type PendingSplitOcr = { documentId: string; versionId: string; title: string; pageCount?: number };
 
 function readCurrentDocumentRef(): CurrentDocumentRef {
   try {
     const raw = localStorage.getItem(DOCUMENT_KEY);
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as { title?: string; server?: { documentId?: string; sourceId?: string } };
-    return { documentId: parsed.server?.documentId, sourceId: parsed.server?.sourceId, title: parsed.title };
+    const parsed = JSON.parse(raw) as { title?: string; server?: { documentId?: string; versionId?: string; sourceId?: string } };
+    return { documentId: parsed.server?.documentId, versionId: parsed.server?.versionId, sourceId: parsed.server?.sourceId, title: parsed.title };
   } catch {
     return {};
+  }
+}
+
+function readPendingSplitOcr(): PendingSplitOcr | null {
+  try {
+    const raw = localStorage.getItem(PENDING_SPLIT_OCR_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PendingSplitOcr>;
+    return parsed.documentId && parsed.versionId && parsed.title ? (parsed as PendingSplitOcr) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -40,10 +53,24 @@ const TABS: { key: ToolsTab; label: string }[] = [
 export function ScholarlyToolsPanel() {
   const [tab, setTab] = useState<ToolsTab>("source-editor");
   const [currentRef, setCurrentRef] = useState<CurrentDocumentRef>({});
+  const [pendingSplitOcr, setPendingSplitOcr] = useState<PendingSplitOcr | null>(null);
 
   useEffect(() => {
     setCurrentRef(readCurrentDocumentRef());
   }, [tab]);
+
+  useEffect(() => {
+    const pending = readPendingSplitOcr();
+    if (pending) {
+      setPendingSplitOcr(pending);
+      setTab("ocr");
+    }
+  }, []);
+
+  function clearPendingSplitOcr() {
+    localStorage.removeItem(PENDING_SPLIT_OCR_KEY);
+    setPendingSplitOcr(null);
+  }
 
   return (
     <section className="toolsPanel" aria-label="Scholarly tools: gates 14 through 17">
@@ -68,6 +95,18 @@ export function ScholarlyToolsPanel() {
           </div>
         )}
       </div>
+      {pendingSplitOcr && pendingSplitOcr.documentId === currentRef.documentId ? (
+        <div className="toolsAttention" role="status">
+          <div>
+            <strong>OCR required for the new split document</strong>
+            <p>
+              The split copy contains {pendingSplitOcr.pageCount ? `${pendingSplitOcr.pageCount} ` : ""}image pages and initially reports zero extracted words. Run OCR now to make its text selectable,
+              searchable, and exportable as a searchable PDF.
+            </p>
+          </div>
+          <button className="primaryButton" type="button" onClick={() => setTab("ocr")}>Open OCR scan detection</button>
+        </div>
+      ) : null}
       <div className="toolsTabs" role="tablist">
         {TABS.map((item) => (
           <button
@@ -86,7 +125,13 @@ export function ScholarlyToolsPanel() {
         {tab === "source-editor" ? <CslSourceEditorSection currentRef={currentRef} /> : null}
         {tab === "regeneration" ? <CitationRegenerationSection currentRef={currentRef} /> : null}
         {tab === "export" ? <CorpusExportSection /> : null}
-        {tab === "ocr" ? <OcrStatusSection currentRef={currentRef} /> : null}
+        {tab === "ocr" ? (
+          <OcrStatusSection
+            currentRef={currentRef}
+            pendingOcrVersionId={pendingSplitOcr?.versionId}
+            onOcrReady={clearPendingSplitOcr}
+          />
+        ) : null}
         {tab === "page-split" ? <PageSplitSection currentRef={currentRef} /> : null}
       </div>
     </section>
@@ -486,7 +531,15 @@ type OcrResult = {
   reason: string;
 };
 
-function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
+function OcrStatusSection({
+  currentRef,
+  pendingOcrVersionId,
+  onOcrReady
+}: {
+  currentRef: CurrentDocumentRef;
+  pendingOcrVersionId?: string;
+  onOcrReady: () => void;
+}) {
   const [documentId, setDocumentId] = useState(currentRef.documentId ?? "");
   const [results, setResults] = useState<OcrResult[]>([]);
   const [status, setStatus] = useState("Checks PDF versions for a likely missing text layer. Leave the id blank to check every PDF.");
@@ -552,12 +605,24 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
         return;
       }
       setResults(body.results ?? []);
+      const pendingResult = pendingOcrVersionId ? body.results?.find((result) => result.versionId === pendingOcrVersionId) : undefined;
       const running = body.results?.find((result) => result.ocrRunning);
       if (running) {
         setStatus(`${body.count ?? 0} PDF version(s) checked, ${body.likelyScannedCount ?? 0} likely scanned. OCR is already running on "${running.documentTitle}" - resuming progress checks...`);
         setBusyId(running.versionId);
         rateAnchorRef.current = null;
         await pollUntilDone(running.versionId);
+        return;
+      }
+      if (pendingResult?.extractionState === "tesseract-js-eng-v1") {
+        onOcrReady();
+        setStatus(`OCR is already complete for "${pendingResult.documentTitle}". Its searchable PDF is ready to download.`);
+        return;
+      }
+      if (pendingResult?.likelyScanned) {
+        setStatus(
+          `"${pendingResult.documentTitle}" is the newly split image-only copy. Zero extracted words is expected before OCR; click Attempt OCR now.`
+        );
         return;
       }
       setStatus(`${body.count ?? 0} PDF version(s) checked, ${body.likelyScannedCount ?? 0} likely scanned.`);
@@ -630,8 +695,9 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
       } else if (match?.extractionState === "tesseract-js-eng-v1-failed") {
         setStatus("OCR failed. Check the server terminal for the actual error.");
       } else if (match && !match.likelyScanned) {
+        if (match.versionId === pendingOcrVersionId) onOcrReady();
         setStatus(
-          `OCR complete. ${match.extractedTextLength} character(s) recognized.${match.ocrWarnings.length ? ` ${match.ocrWarnings.length} quality warning(s) need review.` : ""}`
+          `OCR complete. ${match.extractedTextLength} character(s) recognized. You can now download a searchable PDF.${match.ocrWarnings.length ? ` ${match.ocrWarnings.length} quality warning(s) need review.` : ""}`
         );
       } else {
         setStatus("OCR finished running, but the page still doesn't have a usable text layer - it may be a poor-quality scan.");
@@ -717,10 +783,18 @@ function OcrStatusSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
                       : "Attempt OCR"}
                 </button>
                 {result.extractionState === "tesseract-js-eng-v1" && !result.ocrRunning ? (
-                  <small className="toolsHint">
-                    Already OCR&apos;d successfully - re-run only if you need to regenerate it (e.g. after an OCR
-                    pipeline update).
-                  </small>
+                  <>
+                    <a
+                      className="primaryButton"
+                      href={`/api/milestone-sixteen/searchable-pdf?versionId=${encodeURIComponent(result.versionId)}`}
+                      download
+                    >
+                      Download searchable PDF
+                    </a>
+                    <small className="toolsHint">
+                      OCR is complete. Re-run only if you need to regenerate it after an OCR pipeline update.
+                    </small>
+                  </>
                 ) : null}
               </div>
             </article>
@@ -969,8 +1043,17 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
       );
       localStorage.setItem("scriptorium.annotations", "[]");
       localStorage.removeItem("scriptorium.currentTextContent");
+      localStorage.setItem(
+        PENDING_SPLIT_OCR_KEY,
+        JSON.stringify({
+          documentId: body.document.id,
+          versionId: body.version.id,
+          title,
+          pageCount: result.splitSummary?.newPageCount
+        })
+      );
       setImportedTitle(title);
-      setStatus(`Created "${title}" as a new document. Opening it now; the original document remains untouched.`);
+      setStatus(`Created "${title}" as a new document. Opening it now and prompting for the required OCR pass; the original document remains untouched.`);
       window.location.reload();
     } catch {
       setStatus("Import failed - the server did not respond.");

@@ -627,6 +627,33 @@ h2 {
   align-items: flex-start;
 }
 
+.toolsAttention {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 20px 0 0;
+  padding: 16px 18px;
+  border: 1px solid #c88f42;
+  border-radius: 16px;
+  background: #fff8e8;
+}
+
+.toolsAttention div {
+  display: grid;
+  gap: 4px;
+}
+
+.toolsAttention p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.toolsAttention .primaryButton {
+  flex: 0 0 auto;
+}
+
 .toolsForm {
   display: grid;
   gap: 12px;
@@ -777,5 +804,10 @@ h2 {
 
   .toolsCurrentDoc {
     text-align: left;
+  }
+
+  .toolsAttention {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
