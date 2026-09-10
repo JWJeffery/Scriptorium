@@ -27,11 +27,23 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Stored PDF was not found." }, { status: 404 });
   }
 
-  const fileBuffer = await readStoredPdfFile(document.storageKey);
+  let fileBuffer: Buffer;
+  try {
+    fileBuffer = await readStoredPdfFile(document.storageKey);
+  } catch (error) {
+    const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
+    console.error(`Could not read stored PDF for document ${documentId} at ${document.storageKey}:`, error);
+    return NextResponse.json(
+      { error: missing ? "The PDF record exists, but its stored file could not be found." : "The stored PDF could not be read." },
+      { status: missing ? 404 : 500 }
+    );
+  }
 
   return new NextResponse(new Uint8Array(fileBuffer), {
     headers: {
-      "content-type": document.mediaType || "application/pdf"
+      "content-type": document.mediaType || "application/pdf",
+      "content-length": String(fileBuffer.byteLength),
+      "cache-control": "no-store"
     }
   });
 }

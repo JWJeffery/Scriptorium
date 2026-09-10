@@ -364,8 +364,9 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
           }
         }
         onStatusChange(`PDF.js loaded ${pdfDocument.numPages} page${pdfDocument.numPages === 1 ? "" : "s"}.`);
-      } catch {
-        onStatusChange("PDF.js could not load this PDF.");
+      } catch (error) {
+        const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
+        onStatusChange(`PDF.js could not load this PDF.${detail}`);
       } finally {
         if (!cancelled) setIsLoading(false);
       }

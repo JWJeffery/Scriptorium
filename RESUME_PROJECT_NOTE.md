@@ -1758,3 +1758,33 @@ is now opaque while the synthetic OCR glyphs themselves remain transparent. Nati
 color therefore appears continuously during the drag, like a normal PDF reader, without
 drawing duplicate text over the scanned page. TypeScript, ESLint, the new executable export
 verifier, and the production build all pass after these changes.
+
+## PDF recovery after restart: stabilize the storage root
+
+After merging the OCR/export/highlighting work, the real imported split document initially
+reported `Recovered PDF from server file storage`, then about half a second later changed to
+`PDF.js could not load this PDF`. That sequence matters: the first message only meant the
+browser had restored a document record and assigned its API URL; the later message meant the
+actual API request did not return loadable PDF bytes.
+
+Root cause was an old path-resolution defect in `server-storage.ts`. Both the default storage
+directory and the configured relative `SCRIPTORIUM_STORAGE_DIR="./storage"` were resolved
+through `process.cwd()`. A filtered pnpm package launch commonly runs Next from `apps/web`,
+while other launch/restart paths use the repository root. The identical database storage key
+could therefore be written under `apps/web/storage` in one process and looked up under
+`storage` in the next. The database and browser record survived, but the file lookup silently
+moved to a different directory.
+
+New writes now resolve relative storage from a normalized repository root regardless of
+which of those two directories launched Next. Reads search the configured stable root plus
+both historical root/app locations. A successful legacy read self-heals by copying the bytes
+into stable storage, while leaving the recoverable old copy intact. Deletion checks every
+recognized root, and corpus-export enumeration merges them without emitting duplicate keys.
+The PDF delivery route now returns explicit 404/500 JSON for missing/unreadable files plus a
+content length, and the reader surfaces PDF.js's actual error detail instead of discarding it.
+
+`verify-storage-root-recovery.mjs` reproduces the exact cross-launch layout in an isolated
+temporary repository: it writes a PDF to `apps/web/storage`, starts resolution from the fake
+repository's `apps/web` directory with `./storage`, proves the stable root is the repository's
+top-level `storage`, recovers and self-heals the legacy PDF, verifies one logical corpus entry,
+and removes both copies. The verifier, TypeScript, and ESLint pass.
