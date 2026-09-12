@@ -4,7 +4,8 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "
 import { formatCitation, type CitationStyleId, type CslItem } from "../lib/citation-styles";
 import { highlightColors } from "../lib/highlights";
 import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
-import { ScholarlyToolsPanel } from "./ScholarlyToolsPanel";
+import { ScholarlyToolsPanel, type ImportedReadingNoteRecord } from "./ScholarlyToolsPanel";
+import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = CitationStyleId;
@@ -526,11 +527,12 @@ export function ScriptoriumMilestoneOnePersisted() {
   async function saveRecord() {
     if (!documentRecord) { setStatus("Register a document before saving an annotation."); return; }
     const normalizedSelectedText = selectedText.trim();
-    if (!normalizedSelectedText) { setStatus("Capture or enter selected text before saving."); return; }
+    const normalizedNote = note.trim();
+    if (!normalizedSelectedText && !normalizedNote) { setStatus("Capture a passage or enter a page note before saving."); return; }
     if (isText(documentRecord) && !isTextAnchor(anchor)) { setStatus("Select text directly in the text reader so the annotation has a stable line/offset anchor."); return; }
 
     const normalizedAnchor = anchor ? { ...anchor, selectedText: normalizedSelectedText } as SelectionAnchor : undefined;
-    let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: note.trim(), pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor), style), anchor: normalizedAnchor, createdAt: new Date().toISOString() };
+    let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: normalizedNote, pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor), style), anchor: normalizedAnchor, createdAt: new Date().toISOString() };
 
     try {
       const serverRecord = await persistAnnotation(documentRecord, record);
@@ -552,6 +554,46 @@ export function ScriptoriumMilestoneOnePersisted() {
   }
 
   function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setRecentAnnotationId(undefined); setStatus("Cleared annotation records for the current browser workspace."); }
+
+  function previewReadingNote(candidate: ReadingNoteCandidate) {
+    if (!documentRecord || documentRecord.kind !== "PDF" || !candidate.anchor) return;
+    goToPage(candidate.anchor.pageNumber);
+    setAnchor(candidate.anchor);
+    setSelectedText(candidate.selectedText);
+    setNote(candidate.note);
+    setToolsOpen(false);
+    setInspectorOpen(true);
+    setStatus(`Previewing the proposed highlight for book page ${candidate.pageLabel}. Review it in the inspector before importing.`);
+  }
+
+  function addImportedReadingNotes(records: ImportedReadingNoteRecord[]) {
+    if (!documentRecord) return;
+    const imported: SavedAnnotation[] = records.map((record) => ({
+      id: `import_${record.annotationId}`,
+      documentId: documentRecord.id,
+      versionId: documentRecord.server?.versionId,
+      snapshotKey: documentRecord.server?.snapshotKey,
+      colorKey: record.colorKey,
+      selectedText: record.selectedText,
+      note: record.note,
+      pdfPageIndex: record.pdfPageIndex,
+      bookPageLabel: record.bookPageLabel,
+      citationStyle: record.citationStyle as CitationStyle,
+      citationText: record.citationText,
+      anchor: record.anchor,
+      createdAt: record.createdAt,
+      serverAnnotationId: record.annotationId,
+      serverCitationId: record.citationId
+    }));
+    setAnnotations((previous) => {
+      const known = new Set(previous.map((record) => record.serverAnnotationId).filter(Boolean));
+      const next = [...imported.filter((record) => !known.has(record.serverAnnotationId)), ...previous];
+      saveAnnotations(next);
+      return next;
+    });
+    setLedgerOpen(true);
+    setStatus(`Imported ${imported.length} earlier reading note${imported.length === 1 ? "" : "s"} as native Ledger records.`);
+  }
 
   const currentPage = documentRecord?.pageMap.currentPdfPageIndex ?? 1;
   const formatLabel = documentRecord ? formatFor(documentRecord.kind) : "PDF";
@@ -671,7 +713,7 @@ export function ScriptoriumMilestoneOnePersisted() {
               const canOpen = current && record.anchor && !isTextAnchor(record.anchor);
               return <article className="ledgerRecord" key={record.id}>
                 <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
-                <blockquote>{record.selectedText}</blockquote>
+                {record.selectedText ? <blockquote>{record.selectedText}</blockquote> : null}
                 {record.note ? <p>{record.note}</p> : null}
                 <div className="recordCitation">{record.citationText}</div>
                 <small>{current ? "Current snapshot" : "Prior snapshot"} · {record.serverAnnotationId ? "database" : "local"}</small>
@@ -708,9 +750,9 @@ export function ScriptoriumMilestoneOnePersisted() {
             <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL / Chicago / Turabian note</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
             <div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>
             {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
-            <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">Save annotation + citation</button>
+            <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save annotation + citation" : "Save page note + citation"}</button>
           </div>
-          {recentSavedRecord && recentSavedColor ? <div className="recentSavedRecord"><div><span className="recordColor" style={{ background: recentSavedColor.color }} /><strong>Latest saved record</strong></div><blockquote>{recentSavedRecord.selectedText}</blockquote>{recentSavedRecord.note ? <p>{recentSavedRecord.note}</p> : null}<small>{isText(documentRecord) ? "line" : "book page"} {recentSavedRecord.bookPageLabel} · {recentSavedRecord.serverAnnotationId ? "database" : "local"}</small></div> : null}
+          {recentSavedRecord && recentSavedColor ? <div className="recentSavedRecord"><div><span className="recordColor" style={{ background: recentSavedColor.color }} /><strong>Latest saved record</strong></div>{recentSavedRecord.selectedText ? <blockquote>{recentSavedRecord.selectedText}</blockquote> : null}{recentSavedRecord.note ? <p>{recentSavedRecord.note}</p> : null}<small>{isText(documentRecord) ? "line" : "book page"} {recentSavedRecord.bookPageLabel} · {recentSavedRecord.serverAnnotationId ? "database" : "local"}</small></div> : null}
           <details className="inspectorGroup" open>
             <summary>Source metadata {sourceSaveMessage.startsWith("Unsaved") ? <span className="unsavedDot" aria-label="Unsaved changes" /> : null}</summary>
             <div className="inspectorGroupContent">
@@ -738,7 +780,7 @@ export function ScriptoriumMilestoneOnePersisted() {
 
       <div className={`toolsDrawer${toolsOpen ? " open" : ""}`} aria-hidden={!toolsOpen}>
         <div className="drawerHeader"><div><p className="eyebrow">Research utilities</p><strong>Scholarly tools</strong></div><button type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools">×</button></div>
-        <ScholarlyToolsPanel active={toolsOpen} />
+        <ScholarlyToolsPanel active={toolsOpen} onPreviewReadingNote={previewReadingNote} onReadingNotesImported={addImportedReadingNotes} />
       </div>
       {toolsOpen ? <button className="drawerScrim" type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools" /> : null}
       {ledgerOpen ? <button className="ledgerScrim" type="button" onClick={() => setLedgerOpen(false)} aria-label="Close saved records" /> : null}

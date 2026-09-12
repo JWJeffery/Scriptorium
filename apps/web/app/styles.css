@@ -683,6 +683,83 @@ h2 {
   align-content: start;
 }
 
+.readingNotesImporter,
+.readingNotesReview {
+  display: grid;
+  gap: 16px;
+}
+
+.readingNotesImporter h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.readingNotesSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.readingNotesSummary > * {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--soft);
+  font-size: 0.82rem;
+}
+
+.readingNotesCandidates {
+  display: grid;
+  gap: 10px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.readingNoteCandidate {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid #bdc9ac;
+  border-radius: 14px;
+  background: rgb(255 253 249 / 88%);
+}
+
+.readingNoteCandidate.review { border-left-color: #c88f42; }
+.readingNoteCandidate.unmatched { border-left-color: #b66a63; }
+.readingNoteCandidate.page-note { border-left-color: #8ba3a0; }
+
+.readingNoteCandidateHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.84rem;
+}
+
+.readingNoteCandidateHeader label {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+}
+
+.readingNoteCandidateHeader input {
+  width: auto;
+}
+
+.readingNoteCandidateHeader span {
+  color: var(--muted);
+  text-align: right;
+}
+
+.readingNoteCandidate textarea {
+  min-height: 74px;
+  font-size: 0.9rem;
+}
+
 .toolsResultRow {
   display: grid;
   gap: 8px;
