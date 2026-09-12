@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 function isValidInput(value: unknown): value is MilestoneOneAnnotationInput {
   if (typeof value !== "object" || value === null) return false;
   const input = value as Partial<MilestoneOneAnnotationInput>;
-  return Boolean(input.documentId && input.versionId && input.sourceId && input.colorKey && input.selectedText && input.citationStyle && input.citationText);
+  return Boolean(input.documentId && input.versionId && input.sourceId && input.colorKey && (input.selectedText?.trim() || input.note?.trim()) && input.citationStyle && input.citationText);
 }
 
 function cleanTags(tags: string[] | undefined) {
