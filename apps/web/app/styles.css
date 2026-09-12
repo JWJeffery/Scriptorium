@@ -1258,6 +1258,12 @@ body {
   display: grid;
   gap: 11px;
   padding: 13px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.captureCard:focus-within {
+  border-color: var(--ledger-terracotta);
+  box-shadow: 0 0 0 3px rgb(154 79 28 / 13%);
 }
 
 .captureCard textarea {
