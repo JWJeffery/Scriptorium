@@ -597,6 +597,19 @@ export function ScriptoriumMilestoneOnePersisted() {
     });
   }
 
+  function openAnnotationInspector() {
+    setInspectorOpen(true);
+    window.requestAnimationFrame(() => {
+      const field = selectedTextAreaRef.current;
+      if (!field || field.disabled) return;
+      field.scrollIntoView({ behavior: "smooth", block: "center" });
+      field.focus({ preventScroll: true });
+      setStatus(selectedText.trim()
+        ? "Annotation inspector focused. Review the selected passage, add your note, and save."
+        : "Annotation inspector focused. Select a passage in the document or enter one here.");
+    });
+  }
+
   function openCurrentRecord(record: SavedAnnotation) {
     if (!recordMatchesCurrentVersion(record, documentRecord) || !record.anchor || isTextAnchor(record.anchor)) return;
     goToPage(record.anchor.pageNumber);
@@ -618,7 +631,16 @@ export function ScriptoriumMilestoneOnePersisted() {
           <button className="compactAction ledgerToggle" type="button" onClick={() => setLedgerOpen(true)}>Records · {annotations.length}</button>
           <button className="compactAction toolsToggle" type="button" onClick={() => setToolsOpen(true)}>Scholarly tools{pendingSplitOcr ? " · attention" : ""}</button>
           <button className="compactAction pinToggle" type="button" aria-pressed={inspectorPinned} onClick={toggleInspectorPin}>{inspectorPinned ? "Unpin inspector" : "Pin inspector"}</button>
-          <button className="compactAction inspectorToggle" type="button" onClick={() => setInspectorOpen(true)}>Annotate</button>
+          <button
+            className="compactAction inspectorToggle"
+            type="button"
+            aria-controls="annotation-inspector"
+            aria-expanded={inspectorPinned || inspectorOpen}
+            title={inspectorPinned ? "Focus annotation form" : "Open annotation form"}
+            onClick={openAnnotationInspector}
+          >
+            Annotate
+          </button>
           <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} /></label>
         </div>
       </header>
@@ -673,7 +695,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           </section>
         </main>
 
-        <aside className="inspectorPane" aria-label="Annotation inspector" aria-hidden={(!inspectorPinned || compactLayout) && !inspectorOpen}>
+        <aside id="annotation-inspector" className="inspectorPane" aria-label="Annotation inspector" aria-hidden={(!inspectorPinned || compactLayout) && !inspectorOpen}>
           <div className="paneHeader">
             <div><p className="eyebrow">Current selection</p><h2>New record</h2></div>
             <button className="paneClose inspectorClose" type="button" onClick={() => setInspectorOpen(false)} aria-label="Close annotation inspector">×</button>

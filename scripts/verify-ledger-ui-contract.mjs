@@ -44,6 +44,10 @@ assert.match(tools, /citation-exchange\?sourceId=/,
   "The expanded source editor must retrieve the source's existing CSL metadata.");
 assert.match(workspace, /formatCitation\(item, style/,
   "The annotation inspector must use the canonical selected-style formatter.");
+assert.match(workspace, /function openAnnotationInspector\(\)[\s\S]*setInspectorOpen\(true\)[\s\S]*scrollIntoView[\s\S]*\.focus\(/,
+  "The Annotate action must open and visibly focus the annotation form, including when the inspector is already pinned.");
+assert.match(workspace, /aria-controls="annotation-inspector"/,
+  "The Annotate action must identify the inspector it controls.");
 for (const style of ["APA", "MLA", "Harvard"]) {
   assert.ok(workspace.includes(`>${style}<`), `The annotation inspector is missing the distinct ${style} option.`);
 }
