@@ -1,12 +1,13 @@
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatCitation, type CitationStyleId, type CslItem } from "../lib/citation-styles";
 import { highlightColors } from "../lib/highlights";
 import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
 import { ScholarlyToolsPanel } from "./ScholarlyToolsPanel";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
-type CitationStyle = "sbl-note" | "chicago-note";
+type CitationStyle = CitationStyleId;
 type DocumentKind = "PDF" | "TXT" | "MARKDOWN" | "DOCX";
 type SourceRecord = { author: string; title: string; place: string; publisher: string; year: string };
 type PageMap = { basePdfPageIndex: number; baseBookPage: number; currentPdfPageIndex: number };
@@ -67,17 +68,22 @@ function fileKind(file: File): DocumentKind | null {
 }
 
 function citation(document: StoredDocument, locator: string, style: CitationStyle) {
-  // Both currently-supported note styles intentionally share this compact
-  // book-note shape; retain the parameter because it is persisted as part
-  // of the citation record and the formatter can diverge by style later.
-  void style;
   const source = document.source;
-  const author = source.author.trim() || "Unknown author";
-  const title = source.title.trim() || document.title;
-  const imprintParts = [source.place.trim(), source.publisher.trim()].filter(Boolean).join(": ");
-  const imprint = [imprintParts, source.year.trim()].filter(Boolean).join(", ");
-  const publication = imprint ? ` (${imprint})` : "";
-  return `${author}, ${title}${publication}, ${locator}.`;
+  const numericYear = Number(source.year);
+  const item: CslItem = {
+    type: "book",
+    title: source.title.trim() || document.title,
+    author: source.author.trim() ? [{ literal: source.author.trim() }] : undefined,
+    publisher: source.publisher.trim() || undefined,
+    "publisher-place": source.place.trim() || undefined,
+    issued: source.year.trim()
+      ? { "date-parts": [[Number.isFinite(numericYear) ? numericYear : source.year.trim()]] }
+      : undefined
+  };
+  // The canonical formatter is shared with citation regeneration. Its
+  // italic markers are stripped here because saved annotation citations are
+  // intentionally plain text rather than trusted HTML.
+  return formatCitation(item, style, { type: isText(document) ? "line" : "page", value: locator }).replace(/<\/?i>/g, "");
 }
 
 function normalizeDocument(value: unknown) {
@@ -677,7 +683,7 @@ export function ScriptoriumMilestoneOnePersisted() {
             {(selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
             <label>Note<textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} /></label>
             <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${color.defaultMeaning}${selectedColor === color.key ? ", selected" : ""}`} title={color.defaultMeaning} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><strong>{highlightColors.find((color) => color.key === selectedColor)?.defaultMeaning}</strong></fieldset>
-            <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option></select></label>
+            <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL / Chicago / Turabian note</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
             <div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>
             {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
             <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">Save annotation + citation</button>
@@ -709,7 +715,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       <p className="ledgerStatus" role="status" aria-live="polite">{status}</p>
 
       <div className={`toolsDrawer${toolsOpen ? " open" : ""}`} aria-hidden={!toolsOpen}>
-        <div className="drawerHeader"><div><p className="eyebrow">Gates 14–17</p><strong>Scholarly tools</strong></div><button type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools">×</button></div>
+        <div className="drawerHeader"><div><p className="eyebrow">Research utilities</p><strong>Scholarly tools</strong></div><button type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools">×</button></div>
         <ScholarlyToolsPanel active={toolsOpen} />
       </div>
       {toolsOpen ? <button className="drawerScrim" type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools" /> : null}

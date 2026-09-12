@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [page, workspace, reader, tools, styles] = await Promise.all([
+const [page, workspace, reader, tools, styles, pageSplitRoute, pageSplitImport] = await Promise.all([
   readFile(new URL("../apps/web/app/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../apps/web/components/ScriptoriumMilestoneOnePersisted.tsx", import.meta.url), "utf8"),
   readFile(new URL("../apps/web/components/PdfAnchoredPageReader.tsx", import.meta.url), "utf8"),
   readFile(new URL("../apps/web/components/ScholarlyToolsPanel.tsx", import.meta.url), "utf8"),
-  readFile(new URL("../apps/web/app/styles.css", import.meta.url), "utf8")
+  readFile(new URL("../apps/web/app/styles.css", import.meta.url), "utf8"),
+  readFile(new URL("../apps/web/app/api/milestone-seventeen/page-split/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../apps/web/app/api/milestone-seventeen/page-split/import/route.ts", import.meta.url), "utf8")
 ]);
 
 assert.match(page, /return <ScriptoriumMilestoneOnePersisted\s*\/>/,
@@ -34,6 +36,23 @@ assert.match(reader, /className="pdfPageControls"/,
   "PDF navigation must remain owned by the mounted reader toolbar.");
 assert.match(tools, /window\.confirm\([\s\S]*reloads Scriptorium/,
   "Opening a split document must warn about losing an unsaved capture.");
+assert.doesNotMatch(`${workspace}\n${tools}`, /\bGates?\s+\d/i,
+  "Internal gate numbers must not appear in the user-facing application.");
+assert.match(tools, /Load saved metadata/,
+  "The expanded source editor must expose its saved-metadata load action.");
+assert.match(tools, /citation-exchange\?sourceId=/,
+  "The expanded source editor must retrieve the source's existing CSL metadata.");
+assert.match(workspace, /formatCitation\(item, style/,
+  "The annotation inspector must use the canonical selected-style formatter.");
+for (const style of ["APA", "MLA", "Harvard"]) {
+  assert.ok(workspace.includes(`>${style}<`), `The annotation inspector is missing the distinct ${style} option.`);
+}
+assert.match(pageSplitRoute, /alreadySplit/,
+  "Page-split status must identify imported split output.");
+assert.match(pageSplitRoute, /cannot be split again/,
+  "The server must reject attempts to split an imported split output again.");
+assert.match(pageSplitImport, /originalSource[\s\S]*cslJson/,
+  "A split import must preserve the original source's saved CSL metadata.");
 
 for (const required of [
   ".ledgerWorkspace.inspectorPinned .ledgerBody",

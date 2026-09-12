@@ -1,16 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
-// This panel gives gates 14-17 their first screens. Until now they were
-// real, callable API routes with zero UI (see RESUME_PROJECT_NOTE.md,
-// "Outstanding work"). Nothing here touches ScriptoriumMilestoneOnePersisted
-// or its routes - this is purely additive.
-//
-// Gate 14  -> /api/milestone-fourteen/csl-source-editor  (expanded CSL record)
-//          -> /api/milestone-fourteen/citation-regenerate (also gate 15's staleness/lineage)
-// Gate 16  -> /api/milestone-fifteen/corpus-export        (folder name predates gate renumbering)
-// Gate 17  -> /api/milestone-sixteen/ocr-status            (folder name predates gate renumbering)
+// This panel presents the advanced citation, export, OCR, and page-splitting
+// workflows that sit alongside the main reading workspace.
 
 const DOCUMENT_KEY = "scriptorium.currentDocument";
 const PENDING_SPLIT_OCR_KEY = "scriptorium.pendingSplitOcr";
@@ -73,14 +66,14 @@ export function ScholarlyToolsPanel({ active = true }: { active?: boolean }) {
   }
 
   return (
-    <section className="toolsPanel" aria-label="Scholarly tools: gates 14 through 17">
+    <section className="toolsPanel" aria-label="Scholarly tools">
       <div className="toolsPanelHeader">
         <div>
-          <p className="eyebrow">Gates 14&ndash;17</p>
+          <p className="eyebrow">Research utilities</p>
           <h2>Scholarly tools</h2>
           <p>
             Expanded citation records, staleness-aware regeneration, full corpus backup, and scanned-PDF detection.
-            These routes existed with no screen until now.
+            Manage source records and prepare documents for scholarly reading.
           </p>
         </div>
         {currentRef.title ? (
@@ -139,7 +132,7 @@ export function ScholarlyToolsPanel({ active = true }: { active?: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
-// Gate 14: expanded CSL source editor
+// Expanded CSL source editor
 // ---------------------------------------------------------------------------
 
 const SOURCE_TYPES = [
@@ -179,15 +172,93 @@ const EMPTY_SOURCE_FORM: SourceEditorFormState = {
   year: ""
 };
 
+type StoredCslRecord = {
+  type?: unknown;
+  title?: unknown;
+  author?: unknown;
+  editor?: unknown;
+  translator?: unknown;
+  "container-title"?: unknown;
+  "publisher-place"?: unknown;
+  publisher?: unknown;
+  volume?: unknown;
+  edition?: unknown;
+  issued?: unknown;
+};
+
+function textValue(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function firstCslName(value: unknown) {
+  if (!Array.isArray(value) || typeof value[0] !== "object" || value[0] === null) return "";
+  const first = value[0] as { literal?: unknown; given?: unknown; family?: unknown };
+  return textValue(first.literal) || [textValue(first.given), textValue(first.family)].filter(Boolean).join(" ");
+}
+
+function issuedYear(value: unknown) {
+  if (typeof value !== "object" || value === null || !("date-parts" in value)) return "";
+  const parts = (value as { "date-parts"?: unknown })["date-parts"];
+  if (!Array.isArray(parts) || !Array.isArray(parts[0])) return "";
+  const year = parts[0][0];
+  return typeof year === "string" || typeof year === "number" ? String(year) : "";
+}
+
+function formFromStoredCsl(sourceId: string, value: unknown): SourceEditorFormState {
+  const csl = typeof value === "object" && value !== null && !Array.isArray(value) ? value as StoredCslRecord : {};
+  return {
+    sourceId,
+    type: textValue(csl.type) || "book",
+    title: textValue(csl.title),
+    author: firstCslName(csl.author),
+    editor: firstCslName(csl.editor),
+    translator: firstCslName(csl.translator),
+    containerTitle: textValue(csl["container-title"]),
+    place: textValue(csl["publisher-place"]),
+    publisher: textValue(csl.publisher),
+    volume: textValue(csl.volume),
+    edition: textValue(csl.edition),
+    year: issuedYear(csl.issued)
+  };
+}
+
 function CslSourceEditorSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
   const [form, setForm] = useState<SourceEditorFormState>(EMPTY_SOURCE_FORM);
   const [status, setStatus] = useState("Fill in the fields this source actually needs and save.");
   const [savedShortTitle, setSavedShortTitle] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const loadSavedMetadata = useCallback(async (sourceId: string) => {
+    const cleanSourceId = sourceId.trim();
+    if (!cleanSourceId) {
+      setStatus("A source id is required before saved metadata can be loaded.");
+      return;
+    }
+    setLoading(true);
+    setStatus("Loading saved source metadata...");
+    try {
+      const response = await fetch(`/api/milestone-seven/citation-exchange?sourceId=${encodeURIComponent(cleanSourceId)}&format=csl-json`);
+      const body = (await response.json()) as { cslJson?: unknown; error?: string };
+      if (!response.ok || !body.cslJson) {
+        setStatus(body.error ?? "Saved source metadata could not be loaded.");
+        return;
+      }
+      setForm(formFromStoredCsl(cleanSourceId, body.cslJson));
+      setSavedShortTitle(null);
+      setStatus("Loaded the metadata already saved for this source. Add any expanded fields you need, then save.");
+    } catch {
+      setStatus("Saved source metadata could not be loaded - the server did not respond.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (currentRef.sourceId) setForm((previous) => ({ ...previous, sourceId: currentRef.sourceId ?? "" }));
-  }, [currentRef.sourceId]);
+    if (!currentRef.sourceId) return;
+    setForm((previous) => ({ ...previous, sourceId: currentRef.sourceId ?? "" }));
+    void loadSavedMetadata(currentRef.sourceId);
+  }, [currentRef.sourceId, loadSavedMetadata]);
 
   function update<K extends keyof SourceEditorFormState>(key: K, value: SourceEditorFormState[K]) {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -287,9 +358,14 @@ function CslSourceEditorSection({ currentRef }: { currentRef: CurrentDocumentRef
           Year
           <input value={form.year} onChange={(event) => update("year", event.target.value)} />
         </label>
-        <button className="primaryButton" type="submit" disabled={busy}>
-          Save expanded source record
-        </button>
+        <div className="toolsResultRowActions">
+          <button className="secondaryButton" type="button" disabled={busy || loading || !form.sourceId.trim()} onClick={() => void loadSavedMetadata(form.sourceId)}>
+            {loading ? "Loading…" : "Load saved metadata"}
+          </button>
+          <button className="primaryButton" type="submit" disabled={busy || loading}>
+            Save expanded source record
+          </button>
+        </div>
       </form>
       <div className="toolsSidebarNote">
         <p className="statusLine toolsStatusLine">{status}</p>
@@ -309,7 +385,7 @@ function CslSourceEditorSection({ currentRef }: { currentRef: CurrentDocumentRef
 }
 
 // ---------------------------------------------------------------------------
-// Gate 15: citation regeneration + staleness
+// Citation regeneration + staleness
 // ---------------------------------------------------------------------------
 
 type RegenerationResult = {
@@ -426,7 +502,7 @@ function CitationRegenerationSection({ currentRef }: { currentRef: CurrentDocume
 }
 
 // ---------------------------------------------------------------------------
-// Gate 16 (folder milestone-fifteen): corpus export
+// Corpus export
 // ---------------------------------------------------------------------------
 
 type CorpusCounts = {
@@ -513,7 +589,7 @@ function CorpusExportSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Gate 17 (folder milestone-sixteen): OCR scan detection
+// OCR scan detection
 // ---------------------------------------------------------------------------
 
 type OcrResult = {
@@ -808,8 +884,8 @@ function OcrStatusSection({
 // ---------------------------------------------------------------------------
 // Split two-page spreads (apps/web/lib/pdf-page-splitter.ts) - a real,
 // separate physical-page split for scanned book-spread PDFs, not to be
-// confused with the gutter-split OCR already does internally on gates
-// 16/17. That one only changes what OCR sees; this one produces an
+// confused with the gutter-split OCR already does internally. That one
+// only changes what OCR sees; this one produces an
 // actual new PDF where each spread becomes two real, individually-
 // navigable pages. See RESUME_PROJECT_NOTE.md for the full history of
 // getting the detection itself right - this section is just the first
@@ -828,6 +904,8 @@ type PageSplitResult = {
   documentId: string;
   documentTitle: string;
   hasStoredPdf: boolean;
+  alreadySplit: boolean;
+  pageCount: number | null;
   splitRunning: boolean;
   splitReady: boolean;
   splitFailed: boolean;
@@ -896,6 +974,11 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
         return;
       }
       setResults(body.results ?? []);
+      const alreadySplit = body.results?.find((result) => result.alreadySplit);
+      if (alreadySplit && body.results?.length === 1) {
+        setStatus(`This document is already split${alreadySplit.pageCount ? ` into ${alreadySplit.pageCount} single PDF pages` : " into single PDF pages"}. No further split is needed.`);
+        return;
+      }
       const running = body.results?.find((result) => result.splitRunning);
       if (running) {
         setStatus(`${body.count ?? 0} PDF version(s) checked. A split is already running on "${running.documentTitle}" - resuming progress checks...`);
@@ -1001,6 +1084,7 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
         document?: { id: string; storageKey?: string | null };
         version?: { id: string; snapshotKey?: string | null };
         source?: { id: string };
+        sourceMetadata?: { author: string; title: string; place: string; publisher: string; year: string };
         pageMap?: { id: string };
         storedFile?: { storageKey: string; size?: number };
         error?: string;
@@ -1033,7 +1117,7 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
           kind: "PDF",
           mediaType: "application/pdf",
           size: body.storedFile?.size ?? 0,
-          source: { author: "", title, place: "", publisher: "", year: "" },
+          source: body.sourceMetadata ?? { author: "", title, place: "", publisher: "", year: "" },
           pageMap: { basePdfPageIndex: 1, baseBookPage: 1, currentPdfPageIndex: 1 },
           server: {
             documentId: body.document.id,
@@ -1085,7 +1169,9 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
           results.map((result) => (
             <article className="toolsResultRow" key={result.versionId}>
               <div className="toolsResultRowHeader">
-                {result.splitRunning ? (
+                {result.alreadySplit ? (
+                  <span className="toolsBadge toolsBadgeFresh">Already split</span>
+                ) : result.splitRunning ? (
                   <span className="toolsBadge toolsBadgeStale">Splitting&hellip;</span>
                 ) : result.splitReady ? (
                   <span className="toolsBadge toolsBadgeFresh">Split ready</span>
@@ -1097,6 +1183,9 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
                 <strong>{result.documentTitle}</strong>
               </div>
               {!result.hasStoredPdf ? <p>No server-stored PDF file is available for this version, so there&apos;s nothing to split.</p> : null}
+              {result.alreadySplit ? (
+                <p>This is the imported split output{result.pageCount ? ` with ${result.pageCount} single PDF pages` : ""}. It will not be offered for splitting again.</p>
+              ) : null}
               {result.splitRunning && result.splitProgress && result.splitProgress.total > 0 ? (
                 <div>
                   <div
@@ -1125,14 +1214,14 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
                 </small>
               ) : null}
               <div className="toolsResultRowActions">
-                <button
+                {!result.alreadySplit ? <button
                   className="secondaryButton"
                   type="button"
                   disabled={!result.hasStoredPdf || busyId === result.versionId || result.splitRunning}
                   onClick={() => startSplit(result.versionId)}
                 >
                   {result.splitRunning ? "Running\u2026" : result.splitReady ? "Re-run split" : "Split this document"}
-                </button>
+                </button> : null}
                 {result.splitReady ? (
                   <a
                     className="secondaryButton"
@@ -1155,8 +1244,7 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
               </div>
               {result.splitReady && importedTitle ? (
                 <small className="toolsHint">
-                  Imported as &quot;{importedTitle}&quot;. Refine its citation source in the &quot;Expanded citation source&quot; tab if needed - the
-                  new document starts with only a title.
+                  Imported as &quot;{importedTitle}&quot; with the original document&apos;s saved citation metadata.
                 </small>
               ) : null}
             </article>

@@ -26,23 +26,28 @@ function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const SPLIT_OUTPUT_FILENAME = "split-two-page-spreads.pdf";
+
 export async function GET(request: NextRequest) {
   const documentId = clean(request.nextUrl.searchParams.get("documentId"));
 
   const versions = await prisma.documentVersion.findMany({
     where: { documentId: documentId || undefined, document: { kind: "PDF" } },
-    include: { document: true },
+    include: { document: true, _count: { select: { textSpans: true } } },
     orderBy: { createdAt: "desc" }
   });
 
   const results = await Promise.all(
     versions.map(async (version) => {
       const job = await getJob(version.id);
+      const alreadySplit = version.document.originalFilename === SPLIT_OUTPUT_FILENAME;
       return {
         versionId: version.id,
         documentId: version.documentId,
         documentTitle: version.document.title,
         hasStoredPdf: Boolean(version.snapshotKey),
+        alreadySplit,
+        pageCount: version._count.textSpans || null,
         splitRunning: job?.status === "running",
         splitReady: job?.status === "ready",
         splitFailed: job?.status === "failed",
@@ -75,7 +80,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ splitStarted: true, alreadyRunning: true, versionId }, { status: 202 });
   }
 
-  const version = await prisma.documentVersion.findUnique({ where: { id: versionId } });
+  const version = await prisma.documentVersion.findUnique({ where: { id: versionId }, include: { document: true } });
   if (!version) {
     return NextResponse.json({ error: "No document version found for that id." }, { status: 404 });
   }
@@ -83,6 +88,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "No server-stored PDF file is available for this version, so there's nothing to split." },
       { status: 422 }
+    );
+  }
+  if (version.document.originalFilename === SPLIT_OUTPUT_FILENAME) {
+    return NextResponse.json(
+      { error: "This document is already a split, single-page PDF and cannot be split again." },
+      { status: 409 }
     );
   }
 

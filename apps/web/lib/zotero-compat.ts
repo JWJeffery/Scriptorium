@@ -83,7 +83,7 @@ export function zoteroBookItemToCsl(item: unknown): CslBookRecord {
   const author = firstCreatorLiteral(zotero.creators);
 
   if (clean(zotero.itemType) && clean(zotero.itemType) !== "book") {
-    throw new Error("Only Zotero book items are supported for this gate.");
+    throw new Error("Only Zotero book items are supported by this importer.");
   }
 
   if (!title) {

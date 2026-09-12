@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       // Read whatever text layer the PDF genuinely has (not OCR - see
       // lib/tesseract-ocr-provider.ts for that). Before this, PDF
       // ingestion never persisted any extracted text server-side, which
-      // meant scan detection (Milestone 16/gate 17) always read 0
+      // meant scan detection always read 0
       // characters and flagged every PDF as likely scanned, real text
       // layer or not.
       let extraction: { pages: { pageIndex: number; text: string }[]; totalTextLength: number } = { pages: [], totalTextLength: 0 };
