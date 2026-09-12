@@ -45,6 +45,8 @@ export type PdfEmbeddedMetadata = { title?: string; author?: string; keywords?: 
 type Props = {
   fileUrl: string;
   pageNumber: number;
+  pageCount?: number;
+  onPageChange?: (pageNumber: number) => void;
   highlights: PdfPageHighlight[];
   onPageCountChange: (pageCount: number) => void;
   onSelectionCapture: (anchor: PdfSelectionAnchor) => void;
@@ -272,7 +274,7 @@ function rectFromPoints(start: { x: number; y: number }, end: { x: number; y: nu
   };
 }
 
-export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords, hasSelection, onClearSelection }: Props) {
+export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageChange, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords, hasSelection, onClearSelection }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -602,6 +604,13 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, highlights, onPageC
   return (
     <div className="pdfReaderShell">
       <div className="pdfToolbar">
+        {onPageChange ? (
+          <div className="pdfPageControls" aria-label="PDF page navigation">
+            <button type="button" onClick={() => onPageChange(pageNumber - 1)} disabled={pageNumber <= 1} aria-label="Previous PDF page">‹</button>
+            <span>PDF <strong>{pageNumber}</strong> / {pageCount || "–"}</span>
+            <button type="button" onClick={() => onPageChange(pageNumber + 1)} disabled={Boolean(pageCount && pageNumber >= pageCount)} aria-label="Next PDF page">›</button>
+          </div>
+        ) : null}
         {usingOcrLayer ? (
           <div className="pdfSelectionModeToggle" role="group" aria-label="Text selection mode">
             <button

@@ -3,6 +3,7 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { highlightColors } from "../lib/highlights";
 import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
+import { ScholarlyToolsPanel } from "./ScholarlyToolsPanel";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = "sbl-note" | "chicago-note";
@@ -37,6 +38,8 @@ const PDF_STORE = "pdf-blobs";
 const DOCUMENT_KEY = "scriptorium.currentDocument";
 const TEXT_CONTENT_KEY = "scriptorium.currentTextContent";
 const ANNOTATIONS_KEY = "scriptorium.annotations";
+const INSPECTOR_PIN_KEY = "scriptorium.ui.inspectorPinned";
+const PENDING_SPLIT_OCR_KEY = "scriptorium.pendingSplitOcr";
 const EMPTY_SOURCE: SourceRecord = { author: "", title: "", place: "", publisher: "", year: "" };
 const DEFAULT_PAGE_MAP: PageMap = { basePdfPageIndex: 1, baseBookPage: 1, currentPdfPageIndex: 1 };
 const DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -227,6 +230,44 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [selectedText, setSelectedText] = useState("");
   const [anchor, setAnchor] = useState<SelectionAnchor | undefined>();
   const [note, setNote] = useState("");
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [inspectorPinned, setInspectorPinned] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [pendingSplitOcr, setPendingSplitOcr] = useState(false);
+  const [ledgerFilter, setLedgerFilter] = useState("all");
+  const [compactLayout, setCompactLayout] = useState(false);
+
+  useEffect(() => {
+    const savedPin = localStorage.getItem(INSPECTOR_PIN_KEY);
+    const compactQuery = window.matchMedia("(max-width: 1279px)");
+    const wide = !compactQuery.matches;
+    setInspectorPinned(savedPin === null ? wide : savedPin === "true");
+    setInspectorOpen(wide);
+    setCompactLayout(compactQuery.matches);
+    setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY)));
+    const handleLayoutChange = (event: MediaQueryListEvent) => setCompactLayout(event.matches);
+    compactQuery.addEventListener("change", handleLayoutChange);
+    return () => compactQuery.removeEventListener("change", handleLayoutChange);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(INSPECTOR_PIN_KEY, String(inspectorPinned));
+  }, [inspectorPinned]);
+
+  useEffect(() => {
+    function closeOverlay(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (toolsOpen) {
+        setToolsOpen(false);
+        setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY)));
+      }
+      else if (ledgerOpen) setLedgerOpen(false);
+      else if (!inspectorPinned || compactLayout) setInspectorOpen(false);
+    }
+    window.addEventListener("keydown", closeOverlay);
+    return () => window.removeEventListener("keydown", closeOverlay);
+  }, [compactLayout, inspectorPinned, ledgerOpen, toolsOpen]);
 
   // A "select some text" workflow needs an equally easy way to back out of
   // it - clears both the app's own captured selection state and the
@@ -362,12 +403,14 @@ export function ScriptoriumMilestoneOnePersisted() {
   const capturePdfAnchor = useCallback((nextAnchor: PdfSelectionAnchor) => {
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
+    setInspectorOpen(true);
     setStatus("Captured selected text, context, and highlight rectangles from the PDF page. Preview highlight is shown until saved.");
   }, []);
 
   const captureTextAnchor = useCallback((nextAnchor: TextSelectionAnchor) => {
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
+    setInspectorOpen(true);
     setStatus(`Captured selected text, context, offsets, and line locator ${lineLocator(nextAnchor)}.`);
   }, []);
 
@@ -533,65 +576,145 @@ export function ScriptoriumMilestoneOnePersisted() {
     return () => { cancelled = true; };
   }, [documentRecord?.server?.versionId, documentRecord?.kind, currentPage]);
 
+  const usedHighlightColors = highlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
+  const filteredAnnotations = annotations.filter((record) => {
+    if (ledgerFilter === "all") return true;
+    if (ledgerFilter === "prior") return !recordMatchesCurrentVersion(record, documentRecord);
+    return record.colorKey === ledgerFilter;
+  });
+
+  function toggleInspectorPin() {
+    setInspectorPinned((pinned) => {
+      const next = !pinned;
+      if (next) setInspectorOpen(true);
+      return next;
+    });
+  }
+
+  function openCurrentRecord(record: SavedAnnotation) {
+    if (!recordMatchesCurrentVersion(record, documentRecord) || !record.anchor || isTextAnchor(record.anchor)) return;
+    goToPage(record.anchor.pageNumber);
+    setLedgerOpen(false);
+    setStatus(`Opened saved highlight on PDF page ${record.anchor.pageNumber}.`);
+  }
+
   return (
-    <section className="workflow" aria-label="Scriptorium scholarly ingestion workflow">
-      <div className="workflowHeader">
-        <div>
-          <p className="eyebrow">Post-ledger QA workspace</p>
-          <h2>Scholarly source workspace</h2>
-          <p>Register PDF, TXT, Markdown, or DOCX sources; annotate passages; preserve locators; and verify citations, search, retrieval, and cited output.</p>
+    <section className={`ledgerWorkspace${inspectorPinned ? " inspectorPinned" : ""}${inspectorOpen ? " inspectorOpen" : ""}`} aria-label="Scriptorium scholarly reading workspace">
+      <a className="skipLink" href="#ledger-reader">Skip to document</a>
+      <header className="ledgerTopbar">
+        <div className="ledgerBrand">
+          <strong>Scriptorium</strong>
+          <span aria-hidden="true">/</span>
+          <span className="activeDocumentTitle">{documentRecord?.title ?? "No source registered"}</span>
+          <span className="locatorChip">{isText(documentRecord) ? `Line ${locator}` : documentRecord ? `Book p. ${locator}` : "No locator"}</span>
         </div>
-        <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} /></label>
-      </div>
-      <p className="statusLine">{status}</p>
-      <div className="milestoneGrid">
-        <aside className="panel controlsPanel">
-          <h3>CSL source metadata</h3>
-          <label>Title<input value={documentRecord?.source.title ?? ""} onChange={(event) => updateSource("title", event.target.value)} disabled={!documentRecord} /></label>
-          <label>Author / editor<input value={documentRecord?.source.author ?? ""} onChange={(event) => updateSource("author", event.target.value)} disabled={!documentRecord} /></label>
-          <div className="twoColumnInputs"><label>Place<input value={documentRecord?.source.place ?? ""} onChange={(event) => updateSource("place", event.target.value)} disabled={!documentRecord} /></label><label>Year<input value={documentRecord?.source.year ?? ""} onChange={(event) => updateSource("year", event.target.value)} disabled={!documentRecord} /></label></div>
-          <label>Publisher<input value={documentRecord?.source.publisher ?? ""} onChange={(event) => updateSource("publisher", event.target.value)} disabled={!documentRecord} /></label>
-          <button className="secondaryButton" onClick={saveSourceRecord} type="button" disabled={!documentRecord}>Save CSL source metadata</button>
-          {sourceSaveMessage ? <p className="inlineSaveNotice">{sourceSaveMessage}</p> : null}
-          <h3>{isPdf(documentRecord) ? "Page map" : "Text locator"}</h3>
-          {isPdf(documentRecord) ? (
-            <>
-              <div className="twoColumnInputs"><label>PDF page<input type="number" min="1" max={pageCount || undefined} value={currentPage} onChange={(event) => goToPage(Number(event.target.value))} disabled={!documentRecord} /></label><label>Book page<input value={locator} readOnly /></label></div>
-              <div className="pageStepper"><button type="button" onClick={() => goToPage(currentPage - 1)} disabled={!documentRecord || currentPage <= 1}>Previous</button><span>{pageCount ? `${currentPage} / ${pageCount}` : "No page count yet"}</span><button type="button" onClick={() => goToPage(currentPage + 1)} disabled={!documentRecord || (pageCount > 0 && currentPage >= pageCount)}>Next</button></div>
-              <div className="mappingFormula"><span>Mapping rule</span><label>PDF page<input type="number" min="1" value={documentRecord?.pageMap.basePdfPageIndex ?? 1} onChange={(event) => updatePageMap("basePdfPageIndex", Number(event.target.value))} disabled={!documentRecord} /></label><label>= book page<input type="number" value={documentRecord?.pageMap.baseBookPage ?? 1} onChange={(event) => updatePageMap("baseBookPage", Number(event.target.value))} disabled={!documentRecord} /></label></div>
-            </>
-          ) : (
-            <div className="textLocatorBox"><strong>{locator === "-" ? "No text-like document registered" : `Current locator: line ${locator}`}</strong><span>TXT, Markdown, and DOCX anchors use character offsets plus line numbers. Current snapshot checksum: {documentRecord?.server?.sourceChecksum?.slice(0, 12) ?? "not persisted"}.</span></div>
-          )}
-          <h3>Highlight color</h3>
-          <div className="workflowPalette">{highlightColors.map((color) => <button className={selectedColor === color.key ? "workflowSwatch active" : "workflowSwatch"} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} />{color.defaultMeaning}</button>)}</div>
+        <div className="ledgerActions">
+          <button className="compactAction ledgerToggle" type="button" onClick={() => setLedgerOpen(true)}>Records · {annotations.length}</button>
+          <button className="compactAction toolsToggle" type="button" onClick={() => setToolsOpen(true)}>Scholarly tools{pendingSplitOcr ? " · attention" : ""}</button>
+          <button className="compactAction pinToggle" type="button" aria-pressed={inspectorPinned} onClick={toggleInspectorPin}>{inspectorPinned ? "Unpin inspector" : "Pin inspector"}</button>
+          <button className="compactAction inspectorToggle" type="button" onClick={() => setInspectorOpen(true)}>Annotate</button>
+          <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} /></label>
+        </div>
+      </header>
+
+      {pendingSplitOcr ? (
+        <div className="ledgerAttention" role="status">
+          <span><strong>OCR required for the new split document.</strong> Open Scholarly tools to make its pages selectable, searchable, and exportable.</span>
+          <button type="button" onClick={() => setToolsOpen(true)}>Open OCR tools</button>
+        </div>
+      ) : null}
+
+      <div className="ledgerBody">
+        <aside className={`ledgerPane${ledgerOpen ? " open" : ""}`} aria-label="Saved scholarly records">
+          <div className="paneHeader">
+            <div><p className="eyebrow">Research memory</p><h2>Ledger</h2></div>
+            <button className="paneClose" type="button" onClick={() => setLedgerOpen(false)} aria-label="Close saved records">×</button>
+          </div>
+          <p className="paneCount">{annotations.length} saved · {currentSnapshotRecords.length} current snapshot</p>
+          <div className="ledgerFilters" aria-label="Filter saved records">
+            <button type="button" className={ledgerFilter === "all" ? "active" : ""} onClick={() => setLedgerFilter("all")}>All</button>
+            {usedHighlightColors.map((color) => <button type="button" title={color.defaultMeaning} aria-label={`Filter by ${color.defaultMeaning}`} className={ledgerFilter === color.key ? "active" : ""} onClick={() => setLedgerFilter(color.key)} key={color.key}><span style={{ background: color.color }} /></button>)}
+            {annotations.some((record) => !recordMatchesCurrentVersion(record, documentRecord)) ? <button type="button" className={ledgerFilter === "prior" ? "active" : ""} onClick={() => setLedgerFilter("prior")}>Prior</button> : null}
+          </div>
+          <div className="ledgerRecords">
+            {filteredAnnotations.length === 0 ? <p className="emptyAnnotationState">No annotations in this view yet.</p> : filteredAnnotations.map((record) => {
+              const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
+              const current = recordMatchesCurrentVersion(record, documentRecord);
+              const canOpen = current && record.anchor && !isTextAnchor(record.anchor);
+              return <article className="ledgerRecord" key={record.id}>
+                <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
+                <blockquote>{record.selectedText}</blockquote>
+                {record.note ? <p>{record.note}</p> : null}
+                <div className="recordCitation">{record.citationText}</div>
+                <small>{current ? "Current snapshot" : "Prior snapshot"} · {record.serverAnnotationId ? "database" : "local"}</small>
+                {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
+              </article>;
+            })}
+          </div>
+          <div className="ledgerFooter">
+            {documentRecord ? <div className="documentSummary"><strong>{documentRecord.title}</strong><span>{formatLabel} · {documentRecord.filename} · {bytes(documentRecord.size)} {documentRecord.server?.sourceChecksum ? `· checksum ${documentRecord.server.sourceChecksum.slice(0, 12)}` : documentRecord.server?.storageKey ? "· server file" : documentRecord.server ? "· database-linked" : "· local only"}</span></div> : null}
+            <button className="clearBrowserRecords" onClick={clearRecords} type="button" disabled={annotations.length === 0}>Clear browser annotation list</button>
+          </div>
         </aside>
-        <section className="pdfPanel" aria-label="Document display">
-          {isPdf(documentRecord) ? (
-            pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
-          ) : isText(documentRecord) ? (
-            textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
-          ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}
-        </section>
-        <aside className="panel annotationPanel">
-          <h3>Annotation</h3>
-          <p>{isText(documentRecord) ? "Select text directly from the current extracted text snapshot so Scriptorium can store line and offset anchors for this version." : "Select text directly from the rendered PDF page, then verify the captured passage before saving."}</p>
-          <textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} />
-          {(selectedText || anchor) && !isPdf(documentRecord) ? (
-            <button className="secondaryButton clearSelectionButton" type="button" onClick={clearSelection}>
-              Clear selection
-            </button>
-          ) : null}
-          <textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} />
-          <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option></select></label>
-          <div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>
-          {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
-          <button className="primaryButton" onClick={saveRecord} type="button">Save annotation + citation</button>
+
+        <main className="ledgerReader" id="ledger-reader" tabIndex={-1}>
+          <section className="pdfPanel" aria-label="Document display">
+            {isPdf(documentRecord) ? (
+              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
+            ) : isText(documentRecord) ? (
+              textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
+            ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}
+          </section>
+        </main>
+
+        <aside className="inspectorPane" aria-label="Annotation inspector" aria-hidden={(!inspectorPinned || compactLayout) && !inspectorOpen}>
+          <div className="paneHeader">
+            <div><p className="eyebrow">Current selection</p><h2>New record</h2></div>
+            <button className="paneClose inspectorClose" type="button" onClick={() => setInspectorOpen(false)} aria-label="Close annotation inspector">×</button>
+          </div>
+          <div className="captureCard">
+            <label>Selected passage<textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} /></label>
+            {(selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
+            <label>Note<textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} /></label>
+            <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${color.defaultMeaning}${selectedColor === color.key ? ", selected" : ""}`} title={color.defaultMeaning} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><strong>{highlightColors.find((color) => color.key === selectedColor)?.defaultMeaning}</strong></fieldset>
+            <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option></select></label>
+            <div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>
+            {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
+            <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">Save annotation + citation</button>
+          </div>
           {recentSavedRecord && recentSavedColor ? <div className="recentSavedRecord"><div><span className="recordColor" style={{ background: recentSavedColor.color }} /><strong>Latest saved record</strong></div><blockquote>{recentSavedRecord.selectedText}</blockquote>{recentSavedRecord.note ? <p>{recentSavedRecord.note}</p> : null}<small>{isText(documentRecord) ? "line" : "book page"} {recentSavedRecord.bookPageLabel} · {recentSavedRecord.serverAnnotationId ? "database" : "local"}</small></div> : null}
-          <button className="secondaryButton" onClick={clearRecords} type="button">Clear saved annotations</button>
+          <details className="inspectorGroup" open>
+            <summary>Source metadata {sourceSaveMessage.startsWith("Unsaved") ? <span className="unsavedDot" aria-label="Unsaved changes" /> : null}</summary>
+            <div className="inspectorGroupContent">
+              <label>Title<input value={documentRecord?.source.title ?? ""} onChange={(event) => updateSource("title", event.target.value)} disabled={!documentRecord} /></label>
+              <label>Author / editor<input value={documentRecord?.source.author ?? ""} onChange={(event) => updateSource("author", event.target.value)} disabled={!documentRecord} /></label>
+              <div className="twoColumnInputs"><label>Place<input value={documentRecord?.source.place ?? ""} onChange={(event) => updateSource("place", event.target.value)} disabled={!documentRecord} /></label><label>Year<input value={documentRecord?.source.year ?? ""} onChange={(event) => updateSource("year", event.target.value)} disabled={!documentRecord} /></label></div>
+              <label>Publisher<input value={documentRecord?.source.publisher ?? ""} onChange={(event) => updateSource("publisher", event.target.value)} disabled={!documentRecord} /></label>
+              <button className="secondaryButton" onClick={saveSourceRecord} type="button" disabled={!documentRecord}>Save CSL source metadata</button>
+              {sourceSaveMessage ? <p className="inlineSaveNotice">{sourceSaveMessage}</p> : null}
+            </div>
+          </details>
+          <details className="inspectorGroup" open>
+            <summary>{isPdf(documentRecord) ? "Page mapping" : "Text locator"}</summary>
+            <div className="inspectorGroupContent">
+              {isPdf(documentRecord) ? <>
+                <div className="twoColumnInputs"><label>PDF page<input type="number" min="1" max={pageCount || undefined} value={currentPage} onChange={(event) => goToPage(Number(event.target.value))} disabled={!documentRecord} /></label><label>Book page<input value={locator} readOnly /></label></div>
+                <div className="mappingFormula"><span>Mapping rule</span><label>PDF page<input type="number" min="1" value={documentRecord?.pageMap.basePdfPageIndex ?? 1} onChange={(event) => updatePageMap("basePdfPageIndex", Number(event.target.value))} disabled={!documentRecord} /></label><label>= book page<input type="number" value={documentRecord?.pageMap.baseBookPage ?? 1} onChange={(event) => updatePageMap("baseBookPage", Number(event.target.value))} disabled={!documentRecord} /></label></div>
+              </> : <div className="textLocatorBox"><strong>{locator === "-" ? "No text-like document registered" : `Current locator: line ${locator}`}</strong><span>TXT, Markdown, and DOCX anchors use character offsets plus line numbers. Current snapshot checksum: {documentRecord?.server?.sourceChecksum?.slice(0, 12) ?? "not persisted"}.</span></div>}
+            </div>
+          </details>
         </aside>
       </div>
-      <section className="annotationList" aria-label="Saved annotations"><div className="sectionHeading"><h3>Saved scholarly records</h3><span>{annotations.length} saved · {currentSnapshotRecords.length} current snapshot</span></div>{documentRecord ? <div className="documentSummary"><strong>{documentRecord.title}</strong><span>{formatLabel} · {documentRecord.filename} · {bytes(documentRecord.size)} {documentRecord.server?.sourceChecksum ? `· checksum ${documentRecord.server.sourceChecksum.slice(0, 12)}` : documentRecord.server?.storageKey ? "· server file" : documentRecord.server ? "· database-linked" : "· local only"}</span></div> : null}{annotations.length === 0 ? <p className="emptyAnnotationState">No annotations saved yet.</p> : <div className="recordsStack">{annotations.map((record) => { const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0]; const current = recordMatchesCurrentVersion(record, documentRecord); return <article className="annotationRecord" key={record.id}><div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book page"} {record.bookPageLabel} {current ? "· current snapshot" : "· prior snapshot"} {record.serverAnnotationId ? "· database" : "· local"}</span></div><blockquote>{record.selectedText}</blockquote>{record.note ? <p>{record.note}</p> : null}<div className="recordCitation">{record.citationText}</div></article>; })}</div>}</section>
+
+      <p className="ledgerStatus" role="status" aria-live="polite">{status}</p>
+
+      <div className={`toolsDrawer${toolsOpen ? " open" : ""}`} aria-hidden={!toolsOpen}>
+        <div className="drawerHeader"><div><p className="eyebrow">Gates 14–17</p><strong>Scholarly tools</strong></div><button type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools">×</button></div>
+        <ScholarlyToolsPanel active={toolsOpen} />
+      </div>
+      {toolsOpen ? <button className="drawerScrim" type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools" /> : null}
+      {ledgerOpen ? <button className="ledgerScrim" type="button" onClick={() => setLedgerOpen(false)} aria-label="Close saved records" /> : null}
+      {(!inspectorPinned || compactLayout) && inspectorOpen ? <button className="inspectorScrim" type="button" onClick={() => setInspectorOpen(false)} aria-label="Close annotation inspector" /> : null}
     </section>
   );
 }

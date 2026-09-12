@@ -1788,3 +1788,40 @@ temporary repository: it writes a PDF to `apps/web/storage`, starts resolution f
 repository's `apps/web` directory with `./storage`, proves the stable root is the repository's
 top-level `storage`, recovers and self-heals the legacy PDF, verifies one logical corpus entry,
 and removes both copies. The verifier, TypeScript, and ESLint pass.
+
+## The Ledger visual redesign
+
+After the repaired real-book workflow was confirmed end to end (split import, OCR, visible
+live selection, annotation persistence, and searchable-PDF download), the reading workspace
+was reorganized around the actual scholarly object instead of the earlier QA-page stack.
+`docs/LEDGER_IMPLEMENTATION_SPEC.md` records the governing constraints and scope decisions.
+
+The new shell keeps `ScriptoriumMilestoneOnePersisted` as the single state owner and never
+conditionally remounts `PdfAnchoredPageReader`. Saved records now occupy a filterable left
+ledger; the PDF/text reader owns the centre; annotation capture, citation, source metadata,
+and page mapping occupy a pinnable right inspector. At narrower widths, the same mounted
+trees become drawers. The scholarly tools panel is always mounted in its own drawer, so
+closing it does not terminate the OCR and split polling loops it owns.
+
+The PDF reader's existing zoom and selection state remain internal. Page navigation was
+added to that same reader toolbar and the toolbar is presented as a floating control over
+the reading trough. The actual canvas, OCR/native selectable layer, stored highlights, and
+live drag rectangle retain their shared coordinate frame. No page content is reconstructed
+as HTML.
+
+The redesign also resolves misleading affordances identified during specification review:
+
+- the unmounted hard-coded document library was not revived;
+- only current-version PDF records offer navigation, while prior snapshots remain view-only;
+- the clear action is explicitly labelled **Clear browser annotation list**, because the
+  current handler does not delete database records;
+- creating/opening a split document warns that its reload can discard an unsaved capture;
+- the split-OCR requirement remains visible above the reader and routes into the tools drawer.
+
+`verify-ledger-ui-contract.mjs` protects the stable ownership, always-mounted tools drawer,
+honest record actions, split warning, page controls, and responsive/reduced-motion states.
+All existing non-live milestone, page-split, searchable-PDF, and storage-recovery verifiers
+pass; TypeScript, ESLint, and the production build pass. The available cloud browser cannot
+reach this container's loopback preview, so final visual QA with the recovered real book must
+be performed in the Codespace after this branch is pulled; do not record visual alignment as
+confirmed until that happens.
