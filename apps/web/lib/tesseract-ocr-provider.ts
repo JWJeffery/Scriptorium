@@ -8,7 +8,7 @@
 // Adding another language later means adding another lang code to
 // createWorker and, for non-Latin scripts, checking Tesseract's accuracy on
 // the specific script before trusting it the way the Unicode-aware search
-// fix (gate 18) already trusts Greek/Ge'ez/Syriac/Coptic text.
+// fix already trusts Greek/Ge'ez/Syriac/Coptic text.
 //
 // WORD-POSITION SOURCE: this used to walk the `blocks` JSON output
 // (block.paragraphs[].lines[].words[]). Switched to parsing the `tsv`

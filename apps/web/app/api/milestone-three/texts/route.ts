@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
 
   const kind = parseDocumentKind(file);
   if (!kind) {
-    return failure("Only .txt and .md/.markdown files are accepted for this gate.", 400);
+    return failure("Only .txt and .md/.markdown files are accepted by this importer.", 400);
   }
 
   const rawText = await file.text();
