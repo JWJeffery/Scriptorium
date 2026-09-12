@@ -811,3 +811,828 @@ h2 {
     flex-direction: column;
   }
 }
+
+/* --------------------------------------------------------------------------
+   The Ledger
+   A stable three-region reading shell. The PDF reader and scholarly tools
+   remain mounted while panels change presentation, preserving render state,
+   selections, zoom, and long-running OCR/split polling.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --ledger-ground: #f3ecdf;
+  --ledger-sand: #eadfc9;
+  --ledger-paper: #fffdf8;
+  --ledger-terracotta: #9a4f1c;
+  --ledger-terracotta-dark: #673413;
+  --ledger-sage: #66734b;
+  --ledger-shadow: 0 16px 42px rgb(62 43 25 / 14%);
+}
+
+body {
+  background: var(--ledger-ground);
+}
+
+.skipLink {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 200;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  color: #fff;
+  transform: translateY(-150%);
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+.ledgerWorkspace {
+  min-height: 100vh;
+  background: var(--ledger-ground);
+}
+
+.ledgerTopbar {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 22px;
+  border-bottom: 1px solid #d8cab4;
+  background: rgb(243 236 223 / 94%);
+  backdrop-filter: blur(18px);
+}
+
+.ledgerBrand,
+.ledgerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ledgerBrand > strong {
+  font-size: 1.2rem;
+  letter-spacing: -0.025em;
+}
+
+.ledgerBrand > span[aria-hidden="true"] {
+  color: #aa9b87;
+}
+
+.activeDocumentTitle {
+  max-width: min(34vw, 480px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.locatorChip,
+.compactAction {
+  border: 1px solid #d5c5ad;
+  border-radius: 999px;
+  background: #fffaf1;
+  color: var(--accent-strong);
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.compactAction:hover,
+.compactAction:focus-visible {
+  border-color: var(--ledger-terracotta);
+}
+
+.toolsToggle {
+  background: var(--ledger-sage);
+  border-color: var(--ledger-sage);
+  color: #fff;
+}
+
+.inspectorToggle {
+  background: var(--ledger-terracotta);
+  border-color: var(--ledger-terracotta);
+  color: #fff;
+}
+
+.ledgerToggle {
+  display: none;
+}
+
+.ledgerAttention {
+  position: relative;
+  z-index: 42;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 10px 20px;
+  border-bottom: 1px solid #bac49e;
+  background: #e5ecd4;
+  color: #3e472e;
+}
+
+.ledgerAttention button {
+  border: 1px solid #7e8a62;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: #f8fbef;
+  color: #3e472e;
+}
+
+.ledgerBody {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-height: calc(100vh - 112px);
+}
+
+.ledgerWorkspace.inspectorPinned .ledgerBody {
+  grid-template-columns: 300px minmax(0, 1fr) 390px;
+}
+
+.ledgerPane,
+.inspectorPane {
+  min-width: 0;
+  background: #f4e8d2;
+}
+
+.ledgerPane {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+  position: sticky;
+  top: 64px;
+  border-right: 1px solid #d8cab4;
+  overflow: hidden;
+}
+
+.paneHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 6px;
+}
+
+.paneHeader h2 {
+  font-size: 1.55rem;
+}
+
+.paneHeader .eyebrow {
+  margin-bottom: 4px;
+}
+
+.paneClose,
+.drawerHeader button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d5c5ad;
+  border-radius: 999px;
+  background: #fffaf1;
+  color: var(--accent-strong);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.ledgerPane > .paneHeader .paneClose,
+.inspectorPinned .inspectorClose {
+  display: none;
+}
+
+.paneCount {
+  margin: 0;
+  padding: 0 18px 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.ledgerFilters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 14px;
+}
+
+.ledgerFilters button {
+  min-width: 30px;
+  min-height: 30px;
+  border: 1px solid #d5c5ad;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #fffaf1;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.ledgerFilters button.active {
+  border-color: var(--ledger-terracotta);
+  box-shadow: inset 0 0 0 1px var(--ledger-terracotta);
+  color: var(--ledger-terracotta-dark);
+}
+
+.ledgerFilters button span {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgb(0 0 0 / 10%);
+  border-radius: 50%;
+}
+
+.ledgerRecords {
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 0 12px 16px;
+  overflow-y: auto;
+}
+
+.ledgerRecord {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #ddceb7;
+  border-radius: 14px;
+  background: rgb(255 253 248 / 72%);
+}
+
+.ledgerRecord .recordHeader {
+  font-size: 0.78rem;
+}
+
+.ledgerRecord .recordHeader span:last-child {
+  margin-left: auto;
+}
+
+.ledgerRecord blockquote {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.ledgerRecord p,
+.ledgerRecord small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.ledgerRecord .recordCitation {
+  font-size: 0.78rem;
+}
+
+.recordOpen,
+.clearBrowserRecords,
+.textAction {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ledger-terracotta-dark);
+  font-size: 0.78rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ledgerFooter {
+  padding: 10px 14px 16px;
+  border-top: 1px solid #d8cab4;
+}
+
+.ledgerFooter .documentSummary {
+  margin: 0 0 10px;
+  padding: 9px;
+  background: rgb(255 253 248 / 52%);
+  font-size: 0.75rem;
+}
+
+.clearBrowserRecords:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ledgerReader {
+  grid-column: 2;
+  min-width: 0;
+  padding: 18px;
+  background: #e9dfcf;
+  outline: none;
+}
+
+.ledgerReader .pdfPanel {
+  min-height: calc(100vh - 128px);
+  overflow: hidden;
+  border-radius: 18px;
+  border-color: #d6c6ae;
+  background: #e5d9c7;
+  box-shadow: var(--ledger-shadow);
+}
+
+.ledgerReader .pdfReaderShell {
+  height: calc(100vh - 128px);
+  max-height: none;
+  min-height: 620px;
+  overflow: hidden;
+  padding: 18px;
+}
+
+.ledgerReader .pdfFrameViewport {
+  height: 100% !important;
+  overflow: auto;
+  padding-bottom: 76px;
+}
+
+.ledgerReader .pdfToolbar {
+  position: absolute;
+  z-index: 22;
+  bottom: 18px;
+  left: 50%;
+  width: max-content;
+  max-width: calc(100% - 34px);
+  margin: 0;
+  padding: 7px;
+  border: 1px solid #d9cab4;
+  border-radius: 999px;
+  background: rgb(255 252 246 / 94%);
+  box-shadow: 0 10px 26px rgb(49 32 17 / 18%);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px);
+}
+
+.pdfPageControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 10px;
+  border-right: 1px solid #ded1bf;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdfPageControls button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.pdfPageControls button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.ledgerReader .pdfLoading {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 24;
+  transform: translateX(-50%);
+}
+
+.inspectorPane {
+  grid-column: 3;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  max-height: calc(100vh - 64px);
+  position: sticky;
+  top: 64px;
+  padding: 0 12px 20px;
+  border-left: 1px solid #d8cab4;
+  overflow-y: auto;
+}
+
+.ledgerWorkspace:not(.inspectorPinned) .inspectorPane {
+  position: fixed;
+  z-index: 65;
+  top: 64px;
+  right: 0;
+  width: min(400px, 92vw);
+  height: calc(100vh - 64px);
+  max-height: none;
+  transform: translateX(105%);
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 160ms ease;
+  box-shadow: -16px 0 42px rgb(54 37 21 / 18%);
+}
+
+.ledgerWorkspace:not(.inspectorPinned).inspectorOpen .inspectorPane {
+  transform: translateX(0);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.captureCard,
+.recentSavedRecord,
+.inspectorGroup {
+  border: 1px solid #ddceb7;
+  border-radius: 16px;
+  background: rgb(255 253 248 / 76%);
+}
+
+.captureCard {
+  display: grid;
+  gap: 11px;
+  padding: 13px;
+}
+
+.captureCard textarea {
+  min-height: 76px;
+}
+
+.saveRecordButton {
+  width: 100%;
+  border-color: var(--ledger-terracotta-dark);
+  background: var(--ledger-terracotta-dark);
+}
+
+.colorPicker {
+  margin: 0;
+  padding: 9px 0 0;
+  border: 0;
+}
+
+.colorPicker legend {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.colorPicker > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 7px 0;
+}
+
+.colorPicker button {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.colorPicker button.active {
+  border-color: var(--ledger-terracotta);
+}
+
+.colorPicker button span {
+  width: 17px;
+  height: 17px;
+  border: 1px solid rgb(0 0 0 / 10%);
+  border-radius: 50%;
+}
+
+.colorPicker strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.inspectorGroup {
+  overflow: clip;
+}
+
+.inspectorGroup summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.inspectorGroupContent {
+  display: grid;
+  gap: 11px;
+  padding: 0 13px 13px;
+}
+
+.unsavedDot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--ledger-terracotta);
+}
+
+.inspectorPane .mappingFormula {
+  grid-template-columns: 1fr 1fr;
+}
+
+.inspectorPane .mappingFormula > span {
+  grid-column: 1 / -1;
+}
+
+.ledgerStatus {
+  position: sticky;
+  z-index: 44;
+  bottom: 0;
+  margin: 0;
+  padding: 10px 18px;
+  border-top: 1px solid #d6c6ae;
+  background: rgb(249 244 235 / 95%);
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  box-shadow: 0 -8px 22px rgb(54 37 21 / 7%);
+  backdrop-filter: blur(16px);
+}
+
+.toolsDrawer {
+  position: fixed;
+  z-index: 95;
+  inset: 0 0 0 auto;
+  width: min(540px, 94vw);
+  overflow-y: auto;
+  border-left: 1px solid #d8cab4;
+  background: var(--ledger-ground);
+  box-shadow: -20px 0 52px rgb(49 32 17 / 22%);
+  transform: translateX(105%);
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 170ms ease, visibility 0s linear 170ms;
+}
+
+.toolsDrawer.open {
+  transform: translateX(0);
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.drawerHeader {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #d8cab4;
+  background: rgb(243 236 223 / 96%);
+  backdrop-filter: blur(16px);
+}
+
+.drawerHeader strong {
+  font-size: 1.25rem;
+}
+
+.drawerHeader .eyebrow {
+  margin-bottom: 2px;
+}
+
+.toolsDrawer .toolsPanel {
+  margin: 0;
+  padding: 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.toolsDrawer .toolsPanelHeader > div:first-child {
+  display: none;
+}
+
+.toolsDrawer .toolsPanelHeader {
+  margin-bottom: 12px;
+}
+
+.toolsDrawer .toolsCurrentDoc {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.toolsDrawer .toolsTabs {
+  flex-wrap: nowrap;
+  padding-bottom: 5px;
+  overflow-x: auto;
+}
+
+.toolsDrawer .toolsTab {
+  flex: 0 0 auto;
+}
+
+.toolsDrawer .toolsFormLayout {
+  grid-template-columns: 1fr;
+}
+
+.drawerScrim,
+.ledgerScrim,
+.inspectorScrim {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgb(35 27 20 / 30%);
+}
+
+.drawerScrim { z-index: 90; }
+.ledgerScrim,
+.inspectorScrim { z-index: 55; }
+
+@media (max-width: 1500px) {
+  .ledgerWorkspace.inspectorPinned .ledgerBody {
+    grid-template-columns: 280px minmax(0, 1fr) 360px;
+  }
+
+  .activeDocumentTitle {
+    max-width: 24vw;
+  }
+
+  .pinToggle {
+    display: none;
+  }
+}
+
+@media (max-width: 1279px) {
+  .ledgerWorkspace.inspectorPinned .ledgerBody,
+  .ledgerBody {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .inspectorPane,
+  .ledgerWorkspace.inspectorPinned .inspectorPane {
+    position: fixed;
+    z-index: 65;
+    top: 64px;
+    right: 0;
+    width: min(400px, 92vw);
+    height: calc(100vh - 64px);
+    max-height: none;
+    transform: translateX(105%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform 160ms ease;
+    box-shadow: -16px 0 42px rgb(54 37 21 / 18%);
+  }
+
+  .ledgerWorkspace.inspectorOpen .inspectorPane {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .inspectorPinned .inspectorClose {
+    display: grid;
+  }
+}
+
+@media (max-width: 1023px) {
+  .ledgerTopbar {
+    flex-wrap: wrap;
+    padding: 9px 14px;
+  }
+
+  .ledgerBrand {
+    width: 100%;
+  }
+
+  .activeDocumentTitle {
+    flex: 1;
+    max-width: none;
+  }
+
+  .ledgerActions {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .ledgerToggle {
+    display: inline-flex;
+  }
+
+  .ledgerBody,
+  .ledgerWorkspace.inspectorPinned .ledgerBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ledgerPane {
+    position: fixed;
+    z-index: 65;
+    inset: 0 auto 0 0;
+    width: min(340px, 90vw);
+    max-height: none;
+    transform: translateX(-105%);
+    transition: transform 160ms ease;
+    box-shadow: 16px 0 42px rgb(54 37 21 / 18%);
+  }
+
+  .ledgerPane.open {
+    transform: translateX(0);
+  }
+
+  .ledgerPane > .paneHeader .paneClose {
+    display: grid;
+  }
+
+  .ledgerReader {
+    grid-column: 1;
+    padding: 10px;
+  }
+
+  .ledgerAttention {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 700px) {
+  .ledgerBrand > span[aria-hidden="true"],
+  .locatorChip,
+  .pinToggle {
+    display: none;
+  }
+
+  .compactAction,
+  .uploadButton {
+    min-height: 40px;
+    padding: 8px 11px;
+  }
+
+  .ledgerReader .pdfReaderShell,
+  .ledgerReader .pdfPanel {
+    min-height: calc(100vh - 164px);
+    height: calc(100vh - 164px);
+  }
+
+  .ledgerReader .pdfToolbar {
+    justify-content: flex-start;
+    width: calc(100% - 22px);
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .pdfPageControls,
+  .pdfSelectionModeToggle,
+  .pdfZoomControls {
+    flex: 0 0 auto;
+  }
+
+  .inspectorPane,
+  .ledgerWorkspace.inspectorPinned .inspectorPane {
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    height: min(86vh, 780px);
+    border-top: 1px solid #d8cab4;
+    border-left: 0;
+    border-radius: 22px 22px 0 0;
+    transform: translateY(105%);
+  }
+
+  .ledgerWorkspace.inspectorOpen .inspectorPane {
+    transform: translateY(0);
+  }
+
+  .toolsDrawer {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolsDrawer,
+  .ledgerPane,
+  .inspectorPane,
+  .toolsProgressFill {
+    transition: none !important;
+  }
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--ledger-terracotta);
+  outline-offset: 2px;
+}

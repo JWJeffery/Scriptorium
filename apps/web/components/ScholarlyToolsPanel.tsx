@@ -50,14 +50,14 @@ const TABS: { key: ToolsTab; label: string }[] = [
   { key: "page-split", label: "Split two-page spreads" }
 ];
 
-export function ScholarlyToolsPanel() {
+export function ScholarlyToolsPanel({ active = true }: { active?: boolean }) {
   const [tab, setTab] = useState<ToolsTab>("source-editor");
   const [currentRef, setCurrentRef] = useState<CurrentDocumentRef>({});
   const [pendingSplitOcr, setPendingSplitOcr] = useState<PendingSplitOcr | null>(null);
 
   useEffect(() => {
     setCurrentRef(readCurrentDocumentRef());
-  }, [tab]);
+  }, [active, tab]);
 
   useEffect(() => {
     const pending = readPendingSplitOcr();
@@ -983,6 +983,10 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
   }
 
   async function createAsNewDocument(result: PageSplitResult) {
+    const ready = window.confirm(
+      "Creating and opening the split document reloads Scriptorium. Save any annotation you are currently drafting before continuing. Open the split document now?"
+    );
+    if (!ready) return;
     setImportBusyId(result.versionId);
     setImportedTitle(null);
     try {

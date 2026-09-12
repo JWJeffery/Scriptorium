@@ -97,6 +97,9 @@ jobs:
       - name: Verify storage-root recovery
         run: node --experimental-strip-types scripts/verify-storage-root-recovery.mjs
 
+      - name: Verify Ledger UI contract
+        run: node scripts/verify-ledger-ui-contract.mjs
+
       - name: Typecheck web app
         id: typecheck
         run: |
