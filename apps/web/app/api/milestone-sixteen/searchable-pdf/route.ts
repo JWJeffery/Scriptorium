@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "content-type": "application/pdf",
+        "x-content-type-options": "nosniff",
         "content-disposition": `attachment; filename="${filename}"`,
         "x-scriptorium-ocr-words": String(result.embeddedWordCount)
       }

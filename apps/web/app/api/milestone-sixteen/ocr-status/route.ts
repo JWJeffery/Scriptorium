@@ -3,6 +3,7 @@ import { prisma } from "../../../../lib/prisma";
 import { detectLikelyScanned } from "../../../../lib/ocr-provider";
 import { tesseractOcrProvider } from "../../../../lib/tesseract-ocr-provider";
 import { readStoredPdfFile } from "../../../../lib/server-storage";
+import { releaseHeavyJob, tryAcquireHeavyJob } from "../../../../lib/heavy-job-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,12 +105,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: RUNNING_STATE } });
+  const slot = tryAcquireHeavyJob("ocr", versionId);
+  if (!slot.acquired) {
+    return NextResponse.json(
+      { error: "Another OCR or page-split job is already running. Wait for it to finish, then try again." },
+      { status: 429 }
+    );
+  }
+
+  try {
+    await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: RUNNING_STATE } });
+  } catch (error) {
+    releaseHeavyJob("ocr", versionId);
+    throw error;
+  }
   ocrProgress.delete(versionId);
 
-  runOcrInBackground(versionId, version.snapshotKey).catch((error) => {
-    console.error(`Background OCR failed for version ${versionId}:`, error);
-  });
+  runOcrInBackground(versionId, version.snapshotKey)
+    .catch((error) => {
+      console.error(`Background OCR failed for version ${versionId}:`, error);
+    })
+    .finally(() => releaseHeavyJob("ocr", versionId));
 
   return NextResponse.json({ ocrStarted: true, versionId, extractionState: RUNNING_STATE }, { status: 202 });
 }

@@ -175,6 +175,21 @@ jobs:
         if: steps.build.outputs.exit_code != '0'
         run: exit 1
 
+      - name: Verify security gate (auth, CSRF, headers)
+        run: |
+          export SCRIPTORIUM_AUTH_USER=tester SCRIPTORIUM_AUTH_PASSWORD='correct horse battery'
+          pnpm --filter @scriptorium/web exec next start -H 127.0.0.1 -p 3101 > gate-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --silent http://127.0.0.1:3101/ > /dev/null; then break; fi
+            sleep 1
+          done
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3101 node scripts/verify-security-gate.mjs || {
+            cat gate-server.log
+            exit 1
+          }
+
   mysql-migration:
     name: MySQL migration deploy
     runs-on: ubuntu-latest
@@ -227,6 +242,7 @@ jobs:
 
       - name: Verify page-split API end to end
         run: |
+          export SCRIPTORIUM_AUTH_DISABLED=true
           pnpm --filter @scriptorium/web exec next start -H 127.0.0.1 -p 3100 > next-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT

@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
 import { extractDocxRawText } from "../../../../lib/docx-extraction";
 import { storeTextSnapshot } from "../../../../lib/server-storage";
+import { validateDocx } from "../../../../lib/upload-guards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +54,9 @@ export async function POST(request: NextRequest) {
   if (!(file instanceof File) || !isDocxFile(file)) {
     return NextResponse.json({ error: "A .docx file is required." }, { status: 400 });
   }
+
+  const docxProblem = await validateDocx(file);
+  if (docxProblem) return NextResponse.json({ error: docxProblem }, { status: 400 });
 
   const extracted = await extractDocxRawText(file);
   const title = readText(formData, "title") || file.name.replace(/\.docx$/i, "");

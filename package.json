@@ -17,5 +17,13 @@
     "prisma": "^6.0.0",
     "typescript": "^5.7.2"
   },
-  "packageManager": "pnpm@9.15.4"
+  "packageManager": "pnpm@9.15.4",
+  "pnpm": {
+    "overrides": {
+      "@xmldom/xmldom": ">=0.8.15",
+      "postcss": ">=8.5.23",
+      "nanoid": ">=3.3.18",
+      "sharp": ">=0.35.4"
+    }
+  }
 }

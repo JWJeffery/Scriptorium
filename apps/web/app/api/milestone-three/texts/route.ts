@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { DocumentKind, Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
 import { storeTextSnapshot } from "../../../../lib/server-storage";
+import { MAX_TEXT_UPLOAD_BYTES } from "../../../../lib/upload-guards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,6 +70,10 @@ export async function POST(request: NextRequest) {
   const kind = parseDocumentKind(file);
   if (!kind) {
     return failure("Only .txt and .md/.markdown files are accepted by this importer.", 400);
+  }
+
+  if (file.size > MAX_TEXT_UPLOAD_BYTES) {
+    return failure("Text file exceeds the upload size limit.", 413);
   }
 
   const rawText = await file.text();
