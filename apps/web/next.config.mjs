@@ -1,12 +1,16 @@
 /** @type {import('next').NextConfig} */
+// `next dev` compiles with eval-based source maps and talks to its dev server
+// over a websocket; production needs neither, so only allow them in dev.
+const isDev = process.env.NODE_ENV !== "production";
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   // Next.js injects inline bootstrap scripts; 'wasm-unsafe-eval' is for pdf.js.
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' blob: data:",
+  `connect-src 'self' blob: data:${isDev ? " ws: wss:" : ""}`,
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
