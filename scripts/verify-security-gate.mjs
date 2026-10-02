@@ -10,7 +10,7 @@ const password = process.env.SCRIPTORIUM_AUTH_PASSWORD ?? "correct horse battery
 const basic = (u, p) => ({ authorization: `Basic ${Buffer.from(`${u}:${p}`).toString("base64")}` });
 const good = basic(user, password);
 const bad = basic(user, "wrong");
-const probe = `${baseUrl}/api/milestone-one/workspace`; // answers 400 before touching the DB
+const probe = `${baseUrl}/api/core/workspace`; // answers 400 before touching the DB
 const noFollow = { redirect: "manual" };
 let ipCounter = 0;
 const ip = () => ({ "x-forwarded-for": `10.9.${Math.floor(++ipCounter / 250)}.${ipCounter % 250}` });
@@ -90,7 +90,7 @@ assert.ok(heavy > 0, "heavy endpoints are rate limited");
 
 // Cross-site writes.
 const write = (headers) =>
-  fetch(`${baseUrl}/api/milestone-seventeen/page-split`, {
+  fetch(`${baseUrl}/api/page-split`, {
     method: "POST",
     headers: { ...good, ...ip(), ...headers },
     body: "{}",

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const route = await readFile("apps/web/app/api/milestone-five/docx/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/export/docx/route.ts", "utf8");
 const helper = await readFile("apps/web/lib/docx-extraction.ts", "utf8");
 const pkg = await readFile("apps/web/package.json", "utf8");
 

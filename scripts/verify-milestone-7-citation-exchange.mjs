@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const fixture = JSON.parse(await readFile("fixtures/milestone-7/citation-exchange.json", "utf8"));
 const helper = await readFile("apps/web/lib/citation-exchange.ts", "utf8");
-const route = await readFile("apps/web/app/api/milestone-seven/citation-exchange/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/interchange/citation-exchange/route.ts", "utf8");
 
 function normalizeCsl(record) {
   const author = Array.isArray(record.author) ? record.author[0]?.literal ?? "" : "";

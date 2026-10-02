@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "../../../../lib/prisma";
-import { readStoredPdfFile, storePdfFile } from "../../../../lib/server-storage";
-import { splitTwoPageSpreadPdf } from "../../../../lib/pdf-page-splitter";
-import { releaseHeavyJob, tryAcquireHeavyJob } from "../../../../lib/heavy-job-guard";
-import { beginJob, getJob, isJobRunning, setFinishedJob, setRunningJob } from "../../../../lib/page-split-jobs";
+import { prisma } from "../../../lib/prisma";
+import { readStoredPdfFile, storePdfFile } from "../../../lib/server-storage";
+import { splitTwoPageSpreadPdf } from "../../../lib/pdf-page-splitter";
+import { releaseHeavyJob, tryAcquireHeavyJob } from "../../../lib/heavy-job-guard";
+import { beginJob, getJob, isJobRunning, setFinishedJob, setRunningJob } from "../../../lib/page-split-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Same shape and reasoning as milestone-sixteen/ocr-status: page-splitting
+// Same shape and reasoning as ocr/status: page-splitting
 // a real book-length PDF (one render per page, each in its own process -
 // see pdf-page-splitter.ts) routinely takes well over a minute, longer
 // than a reverse proxy's request timeout tends to allow. So this route

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const fixture = JSON.parse(await readFile("fixtures/milestone-4/text-snapshot-policy.json", "utf8"));
-const routeSource = await readFile("apps/web/app/api/milestone-three/texts/route.ts", "utf8");
+const routeSource = await readFile("apps/web/app/api/core/texts/route.ts", "utf8");
 const storageSource = await readFile("apps/web/lib/server-storage.ts", "utf8");
 
 function normalizeTextSnapshot(rawText) {

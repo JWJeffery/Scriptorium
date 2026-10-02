@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const route = await readFile("apps/web/app/api/milestone-thirteen/grounded-response/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/research/grounded-response/route.ts", "utf8");
 const composer = await readFile("apps/web/lib/grounded-response.ts", "utf8");
 
 for (const term of [

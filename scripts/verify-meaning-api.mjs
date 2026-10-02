@@ -19,7 +19,7 @@ form.set("file", new File([await textPdf([
   ["Councils define doctrine for bishops", "creed synod canon ecumenical assembly"]
 ])], "meaning.pdf", { type: "application/pdf" }));
 form.set("title", `Meaning fixture ${stamp}`);
-const uploaded = (await call("/api/milestone-one/files", { method: "POST", body: form })).body;
+const uploaded = (await call("/api/core/files", { method: "POST", body: form })).body;
 const documentId = uploaded.document.id;
 
 // Before indexing: honest fallback to shared words
@@ -50,7 +50,7 @@ assert.equal(councils.pages[0].pdfPageIndex, 3);
 assert.equal((await call(`/api/search?mode=related&q=${encodeURIComponent("zzqx qqzz")}&documentId=${documentId}`)).body.counts.pages, 0, "nothing similar -> nothing returned");
 
 // Notes are indexed too, after an update
-await call("/api/milestone-one/annotations", send("POST", {
+await call("/api/core/annotations", send("POST", {
   documentId, versionId: uploaded.version.id, sourceId: uploaded.source.id, pageMapId: uploaded.pageMap.id,
   colorKey: "blue", selectedText: "the washing of regeneration", note: "reflection on christening rites", tags: [],
   anchor: { selectedText: "x", pageNumber: 1, rects: [] }, citationStyle: "sbl-note", citationText: "Cite.", locatorValue: "1"
@@ -70,7 +70,7 @@ assert.ok(withNote.annotations.length >= 1 && withNote.annotations[0].note.inclu
 const second = new FormData();
 second.set("file", new File([await textPdf([["Unindexed book about creed and synod"]])], "other.pdf", { type: "application/pdf" }));
 second.set("title", `Unindexed fixture ${stamp}`);
-await call("/api/milestone-one/files", { method: "POST", body: second });
+await call("/api/core/files", { method: "POST", body: second });
 const everything = (await call(`/api/search?mode=related&q=${encodeURIComponent("creed synod canon")}`)).body;
 assert.equal(everything.method, "meaning");
 assert.ok(everything.unindexed.some((title) => title.startsWith("Unindexed fixture")), "unindexed books are listed so results are not mistaken for complete");

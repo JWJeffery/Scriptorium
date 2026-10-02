@@ -16,7 +16,7 @@ const form = new FormData();
 form.set("file", new File([await textPdf([["One"], ["Two"], ["Three"], ["Four"]])], "reading.pdf", { type: "application/pdf" }));
 form.set("title", "Reading fixture");
 form.set("author", "Rae Reader");
-const uploaded = (await call("/api/milestone-one/files", { method: "POST", body: form })).body;
+const uploaded = (await call("/api/core/files", { method: "POST", body: form })).body;
 const documentId = uploaded.document.id;
 
 // --- bookmarks
@@ -34,7 +34,7 @@ assert.equal((await call(`/api/bookmarks?id=${first.id}`, { method: "DELETE" }))
 assert.equal((await call(`/api/bookmarks?documentId=${documentId}`)).body.bookmarks.length, 0);
 
 // --- annotation export, in reading order
-const annotate = (page, text, note, tags) => call("/api/milestone-one/annotations", send("POST", {
+const annotate = (page, text, note, tags) => call("/api/core/annotations", send("POST", {
   documentId, versionId: uploaded.version.id, sourceId: uploaded.source.id, pageMapId: uploaded.pageMap.id,
   colorKey: "red", selectedText: text, note, tags, anchor: { selectedText: text, pageNumber: page, rects: [] },
   citationStyle: "sbl-note", citationText: `Rae Reader, Reading Fixture, ${page}.`, locatorValue: String(page)

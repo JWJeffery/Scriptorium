@@ -19,8 +19,11 @@ import { clientKey, hit } from "./lib/rate-limit";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const PUBLIC_PATHS = new Set(["/login", "/api/auth/login", "/api/auth/logout", "/api/auth/session"]);
-// Long-running or heavy endpoints get a much lower allowance.
-const HEAVY_PREFIXES = ["/api/backup", "/api/embeddings", "/api/milestone-sixteen/ocr-status", "/api/milestone-seventeen/page-split", "/api/threads/export", "/api/documents/export"];
+// Long-running or heavy endpoints get a much lower allowance. Starting a job (any write) counts
+// against it; so does a GET that builds a file (exports and backups). Plain status polling
+// (the progress bars) only counts toward the general allowance.
+const HEAVY_PREFIXES = ["/api/backup", "/api/embeddings", "/api/ocr/status", "/api/page-split", "/api/threads/export", "/api/documents/export"];
+const HEAVY_GET_PREFIXES = ["/api/backup", "/api/threads/export", "/api/documents/export"];
 
 const GENERAL_PER_MINUTE = 900;
 const WRITES_PER_MINUTE = 240;
@@ -70,7 +73,8 @@ export async function middleware(request: NextRequest) {
     const writes = hit(`write:${visitor}`, WRITES_PER_MINUTE, 60);
     if (!writes.allowed) return tooManyRequests(writes.retryAfterSeconds, wantsHtml);
   }
-  if (HEAVY_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+  const heavyPrefixes = SAFE_METHODS.has(request.method) ? HEAVY_GET_PREFIXES : HEAVY_PREFIXES;
+  if (heavyPrefixes.some((prefix) => pathname.startsWith(prefix))) {
     const heavy = hit(`heavy:${visitor}`, HEAVY_PER_MINUTE, 60);
     if (!heavy.allowed) return tooManyRequests(heavy.retryAfterSeconds, wantsHtml);
   }

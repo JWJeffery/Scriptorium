@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readStoredPdfFile } from "../../../../../lib/server-storage";
-import { getJob } from "../../../../../lib/page-split-jobs";
+import { readStoredPdfFile } from "../../../../lib/server-storage";
+import { getJob } from "../../../../lib/page-split-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

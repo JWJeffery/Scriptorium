@@ -467,7 +467,7 @@ function CslSourceEditorSection({ currentRef }: { currentRef: CurrentDocumentRef
     setLoading(true);
     setStatus("Loading saved source metadata...");
     try {
-      const response = await fetch(`/api/milestone-seven/citation-exchange?sourceId=${encodeURIComponent(cleanSourceId)}&format=csl-json`);
+      const response = await fetch(`/api/interchange/citation-exchange?sourceId=${encodeURIComponent(cleanSourceId)}&format=csl-json`);
       const body = (await response.json()) as { cslJson?: unknown; error?: string };
       if (!response.ok || !body.cslJson) {
         setStatus(body.error ?? "Saved source metadata could not be loaded.");
@@ -502,7 +502,7 @@ function CslSourceEditorSection({ currentRef }: { currentRef: CurrentDocumentRef
     setBusy(true);
     setStatus("Saving expanded source record...");
     try {
-      const response = await fetch("/api/milestone-fourteen/csl-source-editor", {
+      const response = await fetch("/api/citations/csl-source-editor", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(form)
@@ -645,7 +645,7 @@ function CitationRegenerationSection({ currentRef }: { currentRef: CurrentDocume
     }
     setStatus("Checking citation staleness...");
     try {
-      const response = await fetch(`/api/milestone-fourteen/citation-regenerate?documentId=${encodeURIComponent(documentId.trim())}`);
+      const response = await fetch(`/api/citations/regenerate?documentId=${encodeURIComponent(documentId.trim())}`);
       const body = (await response.json()) as { count?: number; staleCount?: number; results?: RegenerationResult[]; error?: string };
       if (!response.ok) {
         setStatus(body.error ?? "Lookup failed.");
@@ -662,7 +662,7 @@ function CitationRegenerationSection({ currentRef }: { currentRef: CurrentDocume
   async function regenerate(citationId: string, force: boolean) {
     setBusyId(citationId);
     try {
-      const response = await fetch("/api/milestone-fourteen/citation-regenerate", {
+      const response = await fetch("/api/citations/regenerate", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ citationId, force })
@@ -752,7 +752,7 @@ function CorpusExportSection() {
     setBusy(true);
     setStatus("Building export...");
     try {
-      const response = await fetch("/api/milestone-fifteen/corpus-export");
+      const response = await fetch("/api/export/corpus");
       if (!response.ok) {
         setStatus("Export failed.");
         return;
@@ -902,7 +902,7 @@ function OcrStatusSection({
     setStatus("Checking for scanned pages...");
     try {
       const query = documentId.trim() ? `?documentId=${encodeURIComponent(documentId.trim())}` : "";
-      const response = await fetch(`/api/milestone-sixteen/ocr-status${query}`);
+      const response = await fetch(`/api/ocr/status${query}`);
       const body = (await response.json()) as { count?: number; likelyScannedCount?: number; results?: OcrResult[]; error?: string };
       if (!response.ok) {
         setStatus(body.error ?? "Lookup failed.");
@@ -941,7 +941,7 @@ function OcrStatusSection({
     rateAnchorRef.current = null;
     setEtaText(null);
     try {
-      const response = await fetch("/api/milestone-sixteen/ocr-status", {
+      const response = await fetch("/api/ocr/status", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ versionId })
@@ -969,7 +969,7 @@ function OcrStatusSection({
     const MAX_ATTEMPTS = 195; // ~13 minutes at 4s apart - a little past the server's 12-minute bound, so the client doesn't give up first
     try {
       const query = documentId.trim() ? `?documentId=${encodeURIComponent(documentId.trim())}` : "";
-      const response = await fetch(`/api/milestone-sixteen/ocr-status${query}`);
+      const response = await fetch(`/api/ocr/status${query}`);
       const body = (await response.json()) as { results?: OcrResult[] };
       const match = body.results?.find((result) => result.versionId === versionId);
       setResults(body.results ?? []);
@@ -1091,7 +1091,7 @@ function OcrStatusSection({
                   <>
                     <a
                       className="primaryButton"
-                      href={`/api/milestone-sixteen/searchable-pdf?versionId=${encodeURIComponent(result.versionId)}`}
+                      href={`/api/ocr/searchable-pdf?versionId=${encodeURIComponent(result.versionId)}`}
                       download
                     >
                       Download searchable PDF
@@ -1195,7 +1195,7 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
     setStatus("Checking for PDFs...");
     try {
       const query = documentId.trim() ? `?documentId=${encodeURIComponent(documentId.trim())}` : "";
-      const response = await fetch(`/api/milestone-seventeen/page-split${query}`);
+      const response = await fetch(`/api/page-split${query}`);
       const body = (await response.json()) as { count?: number; results?: PageSplitResult[]; error?: string };
       if (!response.ok) {
         setStatus(body.error ?? "Lookup failed.");
@@ -1228,7 +1228,7 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
     setEtaText(null);
     setImportedTitle(null);
     try {
-      const response = await fetch("/api/milestone-seventeen/page-split", {
+      const response = await fetch("/api/page-split", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ versionId })
@@ -1251,7 +1251,7 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
     const MAX_ATTEMPTS = 195; // ~13 minutes at 4s apart, same bound OCR uses for the same reason
     try {
       const query = documentId.trim() ? `?documentId=${encodeURIComponent(documentId.trim())}` : "";
-      const response = await fetch(`/api/milestone-seventeen/page-split${query}`);
+      const response = await fetch(`/api/page-split${query}`);
       const body = (await response.json()) as { results?: PageSplitResult[] };
       const match = body.results?.find((result) => result.versionId === versionId);
       setResults(body.results ?? []);
@@ -1303,7 +1303,7 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
     setImportedTitle(null);
     try {
       const title = `${result.documentTitle} (split)`;
-      const importResponse = await fetch("/api/milestone-seventeen/page-split/import", {
+      const importResponse = await fetch("/api/page-split/import", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ versionId: result.versionId, title })
@@ -1454,7 +1454,7 @@ function PageSplitSection({ currentRef }: { currentRef: CurrentDocumentRef }) {
                 {result.splitReady ? (
                   <a
                     className="secondaryButton"
-                    href={`/api/milestone-seventeen/page-split/download?versionId=${encodeURIComponent(result.versionId)}`}
+                    href={`/api/page-split/download?versionId=${encodeURIComponent(result.versionId)}`}
                     download
                   >
                     Download split PDF

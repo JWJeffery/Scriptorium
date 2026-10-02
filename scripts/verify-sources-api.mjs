@@ -13,9 +13,9 @@ const form = new FormData();
 form.set("file", new File([await textPdf([["Sources page"]])], "sources.pdf", { type: "application/pdf" }));
 form.set("title", "Sources fixture");
 form.set("author", "Ann Lee and Bob Ray");
-const uploaded = await (await fetch(`${baseUrl}/api/milestone-one/files`, { method: "POST", body: form })).json();
+const uploaded = await (await fetch(`${baseUrl}/api/core/files`, { method: "POST", body: form })).json();
 const sourceId = uploaded.source.id;
-const stored = (await (await fetch(`${baseUrl}/api/milestone-one/workspace?documentId=${uploaded.document.id}`)).json()).document.sources[0];
+const stored = (await (await fetch(`${baseUrl}/api/core/workspace?documentId=${uploaded.document.id}`)).json()).document.sources[0];
 assert.deepEqual(stored.cslJson.author, [{ family: "Lee", given: "Ann" }, { family: "Ray", given: "Bob" }], "typed authors are saved as structured names");
 
 assert.equal((await call("/api/sources/lookup", { query: "" })).status, 400);
@@ -41,8 +41,8 @@ assert.deepEqual(cite.body.missing, []);
 
 // Saving the basic details form keeps richer fields that were set elsewhere.
 await call("/api/sources/apply", { sourceId, csl: { ...imported.body.entries[0], edition: "2", "container-title": "A Series" } }, "PUT");
-await call("/api/milestone-six/sources", { sourceId, title: "The Integrity of Anglicanism", author: "Stephen W. Sykes", place: "", publisher: "A.R. Mowbray", year: "1978" }, "PATCH");
-const after = (await (await fetch(`${baseUrl}/api/milestone-one/workspace?documentId=${uploaded.document.id}`)).json()).document.sources[0].cslJson;
+await call("/api/sources", { sourceId, title: "The Integrity of Anglicanism", author: "Stephen W. Sykes", place: "", publisher: "A.R. Mowbray", year: "1978" }, "PATCH");
+const after = (await (await fetch(`${baseUrl}/api/core/workspace?documentId=${uploaded.document.id}`)).json()).document.sources[0].cslJson;
 assert.equal(after.edition, "2", "editing basic details does not erase the edition");
 assert.equal(after["container-title"], "A Series");
 

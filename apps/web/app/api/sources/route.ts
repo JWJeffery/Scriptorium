@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
-import { prisma } from "../../../../lib/prisma";
-import { parseAuthors } from "../../../../lib/author-names";
+import { prisma } from "../../../lib/prisma";
+import { parseAuthors } from "../../../lib/author-names";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

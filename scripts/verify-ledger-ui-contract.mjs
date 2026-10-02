@@ -7,8 +7,8 @@ const [page, workspace, reader, tools, styles, pageSplitRoute, pageSplitImport] 
   readFile(new URL("../apps/web/components/PdfAnchoredPageReader.tsx", import.meta.url), "utf8"),
   readFile(new URL("../apps/web/components/ScholarlyToolsPanel.tsx", import.meta.url), "utf8"),
   readFile(new URL("../apps/web/app/styles.css", import.meta.url), "utf8"),
-  readFile(new URL("../apps/web/app/api/milestone-seventeen/page-split/route.ts", import.meta.url), "utf8"),
-  readFile(new URL("../apps/web/app/api/milestone-seventeen/page-split/import/route.ts", import.meta.url), "utf8")
+  readFile(new URL("../apps/web/app/api/page-split/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../apps/web/app/api/page-split/import/route.ts", import.meta.url), "utf8")
 ]);
 
 assert.match(page, /return <ScriptoriumMilestoneOnePersisted\s*\/>/,

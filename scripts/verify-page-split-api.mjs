@@ -43,11 +43,11 @@ const sourceBytes = await syntheticSpreadPdf();
 const sourceForm = new FormData();
 sourceForm.set("file", new File([sourceBytes], "ci-two-page-spread.pdf", { type: "application/pdf" }));
 sourceForm.set("title", "CI two-page spread");
-const uploaded = await json(await fetch(`${baseUrl}/api/milestone-one/files`, { method: "POST", body: sourceForm }));
+const uploaded = await json(await fetch(`${baseUrl}/api/core/files`, { method: "POST", body: sourceForm }));
 assert.ok(uploaded.document?.id && uploaded.version?.id && uploaded.source?.id && uploaded.pageMap?.id);
 
 const started = await json(
-  await fetch(`${baseUrl}/api/milestone-seventeen/page-split`, {
+  await fetch(`${baseUrl}/api/page-split`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ versionId: uploaded.version.id })
@@ -58,7 +58,7 @@ assert.equal(started.splitStarted, true);
 let splitResult;
 for (let attempt = 0; attempt < 120; attempt += 1) {
   const status = await json(
-    await fetch(`${baseUrl}/api/milestone-seventeen/page-split?documentId=${encodeURIComponent(uploaded.document.id)}`)
+    await fetch(`${baseUrl}/api/page-split?documentId=${encodeURIComponent(uploaded.document.id)}`)
   );
   splitResult = status.results?.find((result) => result.versionId === uploaded.version.id);
   if (splitResult?.splitReady || splitResult?.splitFailed) break;
@@ -72,7 +72,7 @@ assert.deepEqual(splitResult.splitSummary.splitOriginalPageNumbers, [1]);
 assert.equal(splitResult.splitSummary.newPageCount, 2);
 
 const download = await fetch(
-  `${baseUrl}/api/milestone-seventeen/page-split/download?versionId=${encodeURIComponent(uploaded.version.id)}`
+  `${baseUrl}/api/page-split/download?versionId=${encodeURIComponent(uploaded.version.id)}`
 );
 assert.equal(download.status, 200);
 assert.match(download.headers.get("content-type") ?? "", /^application\/pdf/);
@@ -81,7 +81,7 @@ const splitPdf = await PDFDocument.load(splitBytes);
 assert.equal(splitPdf.getPageCount(), 2, "download must contain two physical PDF pages");
 
 const imported = await json(
-  await fetch(`${baseUrl}/api/milestone-seventeen/page-split/import`, {
+  await fetch(`${baseUrl}/api/page-split/import`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ versionId: uploaded.version.id, title: "CI two-page spread (split)" })
@@ -90,14 +90,14 @@ const imported = await json(
 assert.notEqual(imported.document.id, uploaded.document.id, "import must create a new document and preserve the original");
 
 const reopened = await json(
-  await fetch(`${baseUrl}/api/milestone-one/workspace?documentId=${encodeURIComponent(imported.document.id)}`)
+  await fetch(`${baseUrl}/api/core/workspace?documentId=${encodeURIComponent(imported.document.id)}`)
 );
 assert.equal(reopened.document.id, imported.document.id);
 assert.equal(reopened.document.versions[0].id, imported.version.id);
 assert.ok(reopened.document.versions[0].snapshotKey, "new document must retain its server PDF snapshot");
 
 // The saved-document list shows what is on the server, so a document can be reopened.
-const library = await json(await fetch(`${baseUrl}/api/milestone-one/library`));
+const library = await json(await fetch(`${baseUrl}/api/core/library`));
 const listed = library.documents.find((entry) => entry.documentId === uploaded.document.id);
 assert.ok(listed, "an uploaded document appears in the saved-document list");
 assert.equal(listed.versionId, uploaded.version.id);
@@ -107,7 +107,7 @@ assert.ok(listed.size > 0 && !listed.fileMissing, "the stored file is found");
 
 // Saved annotations can be edited and deleted (note + colour only).
 const createdAnnotation = await json(
-  await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+  await fetch(`${baseUrl}/api/core/annotations`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -126,7 +126,7 @@ const createdAnnotation = await json(
 );
 const annotationId = createdAnnotation.annotation.id;
 const patched = await json(
-  await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+  await fetch(`${baseUrl}/api/core/annotations`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ annotationId, note: "second note", colorKey: "green" })
@@ -135,15 +135,15 @@ const patched = await json(
 assert.equal(patched.annotation.note, "second note");
 assert.equal(patched.annotation.colorKey, "green");
 assert.equal(patched.annotation.selectedText, "Edit me", "the highlighted passage must not change");
-const badColor = await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+const badColor = await fetch(`${baseUrl}/api/core/annotations`, {
   method: "PATCH",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ annotationId, colorKey: "not-a-colour" })
 });
 assert.equal(badColor.status, 400);
-const removed = await fetch(`${baseUrl}/api/milestone-one/annotations?annotationId=${encodeURIComponent(annotationId)}`, { method: "DELETE" });
+const removed = await fetch(`${baseUrl}/api/core/annotations?annotationId=${encodeURIComponent(annotationId)}`, { method: "DELETE" });
 assert.equal(removed.status, 200);
-const removedAgain = await fetch(`${baseUrl}/api/milestone-one/annotations?annotationId=${encodeURIComponent(annotationId)}`, { method: "DELETE" });
+const removedAgain = await fetch(`${baseUrl}/api/core/annotations?annotationId=${encodeURIComponent(annotationId)}`, { method: "DELETE" });
 assert.equal(removedAgain.status, 404, "deleting twice reports not found");
 
 console.log("Page-split API smoke test passed (upload, background split, status, PDF download, new-document import, reopen, saved-document list, and annotation edit/delete). ");

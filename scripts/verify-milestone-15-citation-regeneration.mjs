@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { formatCitation } from "../apps/web/lib/citation-styles.ts";
 
-// --- staleness rule, mirrored from app/api/milestone-fourteen/citation-regenerate/route.ts ---
+// --- staleness rule, mirrored from app/api/citations/regenerate/route.ts ---
 function isStale(citation, source) {
   return citation.sourceSnapshotUpdatedAt.getTime() < source.updatedAt.getTime();
 }
@@ -33,7 +33,7 @@ assert.ok(regenerated.includes("John Climacus"));
 assert.ok(regenerated.includes("112"));
 
 // --- route contract: history preserved, chain walked to tip, force required for non-stale ---
-const route = await readFile("apps/web/app/api/milestone-fourteen/citation-regenerate/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/citations/regenerate/route.ts", "utf8");
 
 for (const term of [
   "latestInChain",

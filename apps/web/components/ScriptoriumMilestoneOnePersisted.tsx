@@ -61,7 +61,7 @@ const DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordproce
 function localId(prefix: string) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
 function bookPage(pageMap: PageMap) { return String(pageMap.baseBookPage + pageMap.currentPdfPageIndex - pageMap.basePdfPageIndex); }
 function bytes(size: number) { return size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`; }
-function serverPdfUrl(document: StoredDocument) { return document.server?.storageKey ? `/api/milestone-one/files/${document.server.documentId}` : null; }
+function serverPdfUrl(document: StoredDocument) { return document.server?.storageKey ? `/api/core/files/${document.server.documentId}` : null; }
 function isPdf(document: StoredDocument | null) { return document?.kind === "PDF"; }
 function isText(document: StoredDocument | null): document is StoredDocument & { kind: "TXT" | "MARKDOWN" | "DOCX" } { return document?.kind === "TXT" || document?.kind === "MARKDOWN" || document?.kind === "DOCX"; }
 function isTextAnchor(anchor: SelectionAnchor | undefined): anchor is TextSelectionAnchor { return typeof anchor === "object" && anchor !== null && "startOffset" in anchor && "lineStart" in anchor; }
@@ -180,7 +180,7 @@ function recordsFromWorkspace(body: WorkspaceBody, documentId: string, fallbackP
 // What the database holds for one book, or null if it cannot be reached.
 async function fetchServerRecords(documentId: string, fallbackPage: number) {
   try {
-    const response = await fetch(`/api/milestone-one/workspace?documentId=${encodeURIComponent(documentId)}`);
+    const response = await fetch(`/api/core/workspace?documentId=${encodeURIComponent(documentId)}`);
     if (!response.ok) return null;
     const body = await response.json() as WorkspaceBody;
     return { records: recordsFromWorkspace(body, documentId, fallbackPage), versionIds: new Set(body.document.versions.map((version) => version.id)) };
@@ -250,7 +250,7 @@ async function getPdf(documentId: string) {
 }
 
 async function persistDocument(document: StoredDocument, locator: string) {
-  const response = await fetch("/api/milestone-one/documents", {
+  const response = await fetch("/api/core/documents", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ title: document.title, filename: document.filename, mediaType: document.mediaType, size: document.size, source: document.source, pageMap: { ...document.pageMap, bookPageLabel: locator } })
@@ -272,7 +272,7 @@ async function persistPdfFile(file: File, document: StoredDocument, locator: str
   formData.set("baseBookPage", String(document.pageMap.baseBookPage));
   formData.set("currentPdfPageIndex", String(document.pageMap.currentPdfPageIndex));
   formData.set("bookPageLabel", locator);
-  const response = await fetch("/api/milestone-one/files", { method: "POST", body: formData });
+  const response = await fetch("/api/core/files", { method: "POST", body: formData });
   if (!response.ok) throw new Error("PDF upload persistence failed.");
   const body = await response.json() as { document: { id: string; storageKey?: string | null }; version: { id: string }; source: { id: string }; pageMap: { id: string }; storedFile?: { storageKey: string } };
   return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id, storageKey: body.storedFile?.storageKey ?? body.document.storageKey ?? undefined } satisfies ServerIds;
@@ -288,7 +288,7 @@ async function persistTextLikeFile(file: File, document: StoredDocument, locator
   formData.set("year", document.source.year);
   formData.set("bookPageLabel", locator);
   if (existingServerDocumentId) formData.set("documentId", existingServerDocumentId);
-  const endpoint = document.kind === "DOCX" ? "/api/milestone-five/docx" : "/api/milestone-three/texts";
+  const endpoint = document.kind === "DOCX" ? "/api/export/docx" : "/api/core/texts";
   const response = await fetch(endpoint, { method: "POST", body: formData });
   if (!response.ok) throw new Error("Text-like upload persistence failed.");
   const body = await response.json() as TextPersistResponse;
@@ -308,7 +308,7 @@ async function persistTextLikeFile(file: File, document: StoredDocument, locator
 
 async function persistSourceMetadata(document: StoredDocument) {
   if (!document.server?.sourceId) throw new Error("Document has no persisted source id.");
-  const response = await fetch("/api/milestone-six/sources", {
+  const response = await fetch("/api/sources", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ sourceId: document.server.sourceId, ...document.source })
@@ -319,7 +319,7 @@ async function persistSourceMetadata(document: StoredDocument) {
 
 async function persistAnnotation(document: StoredDocument, record: SavedAnnotation) {
   if (!document.server) throw new Error("Document has no server ids.");
-  const response = await fetch("/api/milestone-one/annotations", {
+  const response = await fetch("/api/core/annotations", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ documentId: document.server.documentId, versionId: document.server.versionId, sourceId: document.server.sourceId, pageMapId: document.server.pageMapId, colorKey: record.colorKey, selectedText: record.selectedText, note: record.note, tags: record.tags ?? [], anchor: record.anchor, citationStyle: record.citationStyle, citationText: record.citationText, locatorType: locatorTypeFor(document, record.anchor), locatorValue: record.bookPageLabel })
@@ -622,7 +622,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     }
 
     if (storedDocument.server) {
-      fetch(`/api/milestone-one/workspace?documentId=${storedDocument.server.documentId}`)
+      fetch(`/api/core/workspace?documentId=${storedDocument.server.documentId}`)
         .then((response) => response.ok ? response.json() : null)
         .then((body: { document?: { versions?: Array<{ id: string; textSpans?: Array<{ text: string }> }> } } | null) => {
           const currentVersion = body?.document?.versions?.find((version) => version.id === storedDocument.server?.versionId) ?? body?.document?.versions?.[0];
@@ -963,7 +963,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     let message = "Updated the record locally and in the database.";
     if (editingRecord.serverAnnotationId) {
       try {
-        const response = await fetch("/api/milestone-one/annotations", {
+        const response = await fetch("/api/core/annotations", {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ annotationId: editingRecord.serverAnnotationId, note: nextNote, colorKey: selectedColor, tags: nextTags })
@@ -993,7 +993,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     const message = "Deleted the record and its citation.";
     if (editingRecord.serverAnnotationId) {
       try {
-        const response = await fetch(`/api/milestone-one/annotations?annotationId=${encodeURIComponent(editingRecord.serverAnnotationId)}`, { method: "DELETE" });
+        const response = await fetch(`/api/core/annotations?annotationId=${encodeURIComponent(editingRecord.serverAnnotationId)}`, { method: "DELETE" });
         // 404 means the database no longer has it, which is what we wanted.
         if (!response.ok && response.status !== 404) throw new Error("delete failed");
       } catch {
@@ -1082,7 +1082,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       return;
     }
     try {
-      const response = await fetch(`/api/milestone-one/library?documentId=${encodeURIComponent(target.documentId)}`);
+      const response = await fetch(`/api/core/library?documentId=${encodeURIComponent(target.documentId)}`);
       const body = await response.json() as { documents?: SavedDocumentEntry[] };
       const entry = body.documents?.[0];
       if (!response.ok || !entry) throw new Error("That document could not be found on the server.");
@@ -1177,7 +1177,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       return;
     }
     let cancelled = false;
-    fetch(`/api/milestone-sixteen/page-text?versionId=${encodeURIComponent(versionId)}&pdfPageIndex=${currentPage}`)
+    fetch(`/api/ocr/page-text?versionId=${encodeURIComponent(versionId)}&pdfPageIndex=${currentPage}`)
       .then((response) => (response.ok ? response.json() : { text: null, words: null }))
       .then((body: { text?: string | null; words?: PdfAuthoritativeWord[] | null }) => {
         if (cancelled) return;
@@ -1242,7 +1242,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     for (const update of updates) {
       if (!update.record.serverAnnotationId) continue;
       try {
-        const response = await fetch("/api/milestone-one/annotations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ annotationId: update.record.serverAnnotationId, locatorValue: update.label, citationText: update.citationText }) });
+        const response = await fetch("/api/core/annotations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ annotationId: update.record.serverAnnotationId, locatorValue: update.label, citationText: update.citationText }) });
         if (!response.ok) failed += 1;
       } catch { failed += 1; }
     }

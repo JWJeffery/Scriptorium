@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { POST as uploadPdf } from "../../../milestone-one/files/route";
-import { prisma } from "../../../../../lib/prisma";
-import { getJob } from "../../../../../lib/page-split-jobs";
-import { readStoredPdfFile } from "../../../../../lib/server-storage";
+import { POST as uploadPdf } from "../../core/files/route";
+import { prisma } from "../../../../lib/prisma";
+import { getJob } from "../../../../lib/page-split-jobs";
+import { readStoredPdfFile } from "../../../../lib/server-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     formData.set("file", new File([bytes as BlobPart], "split-two-page-spreads.pdf", { type: "application/pdf" }));
     formData.set("title", title);
 
-    const internalRequest = new NextRequest(new URL("/api/milestone-one/files", request.url), {
+    const internalRequest = new NextRequest(new URL("/api/core/files", request.url), {
       method: "POST",
       body: formData
     });

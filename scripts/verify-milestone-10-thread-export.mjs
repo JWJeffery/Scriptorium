@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const formatter = await readFile("apps/web/lib/thread-export.ts", "utf8");
-const route = await readFile("apps/web/app/api/milestone-ten/thread-render/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/research/thread-render/route.ts", "utf8");
 
 for (const term of [
   "exportThreadMarkdown",

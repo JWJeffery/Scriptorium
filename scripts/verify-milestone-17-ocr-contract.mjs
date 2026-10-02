@@ -25,7 +25,7 @@ await assert.rejects(
   OcrNotConfiguredError
 );
 
-const route = await readFile("apps/web/app/api/milestone-sixteen/ocr-status/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/ocr/status/route.ts", "utf8");
 for (const term of ["detectLikelyScanned", "tesseractOcrProvider", "RUNNING_STATE", "TIMEOUT_STATE", "202"]) {
   assert.ok(route.includes(term), `ocr-status route missing contract term: ${term}`);
 }

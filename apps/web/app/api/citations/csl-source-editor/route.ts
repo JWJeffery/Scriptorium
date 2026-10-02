@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Expanded CSL source editor (Milestone 14). The original Milestone 6 route
-// at /api/milestone-six/sources is intentionally left untouched — it's
+// at /api/sources is intentionally left untouched — it's
 // already audited/closed and scoped to plain books. This route is additive:
 // same underlying Source table, but accepts the fuller CSL item shape
 // (chapter/article-journal/manuscript, editor, translator, container-title,

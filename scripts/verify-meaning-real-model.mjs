@@ -18,7 +18,7 @@ form.set("file", new File([await textPdf([
   ["The bishops gathered to define the creed at the council.", "Doctrine was settled by common agreement of the assembly."]
 ])], "real.pdf", { type: "application/pdf" }));
 form.set("title", `Real model fixture ${Date.now()}`);
-const uploaded = (await call("/api/milestone-one/files", { method: "POST", body: form })).body;
+const uploaded = (await call("/api/core/files", { method: "POST", body: form })).body;
 const documentId = uploaded.document.id;
 
 const t0 = Date.now();

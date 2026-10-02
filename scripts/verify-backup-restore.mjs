@@ -37,8 +37,8 @@ const post = (path, body) => fetch(`${baseUrl}${path}`, { method: "POST", header
 const form = new FormData();
 form.set("file", new File([await textPdf([["Backup page one", "Grace and truth."], ["Backup page two"]])], "backup.pdf", { type: "application/pdf" }));
 form.set("title", "Backup fixture");
-const uploaded = await json(await fetch(`${baseUrl}/api/milestone-one/files`, { method: "POST", body: form }));
-const annotation = (await json(await post("/api/milestone-one/annotations", {
+const uploaded = await json(await fetch(`${baseUrl}/api/core/files`, { method: "POST", body: form }));
+const annotation = (await json(await post("/api/core/annotations", {
   documentId: uploaded.document.id, versionId: uploaded.version.id, sourceId: uploaded.source.id, pageMapId: uploaded.pageMap.id,
   colorKey: "teal", selectedText: "Grace and truth.", note: "keep", tags: ["alpha", "beta"], anchor: { selectedText: "Grace and truth.", pageNumber: 1, rects: [{ left: 1, top: 2, width: 3, height: 4 }] },
   citationStyle: "sbl-note", citationText: "Cite.", locatorValue: "1"
@@ -47,7 +47,7 @@ const thread = (await json(await post("/api/threads", { title: "Backup thread", 
 await json(await post("/api/threads/items", { threadId: thread.id, itemType: "ANNOTATION", itemId: annotation.id }));
 await json(await fetch(`${baseUrl}/api/page-ranges`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ versionId: uploaded.version.id, ranges: [{ startPdfPage: 1, endPdfPage: 1, system: "roman-lower", startValue: 3, prefix: "" }, { startPdfPage: 2, endPdfPage: null, system: "arabic", startValue: 1, prefix: "" }] }) }));
 await json(await post("/api/bookmarks", { documentId: uploaded.document.id, pdfPage: 2, label: "Keep this place" }));
-const pdfOnDisk = await (await fetch(`${baseUrl}/api/milestone-one/files/${uploaded.document.id}`)).arrayBuffer();
+const pdfOnDisk = await (await fetch(`${baseUrl}/api/core/files/${uploaded.document.id}`)).arrayBuffer();
 
 // Back up on the server, then download it.
 const created = await post("/api/backup", {});

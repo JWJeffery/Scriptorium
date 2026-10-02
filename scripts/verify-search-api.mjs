@@ -17,7 +17,7 @@ const bytes = await textPdf([
 const form = new FormData();
 form.set("file", new File([bytes], "search-fixture.pdf", { type: "application/pdf" }));
 form.set("title", `Search fixture ${unique}`);
-const uploaded = await json(await fetch(`${baseUrl}/api/milestone-one/files`, { method: "POST", body: form }));
+const uploaded = await json(await fetch(`${baseUrl}/api/core/files`, { method: "POST", body: form }));
 const documentId = uploaded.document.id;
 
 const exact = await json(await fetch(`${baseUrl}/api/search?q=${encodeURIComponent("integrity church")}&documentId=${documentId}`));
@@ -44,7 +44,7 @@ const related = await json(await fetch(`${baseUrl}/api/search?mode=related&q=${e
 assert.ok(related.counts.pages >= 1 && related.pages[0].pdfPageIndex === 2, "related search ranks the closest page first");
 
 // Notes and highlights are searchable, including tags.
-const ann = await json(await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+const ann = await json(await fetch(`${baseUrl}/api/core/annotations`, {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
@@ -61,7 +61,7 @@ assert.deepEqual(notes.annotations[0].tags, ["ecclesiology"]);
 const byTag = await json(await fetch(`${baseUrl}/api/search?q=ecclesiology&documentId=${documentId}`));
 assert.equal(byTag.counts.annotations, 1, "tags are searched");
 // Tags can be replaced after saving, and the old ones stop matching.
-const retag = await json(await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+const retag = await json(await fetch(`${baseUrl}/api/core/annotations`, {
   method: "PATCH",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ annotationId: ann.annotation.id, tags: ["Soteriology", "soteriology", " #grace "] })
@@ -69,6 +69,6 @@ const retag = await json(await fetch(`${baseUrl}/api/milestone-one/annotations`,
 assert.deepEqual(retag.tags, ["Soteriology", "grace"], "tags are trimmed, de-hashed and de-duplicated ignoring case");
 assert.equal((await json(await fetch(`${baseUrl}/api/search?q=ecclesiology&documentId=${documentId}`))).counts.annotations, 0, "replaced tags no longer match");
 assert.equal((await json(await fetch(`${baseUrl}/api/search?q=soteriology&documentId=${documentId}`))).counts.annotations, 1);
-await fetch(`${baseUrl}/api/milestone-one/annotations?annotationId=${ann.annotation.id}`, { method: "DELETE" });
+await fetch(`${baseUrl}/api/core/annotations?annotationId=${ann.annotation.id}`, { method: "DELETE" });
 
 console.log("Search API verified: exact, phrase, cross-document, related ranking, notes, and tags.");

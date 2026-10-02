@@ -78,7 +78,7 @@ Gates 14–18 added this session, addressing gaps found during a full code-level
 
 | Gate | What | Status |
 |---|---|---|
-| 14 | Turabian/APA/MLA/Harvard citation styles; CSL records now model chapters/articles/manuscripts, not just books; RIS export/import added. New additive route `api/milestone-fourteen/csl-source-editor` — original Milestone 6 route deliberately left untouched. | green |
+| 14 | Turabian/APA/MLA/Harvard citation styles; CSL records now model chapters/articles/manuscripts, not just books; RIS export/import added. New additive route `api/citations/csl-source-editor` — original Milestone 6 route deliberately left untouched. | green |
 | 15 | Citation regeneration — staleness tracking + supersession lineage, never mutates history. New Prisma columns + migration. | green |
 | 16 | Corpus backup/export — full DB export + on-disk file manifest. | green |
 | 17 | OCR pipeline contract — scan detection heuristic + pluggable provider interface. Explicitly no real OCR engine bundled. | green |
@@ -128,7 +128,7 @@ issue-per-gate pattern gates 1–13 used — see "Outstanding work" below).
   TXT/MD/DOCX. That meant scan detection's `extractedTextLength` was always 0 and its
   `pageCount` was always 1 (it was counting `PageMap` rows, not real PDF pages) for every
   PDF ever registered, so it was flagging 100% of PDFs as "likely scanned" regardless of
-  whether they had a real text layer. Fixed in `api/milestone-one/files/route.ts`: ingestion
+  whether they had a real text layer. Fixed in `api/core/files/route.ts`: ingestion
   now calls `extractPdfText` and persists one `TextSpan` per page; `extractionState` is now
   `server-pdfjs-text-layer` / `server-pdfjs-no-text-layer` / `server-pdfjs-extraction-failed`
   instead of the uninformative `browser-local-pdfjs`. `ocr-status/route.ts` GET now derives
@@ -321,7 +321,7 @@ it (2 vowels in 5 letters reads as plausible), while false-flagging real English
 "strengths" (low vowel ratio is common and unremarkable in real text). Shipping an
 unreliable heuristic would have been worse than nothing.
 
-Real fix: added `api/milestone-sixteen/page-text` (`GET ?versionId=&pdfPageIndex=`), which
+Real fix: added `api/ocr/page-text` (`GET ?versionId=&pdfPageIndex=`), which
 returns the independently-derived text for that page - server extraction on ingest, or a
 real OCR pass, whichever exists - by matching `TextSpan.anchor.pdfPageIndex`.
 `ScriptoriumMilestoneOnePersisted.tsx` fetches this whenever the current PDF version or page
@@ -365,7 +365,7 @@ Changes:
   with no further transform needed on the client.
 - `ocr-status/route.ts`: persists `words` inside each `TextSpan.anchor` JSON alongside the
   existing `pdfPageIndex`/`ocr`/`confidence` fields.
-- `api/milestone-sixteen/page-text/route.ts`: now also returns `words` (null when a page's
+- `api/ocr/page-text/route.ts`: now also returns `words` (null when a page's
   TextSpan has none, e.g. plain extraction with no OCR).
 - `PdfAnchoredPageReader.tsx`: new `authoritativeWords` prop. When present and non-empty, it
   *replaces* pdf.js's own `getTextContent()`-derived text layer for building the selectable
@@ -1529,7 +1529,7 @@ multiple chapters, and both index pages found no regressions.
 Josh asked for this to become an actual usable tool in the app, not something run by hand
 from a terminal. Followed the app's own established pattern for exactly this kind of job
 (long-running, real background work, needs progress reporting) rather than inventing a new
-one - the OCR tool (gate 17, milestone-sixteen/ocr-status) already solves the same shape of
+one - the OCR tool (gate 17, ocr/status) already solves the same shape of
 problem: a PDF-processing job that can easily outrun a reverse proxy's request timeout, so it
 runs detached in the background, tracks progress in memory, and the client polls until done.
 
@@ -1537,7 +1537,7 @@ runs detached in the background, tracks progress in memory, and the client polls
 callback, the same signature `tesseractOcrProvider.extractText` already uses - reported
 against pass 1 (one render per page, in its own process) since that's where nearly all the
 wall-clock time goes; pass 2 only ever touches the rare ambiguous page. New API surface at
-`/api/milestone-seventeen/page-split`: GET reports per-PDF-version status and progress, POST
+`/api/page-split`: GET reports per-PDF-version status and progress, POST
 starts a background split job and returns immediately (202), matching the OCR route's
 GET/POST shape field-for-field where the same operations are needed - checked by direct
 side-by-side comparison, not just "seemed similar." A `download` sub-route serves the
@@ -1562,7 +1562,7 @@ new patterns from scratch - same ETA/rate-limiting logic, same polling loop, sam
 bar markup and CSS classes, so it looks and behaves consistently with the tool already next
 to it. Finishing touch beyond a bare download link: a "Create as new document" button that
 fetches the finished split PDF and re-POSTs it to the existing upload endpoint
-(`/api/milestone-one/files`) - exactly what re-uploading the CLI tool's output file by hand
+(`/api/core/files`) - exactly what re-uploading the CLI tool's output file by hand
 was already doing, just without leaving the browser. The original document, its page-map
 settings, and any saved annotations stay completely untouched either way.
 

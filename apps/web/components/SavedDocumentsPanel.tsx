@@ -46,7 +46,7 @@ export function SavedDocumentsPanel({ open, currentDocumentId, onOpenDocument, o
     let cancelled = false;
     setEntries(null);
     setError("");
-    fetch("/api/milestone-one/library")
+    fetch("/api/core/library")
       .then(async (response) => {
         if (!response.ok) throw new Error(`The server answered ${response.status}.`);
         return (await response.json()) as { documents: SavedDocumentEntry[] };

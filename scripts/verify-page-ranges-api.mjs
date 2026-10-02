@@ -15,7 +15,7 @@ const pages = [["Cover"], ["Preface one"], ["Preface two"], ["Body start"], [`Ch
 const form = new FormData();
 form.set("file", new File([await textPdf(pages)], "ranges.pdf", { type: "application/pdf" }));
 form.set("title", `Ranges fixture ${unique}`);
-const uploaded = (await call("/api/milestone-one/files", { method: "POST", body: form })).body;
+const uploaded = (await call("/api/core/files", { method: "POST", body: form })).body;
 const versionId = uploaded.version.id;
 
 const before = await call(`/api/page-ranges?versionId=${versionId}`);
@@ -47,17 +47,17 @@ const still = await call(`/api/page-ranges?versionId=${versionId}`);
 assert.equal(still.body.ranges.length, 3, "a refused save changes nothing");
 
 // Correcting the numbering updates the citation of a saved annotation.
-const ann = (await call("/api/milestone-one/annotations", {
+const ann = (await call("/api/core/annotations", {
   method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify({ documentId: uploaded.document.id, versionId, sourceId: uploaded.source.id, pageMapId: uploaded.pageMap.id, colorKey: "gold", selectedText: "Chapter text", note: "", tags: [], anchor: { selectedText: "Chapter text", pageNumber: 5, rects: [] }, citationStyle: "sbl-note", citationText: "Old, 5.", locatorValue: "5" })
 })).body.annotation;
-const fixed = await call("/api/milestone-one/annotations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ annotationId: ann.id, locatorValue: "2", citationText: "Old, 2." }) });
+const fixed = await call("/api/core/annotations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ annotationId: ann.id, locatorValue: "2", citationText: "Old, 2." }) });
 assert.equal(fixed.status, 200);
-const workspace = (await call(`/api/milestone-one/workspace?documentId=${uploaded.document.id}`)).body;
+const workspace = (await call(`/api/core/workspace?documentId=${uploaded.document.id}`)).body;
 const citation = workspace.document.versions[0].annotations[0].citations[0];
 assert.equal(citation.locatorValue, "2");
 assert.equal(citation.generatedText, "Old, 2.");
-assert.equal((await call("/api/milestone-one/annotations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ annotationId: ann.id, locatorValue: "3" }) })).status, 400, "locator and citation text travel together");
+assert.equal((await call("/api/core/annotations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ annotationId: ann.id, locatorValue: "3" }) })).status, 400, "locator and citation text travel together");
 
 const cleared = await put({ versionId, ranges: [] });
 assert.equal(cleared.body.source, "legacy", "clearing returns to the original single rule");

@@ -18,15 +18,15 @@ const form = new FormData();
 form.set("file", new File([await textPdf([["Chapter one", "On the unity of the church."]])], "thread-fixture.pdf", { type: "application/pdf" }));
 form.set("title", "Thread fixture book");
 form.set("author", "Ada Lovelace");
-const uploaded = (await call("/api/milestone-one/files", { method: "POST", body: form })).body;
-const annotation = (await call("/api/milestone-one/annotations", jsonInit("POST", {
+const uploaded = (await call("/api/core/files", { method: "POST", body: form })).body;
+const annotation = (await call("/api/core/annotations", jsonInit("POST", {
   documentId: uploaded.document.id, versionId: uploaded.version.id, sourceId: uploaded.source.id, pageMapId: uploaded.pageMap.id,
   colorKey: "green", selectedText: "On the unity of the church.", note: "Key claim", tags: [],
   anchor: { selectedText: "On the unity of the church.", pageNumber: 1, rects: [] },
   citationStyle: "sbl-note", citationText: "Ada Lovelace, Thread fixture book, 1.", locatorValue: "1"
 }))).body.annotation;
 
-const second = (await call("/api/milestone-one/annotations", jsonInit("POST", {
+const second = (await call("/api/core/annotations", jsonInit("POST", {
   documentId: uploaded.document.id, versionId: uploaded.version.id, sourceId: uploaded.source.id, pageMapId: uploaded.pageMap.id,
   colorKey: "blue", selectedText: "A second passage.", note: "", tags: [],
   anchor: { selectedText: "A second passage.", pageNumber: 1, rects: [] },
@@ -88,8 +88,8 @@ assert.equal(removed.items.length, 2);
 assert.deepEqual(removed.items.map((item) => item.orderIndex), [0, 1], "order is re-numbered after a removal");
 
 // A deleted annotation leaves a marked gap instead of breaking the thread.
-await call(`/api/milestone-one/annotations?annotationId=${annotation.id}`, { method: "DELETE" });
-await call(`/api/milestone-one/annotations?annotationId=${second.id}`, { method: "DELETE" });
+await call(`/api/core/annotations?annotationId=${annotation.id}`, { method: "DELETE" });
+await call(`/api/core/annotations?annotationId=${second.id}`, { method: "DELETE" });
 const list = (await call("/api/threads")).body.threads;
 assert.ok(list.find((thread) => thread.id === threadId && thread.itemCount === 2));
 

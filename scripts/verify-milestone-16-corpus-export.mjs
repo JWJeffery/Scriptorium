@@ -29,7 +29,7 @@ assert.ok(manifest.every((entry) => !Number.isNaN(Date.parse(entry.modifiedAt)))
 
 await rm(tempRoot, { recursive: true, force: true });
 
-const route = await readFile("apps/web/app/api/milestone-fifteen/corpus-export/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/export/corpus/route.ts", "utf8");
 for (const term of [
   "listStoredFiles",
   "storageManifest",

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const schema = await readFile("prisma/schema.prisma", "utf8");
-const route = await readFile("apps/web/app/api/milestone-nine/research-threads/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/research/threads-legacy/route.ts", "utf8");
 
 for (const term of [
   "model ResearchThread",

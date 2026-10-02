@@ -55,7 +55,7 @@ type Props = {
   onStatusChange: (status: string) => void;
   onMetadataExtracted?: (metadata: PdfEmbeddedMetadata) => void;
   // Independently-derived text for the current page (server extraction on
-  // ingest, or a real OCR pass) - see api/milestone-sixteen/page-text.
+  // ingest, or a real OCR pass) - see api/ocr/page-text.
   // When present, a captured selection that doesn't appear anywhere in it
   // gets flagged as possibly corrupted rather than reported as a normal
   // successful capture. Optional and silently skipped when absent (e.g. no
