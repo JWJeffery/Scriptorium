@@ -112,6 +112,9 @@ jobs:
       - name: Verify source lookup and import
         run: node --experimental-strip-types scripts/verify-source-lookup.mjs
 
+      - name: Verify annotation sync rules
+        run: node --experimental-strip-types scripts/verify-annotation-sync.mjs
+
       - name: Verify Ledger UI contract
         run: node scripts/verify-ledger-ui-contract.mjs
 

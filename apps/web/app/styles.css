@@ -2061,3 +2061,7 @@ a:focus-visible {
 .exportMenu { font-size: 0.82rem; }
 .exportMenu summary { cursor: pointer; color: var(--ledger-terracotta-dark); text-decoration: underline; text-underline-offset: 3px; }
 .exportMenu a { display: block; padding: 0.2rem 0 0.2rem 0.8rem; color: var(--ledger-terracotta-dark); }
+
+/* Database sync */
+.syncNotice { display: grid; gap: 0.2rem; margin: 0.4rem 0; padding: 0.5rem 0.7rem; border-radius: 8px; background: rgb(154 79 28 / 14%); font-size: 0.82rem; }
+.recordUnsaved { color: #8f2d2d; }

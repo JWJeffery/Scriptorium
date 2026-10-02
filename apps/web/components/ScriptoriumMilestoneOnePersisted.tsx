@@ -14,6 +14,7 @@ import { SourceLookupDialog } from "./SourceLookupDialog";
 import { PageNumberingEditor } from "./PageNumberingEditor";
 import { labelForPage, pdfPageForLabel, type PageRangeSpec } from "../lib/page-labels";
 import { authorsToText, parseAuthors } from "../lib/author-names";
+import { mergeServerRecords } from "../lib/annotation-sync";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = CitationStyleId;
@@ -149,6 +150,45 @@ function readAnnotations() { const raw = localStorage.getItem(ANNOTATIONS_KEY); 
 function saveDocument(document: StoredDocument) { localStorage.setItem(DOCUMENT_KEY, JSON.stringify(document)); }
 function saveTextContent(text: string) { localStorage.setItem(TEXT_CONTENT_KEY, text); }
 function readTextContent() { return localStorage.getItem(TEXT_CONTENT_KEY) ?? ""; }
+type WorkspaceBody = { document: { versions: Array<{ id: string; snapshotKey?: string | null; annotations: Array<{ id: string; versionId: string; colorKey: string; selectedText: string; note: string | null; anchor: unknown; createdAt: string; tags?: Array<{ value: string }>; citations: Array<{ id: string; styleId: string; locatorValue: string | null; generatedText: string }> }> }> } };
+
+function recordsFromWorkspace(body: WorkspaceBody, documentId: string, fallbackPage: number): SavedAnnotation[] {
+  return body.document.versions.flatMap((version) => version.annotations.map((item): SavedAnnotation => {
+    const itemCitation = item.citations[0];
+    const itemAnchor = (item.anchor ?? undefined) as SelectionAnchor | undefined;
+    return {
+      id: `server_${item.id}`,
+      documentId,
+      versionId: item.versionId,
+      snapshotKey: version.snapshotKey ?? undefined,
+      colorKey: item.colorKey,
+      selectedText: item.selectedText,
+      note: item.note ?? "",
+      pdfPageIndex: itemAnchor && !isTextAnchor(itemAnchor) ? itemAnchor.pageNumber : fallbackPage,
+      bookPageLabel: itemCitation?.locatorValue ?? "",
+      citationStyle: (itemCitation?.styleId ?? "sbl-note") as CitationStyle,
+      citationText: itemCitation?.generatedText ?? "",
+      anchor: itemAnchor,
+      createdAt: item.createdAt,
+      serverAnnotationId: item.id,
+      serverCitationId: itemCitation?.id,
+      tags: (item.tags ?? []).map((tag) => tag.value)
+    };
+  }));
+}
+
+// What the database holds for one book, or null if it cannot be reached.
+async function fetchServerRecords(documentId: string, fallbackPage: number) {
+  try {
+    const response = await fetch(`/api/milestone-one/workspace?documentId=${encodeURIComponent(documentId)}`);
+    if (!response.ok) return null;
+    const body = await response.json() as WorkspaceBody;
+    return { records: recordsFromWorkspace(body, documentId, fallbackPage), versionIds: new Set(body.document.versions.map((version) => version.id)) };
+  } catch {
+    return null;
+  }
+}
+
 function readLastPages(): Record<string, number> {
   try { return JSON.parse(localStorage.getItem(LAST_PAGES_KEY) ?? "{}") as Record<string, number>; } catch { return {}; }
 }
@@ -814,6 +854,68 @@ export function ScriptoriumMilestoneOnePersisted() {
     setStatus("Editing a saved record. You can change its note and highlight colour, or delete it.");
   }
 
+  // Bring this browser's copy of the open book's annotations in line with the database.
+  const [syncInfo, setSyncInfo] = useState<{ unsaved: number; lastChecked: string | null; unreachable: boolean }>({ unsaved: 0, lastChecked: null, unreachable: false });
+  const lastSyncRef = useRef(0);
+  const annotationsRef = useRef<SavedAnnotation[]>([]);
+  annotationsRef.current = annotations;
+  async function syncFromServer(announce = false) {
+    const serverDocumentId = documentRecord?.server?.documentId;
+    if (!documentRecord || !serverDocumentId) return;
+    lastSyncRef.current = Date.now();
+    const server = await fetchServerRecords(serverDocumentId, documentRecord.pageMap.currentPdfPageIndex);
+    if (!server) {
+      setSyncInfo((current) => ({ ...current, unreachable: true }));
+      if (announce) setStatus("Could not reach the database. Showing the copy saved in this browser.");
+      return;
+    }
+    const scope = { versionIds: server.versionIds, localDocumentIds: new Set([documentRecord.id, serverDocumentId]) };
+    const result = mergeServerRecords(annotationsRef.current, server.records, scope);
+    annotationsRef.current = result.records;
+    saveAnnotations(result.records);
+    setAnnotations(result.records);
+    setSyncInfo({ unsaved: result.unsaved, lastChecked: new Date().toISOString(), unreachable: false });
+    if (announce) setStatus(`Refreshed from the database: ${result.added} new, ${result.updated} checked, ${result.removed} removed${result.unsaved ? `, ${result.unsaved} not yet saved to the database` : ""}.`);
+  }
+
+  // Send records that were saved only in this browser (the database was unreachable at the time).
+  async function saveUnsavedRecords() {
+    if (!documentRecord?.server) return;
+    const pending = annotations.filter((record) => !record.serverAnnotationId && (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id));
+    let saved = 0;
+    const updates = new Map<string, SavedAnnotation>();
+    for (const record of pending) {
+      try {
+        const result = await persistAnnotation(documentRecord, record);
+        updates.set(record.id, { ...record, serverAnnotationId: result.annotation.id, serverCitationId: result.citation.id });
+        saved += 1;
+      } catch { /* try the rest, report below */ }
+    }
+    if (updates.size) {
+      setAnnotations((previous) => {
+        const next = previous.map((record) => updates.get(record.id) ?? record);
+        saveAnnotations(next);
+        return next;
+      });
+    }
+    setSyncInfo((current) => ({ ...current, unsaved: pending.length - saved }));
+    setStatus(saved === pending.length ? `Saved ${saved} record${saved === 1 ? "" : "s"} to the database.` : `Saved ${saved} of ${pending.length}. The database could not be reached for the rest; try again shortly.`);
+  }
+
+  // Sync when a book is opened, and again whenever the tab is brought back into view.
+  const syncDocumentId = documentRecord?.server?.documentId;
+  useEffect(() => {
+    if (!syncDocumentId) return;
+    void syncFromServer();
+    function onVisible() {
+      if (document.visibilityState === "visible" && Date.now() - lastSyncRef.current > 30_000) void syncFromServer();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+    // The sync reads the current document and records; it should run per opened book.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncDocumentId]);
+
   function openHighlight(id: string) {
     const record = annotations.find((item) => item.id === id);
     if (record) startEditing(record);
@@ -895,9 +997,8 @@ export function ScriptoriumMilestoneOnePersisted() {
     if ((selectedText.trim() || note.trim()) && !window.confirm("Opening another document will discard the unsaved selection and note. Continue?")) return;
     setStatus(`Opening "${entry.title}" from the server…`);
     try {
-      const response = await fetch(`/api/milestone-one/workspace?documentId=${encodeURIComponent(entry.documentId)}`);
-      if (!response.ok) throw new Error("The document's records could not be loaded.");
-      const body = await response.json() as { document: { versions: Array<{ id: string; snapshotKey?: string | null; annotations: Array<{ id: string; versionId: string; colorKey: string; selectedText: string; note: string | null; anchor: unknown; createdAt: string; tags?: Array<{ value: string }>; citations: Array<{ id: string; styleId: string; locatorValue: string | null; generatedText: string }> }> }> } };
+      const server = await fetchServerRecords(entry.documentId, entry.pdfPageIndex);
+      if (!server) throw new Error("The document's records could not be loaded.");
 
       const csl = (typeof entry.cslJson === "object" && entry.cslJson !== null ? entry.cslJson : {}) as Record<string, unknown>;
       const firstAuthor = Array.isArray(csl.author) ? csl.author[0] as { literal?: string; given?: string; family?: string } | undefined : undefined;
@@ -923,36 +1024,12 @@ export function ScriptoriumMilestoneOnePersisted() {
         server: { documentId: entry.documentId, versionId: entry.versionId, sourceId: entry.sourceId, pageMapId: entry.pageMapId, storageKey: entry.storageKey ?? undefined, snapshotKey: entry.snapshotKey ?? undefined, sourceChecksum: entry.sourceChecksum ?? undefined }
       };
 
-      // Bring this document's saved annotations back into the Ledger, skipping
-      // any the browser already has.
-      const known = new Set(annotations.map((record) => record.serverAnnotationId).filter(Boolean));
-      const restored: SavedAnnotation[] = body.document.versions.flatMap((version) => version.annotations.flatMap((item) => {
-        if (known.has(item.id)) return [];
-        const itemCitation = item.citations[0];
-        const itemAnchor = (item.anchor ?? undefined) as SelectionAnchor | undefined;
-        return [{
-          id: `server_${item.id}`,
-          documentId: entry.documentId,
-          versionId: item.versionId,
-          snapshotKey: version.snapshotKey ?? undefined,
-          colorKey: item.colorKey,
-          selectedText: item.selectedText,
-          note: item.note ?? "",
-          pdfPageIndex: itemAnchor && !isTextAnchor(itemAnchor) ? itemAnchor.pageNumber : entry.pdfPageIndex,
-          bookPageLabel: itemCitation?.locatorValue ?? "",
-          citationStyle: (itemCitation?.styleId ?? "sbl-note") as CitationStyle,
-          citationText: itemCitation?.generatedText ?? "",
-          anchor: itemAnchor,
-          createdAt: item.createdAt,
-          serverAnnotationId: item.id,
-          serverCitationId: itemCitation?.id,
-          tags: (item.tags ?? []).map((tag) => tag.value)
-        }];
-      }));
+      // The database is the truth: bring this book's records in line with it.
+      const merged = mergeServerRecords(annotations, server.records, { versionIds: server.versionIds, localDocumentIds: new Set([entry.documentId]) });
 
       saveDocument(opened);
       localStorage.removeItem(TEXT_CONTENT_KEY);
-      saveAnnotations([...restored, ...annotations]);
+      saveAnnotations(merged.records);
       window.location.reload();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "The document could not be opened.");
@@ -1022,7 +1099,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentRecord?.id, annotations.length]);
 
-  function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setTags([]); setRecentAnnotationId(undefined); setStatus("Cleared annotation records for the current browser workspace."); }
+  function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setTags([]); setRecentAnnotationId(undefined); setStatus("Cleared this browser's copy. Records saved in the database are being reloaded."); window.setTimeout(() => { void syncFromServer(true); }, 50); }
 
   function previewReadingNote(candidate: ReadingNoteCandidate) {
     if (!documentRecord || documentRecord.kind !== "PDF" || !candidate.anchor) return;
@@ -1161,6 +1238,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setStatus(`Went to book page ${bookPageGoto.trim()} (PDF page ${target}).`);
   }
 
+  const unsavedCount = documentRecord?.server ? annotations.filter((record) => !record.serverAnnotationId && (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id)).length : 0;
   const usedHighlightColors = highlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
   const filteredAnnotations = annotations.filter((record) => {
     if (tagFilter && !(record.tags ?? []).some((tag) => tag.toLowerCase() === tagFilter.toLowerCase())) return false;
@@ -1270,6 +1348,16 @@ export function ScriptoriumMilestoneOnePersisted() {
               </ul>
             </details>
           ) : null}
+          {unsavedCount > 0 || syncInfo.unreachable ? (
+            <div className="syncNotice" role="status">
+              {syncInfo.unreachable ? <span>The database could not be reached; this is the copy saved in this browser.</span> : null}
+              {unsavedCount > 0 ? <span>{unsavedCount} record{unsavedCount === 1 ? " is" : "s are"} only in this browser.</span> : null}
+              <span>
+                {unsavedCount > 0 ? <button type="button" className="textAction" onClick={() => void saveUnsavedRecords()}>Save to the database</button> : null}{" "}
+                <button type="button" className="textAction" onClick={() => void syncFromServer(true)}>Check again</button>
+              </span>
+            </div>
+          ) : null}
           <div className="ledgerRecords">
             {filteredAnnotations.length === 0 ? <p className="emptyAnnotationState">No annotations in this view yet.</p> : filteredAnnotations.map((record) => {
               const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
@@ -1281,7 +1369,7 @@ export function ScriptoriumMilestoneOnePersisted() {
                 {record.note ? <p>{record.note}</p> : null}
                 {(record.tags ?? []).length ? <div className="recordTags">{(record.tags ?? []).map((tag) => <span key={tag}>#{tag}</span>)}</div> : null}
                 <div className="recordCitation">{record.citationText}</div>
-                <small>{current ? "Current snapshot" : "Prior snapshot"} · {record.serverAnnotationId ? "database" : "local"}</small>
+                <small className={record.serverAnnotationId ? undefined : "recordUnsaved"}>{current ? "Current snapshot" : "Prior snapshot"} · {record.serverAnnotationId ? "saved in the database" : "only in this browser (not in the database yet)"}</small>
                 <div className="recordActions">
                   <button className="recordOpen" type="button" onClick={() => startEditing(record)}>Open and edit</button>
                   {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
@@ -1300,7 +1388,8 @@ export function ScriptoriumMilestoneOnePersisted() {
                 <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=csv`}>Spreadsheet (CSV)</a>
               </details>
             ) : null}
-            <button className="clearBrowserRecords" onClick={clearRecords} type="button" disabled={annotations.length === 0}>Clear browser annotation list</button>
+            {documentRecord?.server ? <button className="textAction" type="button" onClick={() => void syncFromServer(true)}>Refresh from the database</button> : null}
+            <button className="clearBrowserRecords" onClick={clearRecords} type="button" disabled={annotations.length === 0} title="Only clears this browser's copy. Records saved in the database are reloaded straight away.">Clear browser annotation list</button>
           </div>
         </aside>
 
