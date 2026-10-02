@@ -205,3 +205,26 @@
   outline: 2px solid rgb(214 98 0 / 85%);
   outline-offset: 0;
 }
+
+.pdfNoteMarker {
+  position: absolute;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgb(103 52 19 / 55%);
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 20px;
+  color: #3b2412;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+}
+
+.pdfNoteMarker:hover,
+.pdfNoteMarker:focus-visible {
+  outline: 2px solid var(--ledger-terracotta, #9a4f1c);
+}
+
+.pdfHighlightLayer { cursor: default; }

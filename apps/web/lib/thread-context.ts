@@ -40,6 +40,63 @@ function plainSourceLine(source: { shortTitle: string | null; cslJson: unknown }
   return [name, csl.title ?? source.shortTitle, year].filter(Boolean).join(", ");
 }
 
+type AnnotationRow = {
+  documentId: string;
+  versionId: string;
+  anchor: unknown;
+  colorKey: string;
+  selectedText: string;
+  note: string | null;
+  document: { title: string };
+  tags: Array<{ value: string }>;
+  citations: Array<{ locatorValue: string | null; locatorType: string; generatedText: string; sourceId: string; source: { cslJson: unknown } }>;
+};
+
+export function annotationContext(annotation: AnnotationRow): Extract<ThreadItemContext, { itemType: "ANNOTATION" }> {
+  const anchor = annotation.anchor as { pageNumber?: number } | null;
+  const citation = annotation.citations[0];
+  return {
+    itemType: "ANNOTATION",
+    documentId: annotation.documentId,
+    documentTitle: annotation.document.title,
+    versionId: annotation.versionId,
+    pdfPageIndex: typeof anchor?.pageNumber === "number" ? anchor.pageNumber : null,
+    bookPage: citation?.locatorValue ?? null,
+    colorKey: annotation.colorKey,
+    selectedText: annotation.selectedText,
+    note: annotation.note ?? "",
+    tags: annotation.tags.map((tag) => tag.value),
+    citationText: citation?.generatedText ?? "",
+    sourceId: citation?.sourceId ?? null,
+    sourceCsl: citation?.source.cslJson ?? null,
+    locatorValue: citation?.locatorValue ?? null,
+    locatorType: citation?.locatorType ?? "page"
+  };
+}
+
+/** All of a document's annotations in reading order, shaped like a research thread so the exporters can reuse it. */
+export async function loadDocumentAnnotations(documentId: string): Promise<ThreadView | null> {
+  const document = await prisma.document.findUnique({ where: { id: documentId }, select: { id: true, title: true } });
+  if (!document) return null;
+  const rows = await prisma.annotation.findMany({
+    where: { documentId },
+    include: { document: { select: { title: true } }, tags: true, citations: { orderBy: { createdAt: "desc" }, take: 1, include: { source: { select: { cslJson: true } } } } },
+    orderBy: { createdAt: "asc" }
+  });
+  const contexts = rows.map(annotationContext);
+  // Reading order: by page, then by where they were made.
+  const order = contexts.map((context, index) => ({ context, index })).sort((a, b) => (a.context.pdfPageIndex ?? 1e9) - (b.context.pdfPageIndex ?? 1e9) || a.index - b.index);
+  return {
+    id: document.id,
+    title: `${document.title}: annotations`,
+    description: "",
+    tags: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    items: order.map(({ context }, position) => ({ id: `annotation-${position}`, itemType: "ANNOTATION", itemId: String(position), note: "", orderIndex: position, context }))
+  };
+}
+
 export async function loadThread(threadId: string): Promise<ThreadView | null> {
   const thread = await prisma.researchThread.findUnique({
     where: { id: threadId },
@@ -66,26 +123,7 @@ export async function loadThread(threadId: string): Promise<ThreadView | null> {
     if (item.itemType === "NOTE") return { itemType: "NOTE" };
     if (item.itemType === "ANNOTATION") {
       const annotation = annotationById.get(item.itemId);
-      if (!annotation) return null;
-      const anchor = annotation.anchor as { pageNumber?: number } | null;
-      const citation = annotation.citations[0];
-      return {
-        itemType: "ANNOTATION",
-        documentId: annotation.documentId,
-        documentTitle: annotation.document.title,
-        versionId: annotation.versionId,
-        pdfPageIndex: typeof anchor?.pageNumber === "number" ? anchor.pageNumber : null,
-        bookPage: citation?.locatorValue ?? null,
-        colorKey: annotation.colorKey,
-        selectedText: annotation.selectedText,
-        note: annotation.note ?? "",
-        tags: annotation.tags.map((tag) => tag.value),
-        citationText: citation?.generatedText ?? "",
-        sourceId: citation?.sourceId ?? null,
-        sourceCsl: citation?.source.cslJson ?? null,
-        locatorValue: citation?.locatorValue ?? null,
-        locatorType: citation?.locatorType ?? "page"
-      };
+      return annotation ? annotationContext(annotation) : null;
     }
     if (item.itemType === "CITATION") {
       const citation = citationById.get(item.itemId);

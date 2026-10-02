@@ -34,8 +34,8 @@ const zipPath = process.argv[2];
 if (!zipPath) { console.error("Usage: node scripts/restore-backup.mjs <backup.zip>"); process.exit(2); }
 
 const storageRoot = path.resolve(repoRoot, process.env.SCRIPTORIUM_STORAGE_DIR ?? "./storage");
-const TABLE_ORDER = ["Document", "DocumentVersion", "Source", "PageMap", "PageRange", "TextSpan", "Annotation", "AnnotationTag", "Citation", "ResearchThread", "ResearchThreadTag", "ResearchThreadItem"];
-const DELEGATE = { Document: "document", DocumentVersion: "documentVersion", Source: "source", PageMap: "pageMap", PageRange: "pageRange", TextSpan: "textSpan", Annotation: "annotation", AnnotationTag: "annotationTag", Citation: "citation", ResearchThread: "researchThread", ResearchThreadTag: "researchThreadTag", ResearchThreadItem: "researchThreadItem" };
+const TABLE_ORDER = ["Document", "DocumentVersion", "Source", "PageMap", "PageRange", "Bookmark", "TextSpan", "Annotation", "AnnotationTag", "Citation", "ResearchThread", "ResearchThreadTag", "ResearchThreadItem"];
+const DELEGATE = { Document: "document", DocumentVersion: "documentVersion", Source: "source", PageMap: "pageMap", PageRange: "pageRange", Bookmark: "bookmark", TextSpan: "textSpan", Annotation: "annotation", AnnotationTag: "annotationTag", Citation: "citation", ResearchThread: "researchThread", ResearchThreadTag: "researchThreadTag", ResearchThreadItem: "researchThreadItem" };
 
 function openZip() {
   return new Promise((resolve, reject) => yauzl.open(zipPath, { lazyEntries: true, autoClose: false }, (error, zip) => (error ? reject(error) : resolve(zip))));
@@ -70,7 +70,9 @@ if (manifest.app !== "scriptorium" || manifest.backupFormat !== 1) { console.err
 
 // 1. Verify everything before touching anything.
 console.log(`Backup from ${manifest.createdAt}: ${manifest.totals.rows} rows, ${manifest.totals.files} files. Checking checksums…`);
-for (const table of TABLE_ORDER) {
+// Tables added to Scriptorium after a backup was made are simply absent from it.
+const tablesInBackup = TABLE_ORDER.filter((table) => manifest.tables[table]);
+for (const table of tablesInBackup) {
   const entry = entries.get(`database/${table}.ndjson`);
   if (!entry) { console.error(`Missing database/${table}.ndjson`); process.exit(1); }
   if ((await sha256Of(zip, entry)) !== manifest.tables[table].sha256) { console.error(`Checksum mismatch in ${table}. The backup is damaged; nothing was restored.`); process.exit(1); }
@@ -113,7 +115,7 @@ const reviveDates = (row) => {
 };
 let rowsRestored = 0;
 const supersedes = [];
-for (const table of TABLE_ORDER) {
+for (const table of tablesInBackup) {
   const delegate = prisma[DELEGATE[table]];
   const lines = createInterface({ input: await streamOf(zip, entries.get(`database/${table}.ndjson`)), crlfDelay: Infinity });
   let batch = [];
@@ -132,7 +134,7 @@ for (const table of TABLE_ORDER) {
 for (const [id, supersedesCitationId] of supersedes) await prisma.citation.update({ where: { id }, data: { supersedesCitationId } });
 
 // 5. Prove it.
-for (const table of TABLE_ORDER) {
+for (const table of tablesInBackup) {
   const count = await prisma[DELEGATE[table]].count();
   if (count !== manifest.tables[table].rows) { console.error(`${table}: restored ${count} rows but the backup has ${manifest.tables[table].rows}.`); await prisma.$disconnect(); process.exit(1); }
 }

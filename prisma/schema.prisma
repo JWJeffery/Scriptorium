@@ -63,6 +63,7 @@ model Document {
   versions         DocumentVersion[]
   sources          Source[]
   annotations      Annotation[]
+  bookmarks        Bookmark[]
 
   @@index([title])
 }
@@ -112,6 +113,18 @@ model PageMap {
 
   @@unique([versionId, pdfPageIndex])
   @@index([bookPageLabel])
+}
+
+// A place marked in a book, to come back to.
+model Bookmark {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  pdfPage    Int
+  label      String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, pdfPage])
 }
 
 // Printed page numbering for a stretch of PDF pages: a Roman-numeral preface,

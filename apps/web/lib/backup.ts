@@ -27,6 +27,7 @@ const TABLES: Array<{ name: string; delegate: () => Delegate }> = [
   { name: "Source", delegate: () => prisma.source as unknown as Delegate },
   { name: "PageMap", delegate: () => prisma.pageMap as unknown as Delegate },
   { name: "PageRange", delegate: () => prisma.pageRange as unknown as Delegate },
+  { name: "Bookmark", delegate: () => prisma.bookmark as unknown as Delegate },
   { name: "TextSpan", delegate: () => prisma.textSpan as unknown as Delegate },
   { name: "Annotation", delegate: () => prisma.annotation as unknown as Delegate },
   { name: "AnnotationTag", delegate: () => prisma.annotationTag as unknown as Delegate },
