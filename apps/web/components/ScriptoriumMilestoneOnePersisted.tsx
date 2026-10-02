@@ -12,6 +12,7 @@ import { AddToThread } from "./ThreadsPanel";
 import { TagInput, normalizeTags } from "./TagInput";
 import { PageNumberingEditor } from "./PageNumberingEditor";
 import { labelForPage, pdfPageForLabel, type PageRangeSpec } from "../lib/page-labels";
+import { authorsToText, parseAuthors } from "../lib/author-names";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = CitationStyleId;
@@ -81,7 +82,7 @@ function citation(document: StoredDocument, locator: string, style: CitationStyl
   const item: CslItem = {
     type: "book",
     title: source.title.trim() || document.title,
-    author: source.author.trim() ? [{ literal: source.author.trim() }] : undefined,
+    author: source.author.trim() ? (parseAuthors(source.author.trim()) as CslItem["author"]) : undefined,
     publisher: source.publisher.trim() || undefined,
     "publisher-place": source.place.trim() || undefined,
     issued: source.year.trim()
@@ -92,6 +93,40 @@ function citation(document: StoredDocument, locator: string, style: CitationStyl
   // italic markers are stripped here because saved annotation citations are
   // intentionally plain text rather than trusted HTML.
   return formatCitation(item, style, { type: isText(document) ? "line" : "page", value: locator }).replace(/<\/?i>/g, "");
+}
+
+// CSL JSON built from the Source metadata form (used when the form has edits that are not saved yet).
+function cslFromForm(document: StoredDocument) {
+  const source = document.source;
+  const year = Number(source.year);
+  return {
+    type: "book",
+    title: source.title.trim() || document.title,
+    author: source.author.trim() ? parseAuthors(source.author.trim()) : undefined,
+    publisher: source.publisher.trim() || undefined,
+    "publisher-place": source.place.trim() || undefined,
+    issued: source.year.trim() ? { "date-parts": [[Number.isFinite(year) ? year : source.year.trim()]] } : undefined
+  };
+}
+
+type EngineCitation = { text: string; missing: string[] };
+
+// Format with the official citation style files on the server. Returns null if
+// the server cannot (the caller falls back to the built-in formatter).
+async function formatViaEngine(document: StoredDocument, locator: string, style: CitationStyle, unsavedSource: boolean): Promise<EngineCitation | null> {
+  try {
+    const source = document.server?.sourceId && !unsavedSource ? { sourceId: document.server.sourceId } : { csl: cslFromForm(document) };
+    const response = await fetch("/api/cite", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ style, mode: "each", items: [{ ...source, locator: locator && locator !== "-" ? locator : undefined, label: isText(document) ? "line" : "page" }] })
+    });
+    if (!response.ok) return null;
+    const body = await response.json() as { citations: Array<{ text: string }>; missing: string[] };
+    return { text: body.citations[0].text, missing: body.missing };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeDocument(value: unknown) {
@@ -402,7 +437,18 @@ export function ScriptoriumMilestoneOnePersisted() {
   useEffect(() => () => { if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
 
   const locator = useMemo(() => currentLocator(documentRecord, anchor, pageRanges?.ranges), [documentRecord, anchor, pageRanges]);
-  const generatedCitation = useMemo(() => documentRecord ? citation(documentRecord, locator, style) : "Register a document before generating a citation.", [documentRecord, locator, style]);
+  const fallbackCitation = useMemo(() => documentRecord ? citation(documentRecord, locator, style) : "Register a document before generating a citation.", [documentRecord, locator, style]);
+  const [engineCitation, setEngineCitation] = useState<EngineCitation | null>(null);
+  const unsavedSource = sourceSaveMessage.startsWith("Unsaved");
+  useEffect(() => {
+    if (!documentRecord) { setEngineCitation(null); return; }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void formatViaEngine(documentRecord, locator, style, unsavedSource).then((result) => { if (!cancelled) setEngineCitation(result); });
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [documentRecord, locator, style, unsavedSource]);
+  const generatedCitation = engineCitation?.text ?? fallbackCitation;
   const currentSnapshotRecords = useMemo(() => annotations.filter((record) => recordMatchesCurrentVersion(record, documentRecord)), [annotations, documentRecord]);
   const recentSavedRecord = useMemo(() => recentAnnotationId ? annotations.find((record) => record.id === recentAnnotationId) : undefined, [annotations, recentAnnotationId]);
   const recentSavedColor = recentSavedRecord ? highlightColors.find((item) => item.key === recentSavedRecord.colorKey) ?? highlightColors[0] : undefined;
@@ -568,6 +614,9 @@ export function ScriptoriumMilestoneOnePersisted() {
     const normalizedAnchor = anchor ? { ...anchor, selectedText: normalizedSelectedText } as SelectionAnchor : undefined;
     let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: normalizedNote, pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor, pageRanges?.ranges), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor, pageRanges?.ranges), style), anchor: normalizedAnchor, createdAt: new Date().toISOString(), tags: normalizeTags(tags) };
 
+    const formatted = await formatViaEngine(documentRecord, record.bookPageLabel, style, unsavedSource);
+    if (formatted) record = { ...record, citationText: formatted.text };
+
     try {
       const serverRecord = await persistAnnotation(documentRecord, record);
       record = { ...record, serverAnnotationId: serverRecord.annotation.id, serverCitationId: serverRecord.citation.id };
@@ -698,7 +747,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         mediaType: entry.mediaType,
         size: entry.size ?? 0,
         source: {
-          author: firstAuthor?.literal ?? [firstAuthor?.given, firstAuthor?.family].filter(Boolean).join(" "),
+          author: Array.isArray(csl.author) ? authorsToText(csl.author as Parameters<typeof authorsToText>[0]) : (firstAuthor?.literal ?? [firstAuthor?.given, firstAuthor?.family].filter(Boolean).join(" ")),
           title: typeof csl.title === "string" ? csl.title : entry.title,
           place: typeof csl["publisher-place"] === "string" ? csl["publisher-place"] : "",
           publisher: typeof csl.publisher === "string" ? csl.publisher : "",
@@ -910,12 +959,16 @@ export function ScriptoriumMilestoneOnePersisted() {
   // Re-derive the page number and citation of saved records after the numbering changed.
   async function refreshSavedRecordPages() {
     if (!documentRecord || !pageRanges) return;
-    const updates = annotations.flatMap((record) => {
+    const pending = annotations.flatMap((record) => {
       if (!record.anchor || isTextAnchor(record.anchor) || !recordMatchesCurrentVersion(record, documentRecord)) return [];
       const label = labelForPage(pageRanges.ranges, record.anchor.pageNumber) ?? "";
-      if (label === record.bookPageLabel) return [];
-      return [{ record, label, citationText: citation(documentRecord, label, record.citationStyle) }];
+      return label === record.bookPageLabel ? [] : [{ record, label }];
     });
+    const updates: Array<{ record: SavedAnnotation; label: string; citationText: string }> = [];
+    for (const item of pending) {
+      const formatted = await formatViaEngine(documentRecord, item.label, item.record.citationStyle, false);
+      updates.push({ ...item, citationText: formatted?.text ?? citation(documentRecord, item.label, item.record.citationStyle) });
+    }
     if (updates.length === 0) { setStatus("Every saved record already matches the page numbering."); return; }
     let failed = 0;
     for (const update of updates) {
@@ -1080,8 +1133,8 @@ export function ScriptoriumMilestoneOnePersisted() {
             <label>Note<textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} /></label>
             <TagInput value={tags} onChange={setTags} suggestions={knownTags} disabled={!documentRecord} />
             <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${color.defaultMeaning}${selectedColor === color.key ? ", selected" : ""}`} title={color.defaultMeaning} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><strong>{highlightColors.find((color) => color.key === selectedColor)?.defaultMeaning}</strong></fieldset>
-            <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL / Chicago / Turabian note</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
-            <div className="generatedCitation"><span>Generated citation</span><p>{editingRecord ? editingRecord.citationText : generatedCitation}</p></div>
+            <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option><option value="turabian-note">Turabian note (Chicago form)</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
+            <div className="generatedCitation"><span>Generated citation</span><p>{editingRecord ? editingRecord.citationText : generatedCitation}</p>{!editingRecord && engineCitation && engineCitation.missing.length > 0 ? <small className="citationMissing">This source has no {engineCitation.missing.join(", ").replace(/, ([^,]*)$/, " or $1")} recorded, so the citation is incomplete. Add it under Source metadata below.</small> : null}</div>
             {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
             {editingRecord ? <>
               <button className="primaryButton saveRecordButton" onClick={saveEdit} type="button">Save changes</button>
@@ -1096,7 +1149,7 @@ export function ScriptoriumMilestoneOnePersisted() {
             <summary>Source metadata {sourceSaveMessage.startsWith("Unsaved") ? <span className="unsavedDot" aria-label="Unsaved changes" /> : null}</summary>
             <div className="inspectorGroupContent">
               <label>Title<input value={documentRecord?.source.title ?? ""} onChange={(event) => updateSource("title", event.target.value)} disabled={!documentRecord} /></label>
-              <label>Author / editor<input value={documentRecord?.source.author ?? ""} onChange={(event) => updateSource("author", event.target.value)} disabled={!documentRecord} /></label>
+              <label>Author / editor<input value={documentRecord?.source.author ?? ""} onChange={(event) => updateSource("author", event.target.value)} disabled={!documentRecord} /><small className="fieldHint">Several authors: separate with “and”. An organisation: put it in {"{braces}"}.</small></label>
               <div className="twoColumnInputs"><label>Place<input value={documentRecord?.source.place ?? ""} onChange={(event) => updateSource("place", event.target.value)} disabled={!documentRecord} /></label><label>Year<input value={documentRecord?.source.year ?? ""} onChange={(event) => updateSource("year", event.target.value)} disabled={!documentRecord} /></label></div>
               <label>Publisher<input value={documentRecord?.source.publisher ?? ""} onChange={(event) => updateSource("publisher", event.target.value)} disabled={!documentRecord} /></label>
               <button className="secondaryButton" onClick={saveSourceRecord} type="button" disabled={!documentRecord}>Save CSL source metadata</button>

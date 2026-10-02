@@ -4,6 +4,7 @@ import { prisma } from "../../../../lib/prisma";
 import { extractDocxRawText } from "../../../../lib/docx-extraction";
 import { storeTextSnapshot } from "../../../../lib/server-storage";
 import { validateDocx } from "../../../../lib/upload-guards";
+import { parseAuthors } from "../../../../lib/author-names";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ function cslJsonFor(source: ParsedSource): Prisma.InputJsonObject {
   const json = {
     type: "book",
     title: source.title,
-    author: source.author ? [{ literal: source.author }] : undefined,
+    author: source.author ? parseAuthors(source.author) : undefined,
     publisher: source.publisher || undefined,
     "publisher-place": source.place || undefined,
     issued: source.year ? { "date-parts": [[Number.isFinite(numericYear) ? numericYear : source.year]] } : undefined

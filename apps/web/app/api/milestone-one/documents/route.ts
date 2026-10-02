@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
 import type { MilestoneOneDocumentInput } from "../../../../lib/milestone-one-types";
+import { parseAuthors } from "../../../../lib/author-names";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ function cslJsonFor(input: MilestoneOneDocumentInput): Prisma.InputJsonObject {
   const json = {
     type: "book",
     title: input.source.title || input.title,
-    author: input.source.author ? [{ literal: input.source.author }] : undefined,
+    author: input.source.author ? parseAuthors(input.source.author) : undefined,
     publisher: input.source.publisher || undefined,
     "publisher-place": input.source.place || undefined,
     issued: input.source.year

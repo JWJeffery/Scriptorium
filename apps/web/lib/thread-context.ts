@@ -17,6 +17,9 @@ export type ThreadItemContext =
       tags: string[];
       citationText: string;
       sourceId: string | null;
+      sourceCsl: unknown;
+      locatorValue: string | null;
+      locatorType: string;
     }
   | { itemType: "DOCUMENT"; documentId: string; documentTitle: string }
   | { itemType: "SOURCE"; sourceId: string; title: string; citationText: string }
@@ -48,7 +51,7 @@ export async function loadThread(threadId: string): Promise<ThreadView | null> {
   const [annotations, citations, sources, documents] = await Promise.all([
     prisma.annotation.findMany({
       where: { id: { in: idsOf("ANNOTATION") } },
-      include: { document: { select: { title: true } }, tags: true, citations: { orderBy: { createdAt: "desc" }, take: 1 } }
+      include: { document: { select: { title: true } }, tags: true, citations: { orderBy: { createdAt: "desc" }, take: 1, include: { source: { select: { cslJson: true } } } } }
     }),
     prisma.citation.findMany({ where: { id: { in: idsOf("CITATION") } } }),
     prisma.source.findMany({ where: { id: { in: idsOf("SOURCE") } } }),
@@ -78,7 +81,10 @@ export async function loadThread(threadId: string): Promise<ThreadView | null> {
         note: annotation.note ?? "",
         tags: annotation.tags.map((tag) => tag.value),
         citationText: citation?.generatedText ?? "",
-        sourceId: citation?.sourceId ?? null
+        sourceId: citation?.sourceId ?? null,
+        sourceCsl: citation?.source.cslJson ?? null,
+        locatorValue: citation?.locatorValue ?? null,
+        locatorType: citation?.locatorType ?? "page"
       };
     }
     if (item.itemType === "CITATION") {

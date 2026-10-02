@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { normalizeCslBookRecord, cslToInputJson } from "../../../../lib/citation-exchange";
+import { parseAuthors } from "../../../../lib/author-names";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,9 +45,9 @@ export async function PATCH(request: NextRequest) {
     normalized = normalizeCslBookRecord({
       type: clean(body.type) || "book",
       title: clean(body.title),
-      author: clean(body.author) ? [{ literal: clean(body.author) }] : undefined,
-      editor: clean(body.editor) ? [{ literal: clean(body.editor) }] : undefined,
-      translator: clean(body.translator) ? [{ literal: clean(body.translator) }] : undefined,
+      author: clean(body.author) ? parseAuthors(clean(body.author)) : undefined,
+      editor: clean(body.editor) ? parseAuthors(clean(body.editor)) : undefined,
+      translator: clean(body.translator) ? parseAuthors(clean(body.translator)) : undefined,
       "container-title": clean(body.containerTitle) || undefined,
       publisher: clean(body.publisher) || undefined,
       "publisher-place": clean(body.place) || undefined,

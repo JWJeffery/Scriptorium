@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fail, text } from "../../../../lib/api-helpers";
 import { loadThread } from "../../../../lib/thread-context";
-import { buildThreadDocument, threadToDocx, threadToMarkdown } from "../../../../lib/thread-document";
+import { buildThreadDocument, renderNotes, threadToDocx, threadToMarkdown } from "../../../../lib/thread-document";
 import { safeStorageSegment } from "../../../../lib/server-storage";
 
 export const runtime = "nodejs";
@@ -17,13 +17,14 @@ export async function GET(request: NextRequest) {
   if (!thread) return fail("Research thread not found.", 404);
 
   const document = buildThreadDocument(thread);
+  const rendered = renderNotes(document, text(request.nextUrl.searchParams.get("style")) || "sbl-note");
   const base = safeStorageSegment(thread.title, "research-thread");
   if (format === "markdown") {
-    return new NextResponse(threadToMarkdown(document), {
+    return new NextResponse(threadToMarkdown(document, rendered), {
       headers: { "content-type": "text/markdown; charset=utf-8", "content-disposition": `attachment; filename="${base}.md"`, "x-content-type-options": "nosniff" }
     });
   }
-  const bytes = await threadToDocx(document);
+  const bytes = await threadToDocx(document, rendered);
   return new NextResponse(new Uint8Array(bytes), {
     headers: {
       "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

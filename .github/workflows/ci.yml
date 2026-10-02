@@ -106,6 +106,9 @@ jobs:
       - name: Verify page labels (Roman and Arabic numbering)
         run: node --experimental-strip-types scripts/verify-page-labels.mjs
 
+      - name: Verify citation engine (official CSL styles)
+        run: node --experimental-strip-types scripts/verify-csl-engine.mjs
+
       - name: Verify Ledger UI contract
         run: node scripts/verify-ledger-ui-contract.mjs
 

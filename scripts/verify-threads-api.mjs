@@ -26,6 +26,13 @@ const annotation = (await call("/api/milestone-one/annotations", jsonInit("POST"
   citationStyle: "sbl-note", citationText: "Ada Lovelace, Thread fixture book, 1.", locatorValue: "1"
 }))).body.annotation;
 
+const second = (await call("/api/milestone-one/annotations", jsonInit("POST", {
+  documentId: uploaded.document.id, versionId: uploaded.version.id, sourceId: uploaded.source.id, pageMapId: uploaded.pageMap.id,
+  colorKey: "blue", selectedText: "A second passage.", note: "", tags: [],
+  anchor: { selectedText: "A second passage.", pageNumber: 1, rects: [] },
+  citationStyle: "sbl-note", citationText: "Ada Lovelace, Thread fixture book, 7.", locatorValue: "7"
+}))).body.annotation;
+
 assert.equal((await call("/api/threads", jsonInit("POST", { title: "" }))).status, 400, "a thread needs a title");
 assert.equal((await call("/api/threads", { method: "POST", headers: { "content-type": "application/json" }, body: "not json" })).status, 400);
 
@@ -42,13 +49,14 @@ assert.equal(again.alreadyPresent, true);
 assert.equal(again.thread.items.length, 1, "adding the same item twice does not duplicate");
 assert.equal((await call("/api/threads/items", jsonInit("POST", { threadId, itemType: "ANNOTATION", itemId: "nope" }))).status, 404);
 
+await call("/api/threads/items", jsonInit("POST", { threadId, itemType: "ANNOTATION", itemId: second.id }));
 const withNote = (await call("/api/threads/items", jsonInit("POST", { threadId, itemType: "NOTE", note: "My own connecting paragraph." }))).body.thread;
-assert.equal(withNote.items.length, 2);
-const [first, second] = withNote.items;
+assert.equal(withNote.items.length, 3);
+const [first, quoteTwo, paragraph] = withNote.items;
 
-const reordered = (await call("/api/threads/items", jsonInit("PATCH", { threadId, order: [second.id, first.id] }))).body.thread;
-assert.equal(reordered.items[0].id, second.id, "reorder changes the order");
-assert.equal((await call("/api/threads/items", jsonInit("PATCH", { threadId, order: [second.id] }))).status, 400, "reorder must list every item");
+const reordered = (await call("/api/threads/items", jsonInit("PATCH", { threadId, order: [paragraph.id, first.id, quoteTwo.id] }))).body.thread;
+assert.equal(reordered.items[0].id, paragraph.id, "reorder changes the order");
+assert.equal((await call("/api/threads/items", jsonInit("PATCH", { threadId, order: [paragraph.id] }))).status, 400, "reorder must list every item");
 
 const noted = (await call("/api/threads/items", jsonInit("PATCH", { threadId, itemId: first.id, note: "Use this in chapter 2" }))).body.thread;
 assert.equal(noted.items.find((item) => item.id === first.id).note, "Use this in chapter 2");
@@ -57,26 +65,33 @@ const markdown = await call(`/api/threads/export?threadId=${threadId}&format=mar
 const mdText = await markdown.response.text();
 assert.match(mdText, /^# Unity of the church/);
 assert.match(mdText, /> On the unity of the church\.\[\^1\]/);
-assert.match(mdText, /\[\^1\]: Ada Lovelace, Thread fixture book, 1\./);
+assert.match(mdText, /\[\^1\]: Ada Lovelace, \*Thread Fixture Book\*, n\.d\., 1\./, "first footnote is in full, title in italics");
+assert.match(mdText, /\[\^2\]: Lovelace, \*Thread Fixture Book\*, 7\./, "a repeat reference is shortened by the citation style");
+assert.match(mdText, /## Bibliography\n\n- Lovelace, Ada\. \*Thread Fixture Book\*/, "the sources used are listed in a bibliography");
 assert.match(mdText, /My own connecting paragraph\./);
 
 const docx = await fetch(`${baseUrl}/api/threads/export?threadId=${threadId}&format=docx`);
 assert.equal(docx.status, 200);
 const zip = await JSZip.loadAsync(Buffer.from(await docx.arrayBuffer()));
 const footnotes = await zip.file("word/footnotes.xml").async("string");
-assert.ok(footnotes.includes("Ada Lovelace, Thread fixture book, 1."), "the Word file carries a real footnote");
+assert.ok(footnotes.includes("Ada Lovelace, ") && footnotes.includes("Thread Fixture Book") && footnotes.includes("Lovelace, "), "the Word file carries real footnotes");
+assert.ok(/<w:i\/?>/.test(footnotes), "the title is italic in the footnote");
 const body = await zip.file("word/document.xml").async("string");
 assert.ok(body.includes("On the unity of the church.") && body.includes("w:footnoteReference"), "the quoted passage points at its footnote");
 assert.equal((await call(`/api/threads/export?threadId=${threadId}&format=pdf`)).status, 400);
 
+const chicago = await (await fetch(`${baseUrl}/api/threads/export?threadId=${threadId}&format=markdown&style=chicago-note`)).text();
+assert.match(chicago, /\[\^1\]: Ada Lovelace, \*Thread Fixture Book\* \(n\.d\.\), 1\./, "Chicago and SBL differ, and the style chosen for the export decides");
+
 const removed = (await call(`/api/threads/items?threadId=${threadId}&itemId=${first.id}`, { method: "DELETE" })).body.thread;
-assert.equal(removed.items.length, 1);
-assert.equal(removed.items[0].orderIndex, 0, "order is re-numbered after a removal");
+assert.equal(removed.items.length, 2);
+assert.deepEqual(removed.items.map((item) => item.orderIndex), [0, 1], "order is re-numbered after a removal");
 
 // A deleted annotation leaves a marked gap instead of breaking the thread.
 await call(`/api/milestone-one/annotations?annotationId=${annotation.id}`, { method: "DELETE" });
+await call(`/api/milestone-one/annotations?annotationId=${second.id}`, { method: "DELETE" });
 const list = (await call("/api/threads")).body.threads;
-assert.ok(list.find((thread) => thread.id === threadId && thread.itemCount === 1));
+assert.ok(list.find((thread) => thread.id === threadId && thread.itemCount === 2));
 
 const renamed = (await call("/api/threads", jsonInit("PATCH", { threadId, title: "Renamed thread", tags: ["only"] }))).body.thread;
 assert.equal(renamed.title, "Renamed thread");

@@ -31,6 +31,7 @@ export function ThreadsSection({ active = true, onOpenAnnotation }: { active?: b
   const [newTitle, setNewTitle] = useState("");
   const [message, setMessage] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
+  const [exportStyle, setExportStyle] = useState("sbl-note");
 
   const loadList = useCallback(async () => {
     try { setThreads((await api<{ threads: ThreadSummary[] }>("/api/threads")).threads); }
@@ -82,10 +83,18 @@ export function ThreadsSection({ active = true, onOpenAnnotation }: { active?: b
         <label>What is this thread for?<textarea rows={2} defaultValue={detail.description} key={`d-${detail.id}`} onBlur={(event) => { if (event.target.value.trim() !== detail.description) void run(() => apply(api("/api/threads", send("PATCH", { threadId: detail.id, description: event.target.value })))); }} /></label>
         <label>Tags (comma separated)<input defaultValue={detail.tags.join(", ")} key={`g-${detail.id}`} onBlur={(event) => { const tags = event.target.value.split(",").map((tag) => tag.trim()).filter(Boolean); if (tags.join("|") !== detail.tags.join("|")) void run(() => apply(api("/api/threads", send("PATCH", { threadId: detail.id, tags })))); }} /></label>
 
+        <label>Footnote style for export
+          <select value={exportStyle} onChange={(event) => setExportStyle(event.target.value)}>
+            <option value="sbl-note">SBL (2nd edition)</option>
+            <option value="chicago-note">Chicago notes</option>
+            <option value="turabian-note">Turabian (Chicago form)</option>
+          </select>
+        </label>
         <div className="threadExport">
-          <a className="secondaryButton" href={`/api/threads/export?threadId=${encodeURIComponent(detail.id)}&format=docx`}>Export to Word (with footnotes)</a>
-          <a className="secondaryButton" href={`/api/threads/export?threadId=${encodeURIComponent(detail.id)}&format=markdown`}>Export to Markdown</a>
+          <a className="secondaryButton" href={`/api/threads/export?threadId=${encodeURIComponent(detail.id)}&format=docx&style=${exportStyle}`}>Export to Word (with footnotes)</a>
+          <a className="secondaryButton" href={`/api/threads/export?threadId=${encodeURIComponent(detail.id)}&format=markdown&style=${exportStyle}`}>Export to Markdown</a>
         </div>
+        <p className="threadFine">Footnotes follow the style file: the first mention of a work is in full, later mentions are shortened, and a bibliography is added at the end.</p>
 
         {detail.items.length === 0 ? <p className="threadEmpty">Nothing in this thread yet. Use <strong>Add to thread</strong> on a saved record in the Ledger, or add a paragraph of your own below.</p> : null}
         <ol className="threadItems">

@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
 import { ThreadsSection, type OpenAnnotationRequest } from "./ThreadsPanel";
 import { BackupSection } from "./BackupPanel";
+import { authorsToText } from "../lib/author-names";
 
 // This panel presents the advanced citation, export, OCR, and page-splitting
 // workflows that sit alongside the main reading workspace.
@@ -416,10 +417,9 @@ function textValue(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+// All names, as one line of text ("A. Smith and B. Jones"). Saving parses it back.
 function firstCslName(value: unknown) {
-  if (!Array.isArray(value) || typeof value[0] !== "object" || value[0] === null) return "";
-  const first = value[0] as { literal?: unknown; given?: unknown; family?: unknown };
-  return textValue(first.literal) || [textValue(first.given), textValue(first.family)].filter(Boolean).join(" ");
+  return Array.isArray(value) ? authorsToText(value as Parameters<typeof authorsToText>[0]) : "";
 }
 
 function issuedYear(value: unknown) {

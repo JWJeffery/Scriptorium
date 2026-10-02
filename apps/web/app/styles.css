@@ -2022,3 +2022,8 @@ a:focus-visible {
 .backupList small { color: #6b5a47; }
 .backupFine { margin: 0; font-size: 0.82rem; color: #5b4a38; }
 .backupCode { margin: 0; padding: 0.6rem 0.8rem; border-radius: 8px; background: #2d241a; color: #f3ecdf; font-size: 0.8rem; overflow-x: auto; }
+
+.citationMissing { display: block; margin-top: 0.4rem; color: #8f2d2d; font-size: 0.8rem; }
+.threadFine { margin: 0; font-size: 0.8rem; color: #5b4a38; }
+
+.fieldHint { color: #6b5a47; font-size: 0.76rem; }

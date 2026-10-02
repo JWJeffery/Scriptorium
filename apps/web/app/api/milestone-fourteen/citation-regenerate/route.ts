@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { formatCitation, isCitationStyleId, type CslItem } from "../../../../lib/citation-styles";
+import { formatCitations } from "../../../../lib/csl-engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -96,10 +97,17 @@ export async function POST(request: NextRequest) {
   }
 
   const cslItem = source.cslJson as CslItem;
-  const generatedText = formatCitation(cslItem, current.styleId, {
-    type: current.locatorType,
-    value: current.locatorValue ?? undefined
-  });
+  // The official CSL style files decide the wording; the older built-in formatter
+  // is only a fallback if they cannot be read.
+  let generatedText: string;
+  try {
+    generatedText = formatCitations(current.styleId, [{ key: current.sourceId, csl: source.cslJson, locator: current.locatorValue ?? undefined, label: current.locatorType === "line" ? "line" : "page" }])[0].text;
+  } catch {
+    generatedText = formatCitation(cslItem, current.styleId, {
+      type: current.locatorType,
+      value: current.locatorValue ?? undefined
+    });
+  }
 
   const regenerated = await prisma.citation.create({
     data: {
