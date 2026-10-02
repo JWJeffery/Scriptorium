@@ -77,6 +77,7 @@ model DocumentVersion {
   extractionState String       @default("pending") @db.VarChar(255)
   createdAt       DateTime     @default(now())
   pages           PageMap[]
+  pageRanges      PageRange[]
   textSpans       TextSpan[]
   annotations     Annotation[]
 
@@ -111,6 +112,25 @@ model PageMap {
 
   @@unique([versionId, pdfPageIndex])
   @@index([bookPageLabel])
+}
+
+// Printed page numbering for a stretch of PDF pages: a Roman-numeral preface,
+// the Arabic body, an appendix "A-1, A-2, ...", or pages with no number at all.
+// `system` is one of: arabic, roman-lower, roman-upper, unnumbered.
+// `startValue` is the number printed on `startPdfPage`; the number then rises by
+// one per page. `endPdfPage` null means "to the end of the book".
+model PageRange {
+  id           String          @id @default(cuid())
+  versionId    String
+  version      DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  startPdfPage Int
+  endPdfPage   Int?
+  system       String          @db.VarChar(32)
+  startValue   Int             @default(1)
+  prefix       String          @default("") @db.VarChar(16)
+  note         String?         @db.VarChar(255)
+
+  @@index([versionId, startPdfPage])
 }
 
 model TextSpan {

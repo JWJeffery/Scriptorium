@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../../../lib/prisma";
 import { cosineSimilarity } from "../../../lib/local-similarity";
 import { escapeLike, lineOfFirstMatch, makeSnippet, matchRank, parseQuery, type Snippet } from "../../../lib/search-text";
-import { bookLabelFromRule } from "../../../lib/page-labels";
+import { bookLabel, type NumberingSystem } from "../../../lib/page-labels";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,6 +71,14 @@ export async function GET(request: NextRequest) {
       })
     : [];
   const documentById = new Map(documents.map((document) => [document.id, document]));
+  const versionIds = Array.from(new Set(pageRows.map((row) => row.versionId)));
+  const rangeRows = versionIds.length ? await prisma.pageRange.findMany({ where: { versionId: { in: versionIds } }, orderBy: { startPdfPage: "asc" } }) : [];
+  const rangesByVersion = new Map<string, Array<{ startPdfPage: number; endPdfPage: number | null; system: NumberingSystem; startValue: number; prefix: string }>>();
+  for (const row of rangeRows) {
+    const list = rangesByVersion.get(row.versionId) ?? [];
+    list.push({ startPdfPage: row.startPdfPage, endPdfPage: row.endPdfPage, system: row.system as NumberingSystem, startValue: row.startValue, prefix: row.prefix });
+    rangesByVersion.set(row.versionId, list);
+  }
 
   type PageHit = {
     kind: "page";
@@ -98,7 +106,7 @@ export async function GET(request: NextRequest) {
       documentTitle: document?.title ?? "Untitled document",
       versionId: row.versionId,
       pdfPageIndex,
-      bookPage: pdfPageIndex === null ? null : bookLabelFromRule(note, pdfPageIndex),
+      bookPage: pdfPageIndex === null ? null : bookLabel(rangesByVersion.get(row.versionId), note, pdfPageIndex),
       line: pdfPageIndex === null ? lineOfFirstMatch(row.text, terms) : null,
       snippet: makeSnippet(row.text, terms),
       score

@@ -10,6 +10,8 @@ import { SavedDocumentsPanel, type SavedDocumentEntry } from "./SavedDocumentsPa
 import { SearchPanel, type SearchOpenRequest } from "./SearchPanel";
 import { AddToThread } from "./ThreadsPanel";
 import { TagInput, normalizeTags } from "./TagInput";
+import { PageNumberingEditor } from "./PageNumberingEditor";
+import { labelForPage, pdfPageForLabel, type PageRangeSpec } from "../lib/page-labels";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = CitationStyleId;
@@ -111,10 +113,13 @@ function saveTextContent(text: string) { localStorage.setItem(TEXT_CONTENT_KEY, 
 function readTextContent() { return localStorage.getItem(TEXT_CONTENT_KEY) ?? ""; }
 function saveAnnotations(records: SavedAnnotation[]) { localStorage.setItem(ANNOTATIONS_KEY, JSON.stringify(records)); }
 
-function currentLocator(document: StoredDocument | null, anchor: SelectionAnchor | undefined) {
+function currentLocator(document: StoredDocument | null, anchor: SelectionAnchor | undefined, ranges?: PageRangeSpec[] | null) {
   if (!document) return "-";
   if (isText(document) && isTextAnchor(anchor)) return lineLocator(anchor);
   if (isText(document)) return "1";
+  // Printed numbering saved for this book (Roman preface, appendix, ...). An
+  // unnumbered page has no label, so the citation simply omits the page.
+  if (ranges && ranges.length > 0) return labelForPage(ranges, document.pageMap.currentPdfPageIndex) ?? "";
   return bookPage(document.pageMap);
 }
 
@@ -249,6 +254,8 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [pendingSplitOcr, setPendingSplitOcr] = useState(false);
   const [ledgerFilter, setLedgerFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("");
+  const [pageRanges, setPageRanges] = useState<{ ranges: PageRangeSpec[]; saved: boolean } | null>(null);
+  const [bookPageGoto, setBookPageGoto] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | undefined>();
   const [savedDocsOpen, setSavedDocsOpen] = useState(false);
@@ -394,7 +401,7 @@ export function ScriptoriumMilestoneOnePersisted() {
 
   useEffect(() => () => { if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
 
-  const locator = useMemo(() => currentLocator(documentRecord, anchor), [documentRecord, anchor]);
+  const locator = useMemo(() => currentLocator(documentRecord, anchor, pageRanges?.ranges), [documentRecord, anchor, pageRanges]);
   const generatedCitation = useMemo(() => documentRecord ? citation(documentRecord, locator, style) : "Register a document before generating a citation.", [documentRecord, locator, style]);
   const currentSnapshotRecords = useMemo(() => annotations.filter((record) => recordMatchesCurrentVersion(record, documentRecord)), [annotations, documentRecord]);
   const recentSavedRecord = useMemo(() => recentAnnotationId ? annotations.find((record) => record.id === recentAnnotationId) : undefined, [annotations, recentAnnotationId]);
@@ -559,7 +566,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (isText(documentRecord) && !isTextAnchor(anchor)) { setStatus("Select text directly in the text reader so the annotation has a stable line/offset anchor."); return; }
 
     const normalizedAnchor = anchor ? { ...anchor, selectedText: normalizedSelectedText } as SelectionAnchor : undefined;
-    let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: normalizedNote, pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor), style), anchor: normalizedAnchor, createdAt: new Date().toISOString(), tags: normalizeTags(tags) };
+    let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: normalizedNote, pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor, pageRanges?.ranges), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor, pageRanges?.ranges), style), anchor: normalizedAnchor, createdAt: new Date().toISOString(), tags: normalizeTags(tags) };
 
     try {
       const serverRecord = await persistAnnotation(documentRecord, record);
@@ -876,6 +883,65 @@ export function ScriptoriumMilestoneOnePersisted() {
     for (const record of annotations) for (const tag of record.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([tag]) => tag);
   })();
+  // Printed page numbering for this document, loaded from the server.
+  const rangesVersionId = documentRecord?.kind === "PDF" ? documentRecord.server?.versionId : undefined;
+  useEffect(() => {
+    if (!rangesVersionId) { setPageRanges(null); return; }
+    let cancelled = false;
+    fetch(`/api/page-ranges?versionId=${encodeURIComponent(rangesVersionId)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { ranges: PageRangeSpec[]; source: "saved" | "legacy" } | null) => { if (!cancelled && body) setPageRanges({ ranges: body.ranges, saved: body.source === "saved" }); })
+      .catch(() => { if (!cancelled) setPageRanges(null); });
+    return () => { cancelled = true; };
+  }, [rangesVersionId]);
+
+  async function savePageRanges(ranges: PageRangeSpec[]) {
+    if (!documentRecord?.server?.versionId) throw new Error("Save this document to the server first.");
+    const response = await fetch("/api/page-ranges", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ versionId: documentRecord.server.versionId, ranges }) });
+    const body = await response.json().catch(() => ({})) as { error?: string; ranges?: PageRangeSpec[] };
+    if (!response.ok || !body.ranges) throw new Error(body.error ?? "Could not save the numbering.");
+    setPageRanges({ ranges: body.ranges, saved: true });
+    const stale = annotations.filter((record) => record.anchor && !isTextAnchor(record.anchor) && recordMatchesCurrentVersion(record, documentRecord) && labelForPage(body.ranges!, record.anchor.pageNumber) !== (record.bookPageLabel || null));
+    return stale.length > 0
+      ? `Numbering saved. ${stale.length} saved record${stale.length === 1 ? " cites" : "s cite"} a different page number under it. Use “Refresh saved records” to update them.`
+      : "Numbering saved.";
+  }
+
+  // Re-derive the page number and citation of saved records after the numbering changed.
+  async function refreshSavedRecordPages() {
+    if (!documentRecord || !pageRanges) return;
+    const updates = annotations.flatMap((record) => {
+      if (!record.anchor || isTextAnchor(record.anchor) || !recordMatchesCurrentVersion(record, documentRecord)) return [];
+      const label = labelForPage(pageRanges.ranges, record.anchor.pageNumber) ?? "";
+      if (label === record.bookPageLabel) return [];
+      return [{ record, label, citationText: citation(documentRecord, label, record.citationStyle) }];
+    });
+    if (updates.length === 0) { setStatus("Every saved record already matches the page numbering."); return; }
+    let failed = 0;
+    for (const update of updates) {
+      if (!update.record.serverAnnotationId) continue;
+      try {
+        const response = await fetch("/api/milestone-one/annotations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ annotationId: update.record.serverAnnotationId, locatorValue: update.label, citationText: update.citationText }) });
+        if (!response.ok) failed += 1;
+      } catch { failed += 1; }
+    }
+    const byId = new Map(updates.map((update) => [update.record.id, update]));
+    setAnnotations((previous) => {
+      const next = previous.map((record) => { const update = byId.get(record.id); return update ? { ...record, bookPageLabel: update.label, citationText: update.citationText } : record; });
+      saveAnnotations(next);
+      return next;
+    });
+    setStatus(failed ? `Updated ${updates.length} records here; ${failed} could not be updated in the database.` : `Updated ${updates.length} saved record${updates.length === 1 ? "" : "s"} to the new page numbering.`);
+  }
+
+  function goToBookPage() {
+    if (!pageRanges) return;
+    const target = pdfPageForLabel(pageRanges.ranges, bookPageGoto, pageCount || undefined);
+    if (!target) { setStatus(`No page numbered “${bookPageGoto.trim()}” was found in this book’s numbering.`); return; }
+    goToPage(target);
+    setStatus(`Went to book page ${bookPageGoto.trim()} (PDF page ${target}).`);
+  }
+
   const usedHighlightColors = highlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
   const filteredAnnotations = annotations.filter((record) => {
     if (tagFilter && !(record.tags ?? []).some((tag) => tag.toLowerCase() === tagFilter.toLowerCase())) return false;
@@ -920,7 +986,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           <strong>Scriptorium</strong>
           <span aria-hidden="true">/</span>
           <span className="activeDocumentTitle">{documentRecord?.title ?? "No source registered"}</span>
-          <span className="locatorChip">{isText(documentRecord) ? `Line ${locator}` : documentRecord ? `Book p. ${locator}` : "No locator"}</span>
+          <span className="locatorChip">{isText(documentRecord) ? `Line ${locator}` : documentRecord ? (locator ? `Book p. ${locator}` : `PDF p. ${currentPage} · no number`) : "No locator"}</span>
         </div>
         <div className="ledgerActions">
           <button className="compactAction ledgerToggle" type="button" onClick={() => setLedgerOpen(true)}>Records · {annotations.length}</button>
@@ -1042,7 +1108,9 @@ export function ScriptoriumMilestoneOnePersisted() {
             <div className="inspectorGroupContent">
               {isPdf(documentRecord) ? <>
                 <div className="twoColumnInputs"><label>PDF page<input type="number" min="1" max={pageCount || undefined} value={currentPage} onChange={(event) => goToPage(Number(event.target.value))} disabled={!documentRecord} /></label><label>Book page<input value={locator} readOnly /></label></div>
-                <div className="mappingFormula"><span>Mapping rule</span><label>PDF page<input type="number" min="1" value={documentRecord?.pageMap.basePdfPageIndex ?? 1} onChange={(event) => updatePageMap("basePdfPageIndex", Number(event.target.value))} disabled={!documentRecord} /></label><label>= book page<input type="number" value={documentRecord?.pageMap.baseBookPage ?? 1} onChange={(event) => updatePageMap("baseBookPage", Number(event.target.value))} disabled={!documentRecord} /></label></div>
+                <div className="goToBookPage"><label>Go to book page<input value={bookPageGoto} onChange={(event) => setBookPageGoto(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") goToBookPage(); }} placeholder="e.g. 47 or xiv" disabled={!documentRecord || !pageRanges} /></label><button className="secondaryButton" type="button" onClick={goToBookPage} disabled={!bookPageGoto.trim() || !pageRanges}>Go</button></div>
+                {pageRanges ? <PageNumberingEditor ranges={pageRanges.ranges} saved={pageRanges.saved} currentPage={currentPage} pageCount={pageCount} disabled={!documentRecord?.server?.versionId} onSave={savePageRanges} /> : <p className="pageNumberingHelp">Page numbering loads once the document is saved to the server.</p>}
+                {pageRanges?.saved && annotations.some((record) => record.anchor && !isTextAnchor(record.anchor) && recordMatchesCurrentVersion(record, documentRecord)) ? <button className="textAction" type="button" onClick={() => void refreshSavedRecordPages()}>Refresh saved records to match this numbering</button> : null}
               </> : <div className="textLocatorBox"><strong>{locator === "-" ? "No text-like document registered" : `Current locator: line ${locator}`}</strong><span>TXT, Markdown, and DOCX anchors use character offsets plus line numbers. Current snapshot checksum: {documentRecord?.server?.sourceChecksum?.slice(0, 12) ?? "not persisted"}.</span></div>}
             </div>
           </details>

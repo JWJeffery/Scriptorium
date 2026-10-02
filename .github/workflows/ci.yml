@@ -103,6 +103,9 @@ jobs:
       - name: Verify search text helpers
         run: node --experimental-strip-types scripts/verify-search-text.mjs
 
+      - name: Verify page labels (Roman and Arabic numbering)
+        run: node --experimental-strip-types scripts/verify-page-labels.mjs
+
       - name: Verify Ledger UI contract
         run: node scripts/verify-ledger-ui-contract.mjs
 
@@ -271,6 +274,10 @@ jobs:
             exit 1
           }
           SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-threads-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-page-ranges-api.mjs || {
             cat next-server.log
             exit 1
           }

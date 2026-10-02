@@ -93,7 +93,7 @@ function failure(message: string, status: number) {
 // anchor, and generated citation are deliberately not editable here: they
 // describe what was actually highlighted and cited.
 export async function PATCH(request: NextRequest) {
-  let body: { annotationId?: unknown; note?: unknown; colorKey?: unknown; tags?: unknown };
+  let body: { annotationId?: unknown; note?: unknown; colorKey?: unknown; tags?: unknown; locatorValue?: unknown; citationText?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -113,12 +113,20 @@ export async function PATCH(request: NextRequest) {
   const note = typeof body.note === "string" ? body.note.trim() : undefined;
   if (note === "" && !existing.selectedText.trim()) return failure("A page note cannot be emptied; delete the record instead.", 400);
 
+  const locatorValue = typeof body.locatorValue === "string" ? body.locatorValue.trim().slice(0, 255) : undefined;
+  const citationText = typeof body.citationText === "string" ? body.citationText.trim() : undefined;
+  if ((locatorValue === undefined) !== (citationText === undefined)) return failure("locatorValue and citationText must be sent together.", 400);
+
   const tags = Array.isArray(body.tags) ? cleanTags(body.tags.filter((tag): tag is string => typeof tag === "string")) : undefined;
   const annotation = await prisma.$transaction(async (tx) => {
     const updated = await tx.annotation.update({
       where: { id: annotationId },
       data: { note: note === undefined ? undefined : note || null, colorKey: typeof body.colorKey === "string" ? body.colorKey : undefined }
     });
+    if (citationText !== undefined && locatorValue !== undefined) {
+      // The page number changed (corrected numbering): keep the citation in step.
+      await tx.citation.updateMany({ where: { annotationId }, data: { locatorValue: locatorValue || null, generatedText: citationText } });
+    }
     if (tags) {
       await tx.annotationTag.deleteMany({ where: { annotationId } });
       if (tags.length) await tx.annotationTag.createMany({ data: tags.map((value) => ({ annotationId, value })) });
