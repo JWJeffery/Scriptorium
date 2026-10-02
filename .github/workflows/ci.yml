@@ -100,6 +100,9 @@ jobs:
       - name: Verify highlight geometry
         run: node --experimental-strip-types scripts/verify-highlight-geometry.mjs
 
+      - name: Verify search text helpers
+        run: node --experimental-strip-types scripts/verify-search-text.mjs
+
       - name: Verify Ledger UI contract
         run: node scripts/verify-ledger-ui-contract.mjs
 
@@ -260,6 +263,10 @@ jobs:
             exit 1
           fi
           SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-page-split-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-search-api.mjs || {
             cat next-server.log
             exit 1
           }

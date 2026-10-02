@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { snapRectsToOcrLines } from "../lib/highlight-geometry";
+import { matchWordIndexes } from "../lib/search-text";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
@@ -72,6 +73,9 @@ type Props = {
   // this component just renders the button in its toolbar and calls back.
   hasSelection?: boolean;
   onClearSelection?: () => void;
+  // Words from a Search result to light up on this page (null = none).
+  searchTerms?: string[] | null;
+  onClearSearch?: () => void;
 };
 
 function isTextItem(item: unknown): item is TextItemLike {
@@ -275,7 +279,7 @@ function rectFromPoints(start: { x: number; y: number }, end: { x: number; y: nu
   };
 }
 
-export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageChange, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords, hasSelection, onClearSelection }: Props) {
+export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageChange, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords, hasSelection, onClearSelection, searchTerms, onClearSearch }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -337,6 +341,41 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
   const [selectionMode, setSelectionMode] = useState<"highlight" | "box">("highlight");
   const useBoxSelection = usingOcrLayer && selectionMode === "box";
   const textRuns = usingOcrLayer ? runsFromWords(authoritativeWords!) : pdfTextRuns;
+
+  // Search hits: precise word boxes where OCR positions exist, otherwise the
+  // text runs the PDF itself reports.
+  const searchRects: PdfAnchorRect[] = (() => {
+    if (!searchTerms || searchTerms.length === 0) return [];
+    if (usingOcrLayer && authoritativeWords) {
+      const hits = matchWordIndexes(authoritativeWords.map((word) => word.text), searchTerms);
+      return snapRectsToOcrLines(hits.map((index) => authoritativeWords[index]), authoritativeWords);
+    }
+    // The PDF reports whole lines, so place each matched word by its share of
+    // the line's characters (exact for monospaced text, close for the rest).
+    const tokens = searchTerms.flatMap((term) => term.toLowerCase().split(/\s+/)).filter(Boolean);
+    const rects: PdfAnchorRect[] = [];
+    for (const run of pdfTextRuns) {
+      const lower = run.text.toLowerCase();
+      if (!lower.trim()) continue;
+      const runWidth = run.width ?? run.fontSize * run.text.length * 0.5;
+      const perChar = runWidth / run.text.length;
+      const phrase = tokens.join(" ");
+      const spans: Array<[number, number]> = [];
+      const phraseAt = tokens.length > 1 ? lower.indexOf(phrase) : -1;
+      if (phraseAt >= 0) spans.push([phraseAt, phrase.length]);
+      else {
+        for (const token of new Set(tokens)) {
+          let from = 0;
+          for (let at = lower.indexOf(token, from); at >= 0; at = lower.indexOf(token, from)) {
+            spans.push([at, token.length]);
+            from = at + token.length;
+          }
+        }
+      }
+      for (const [at, length] of spans) rects.push({ left: run.left + at * perChar, top: run.top, width: length * perChar, height: run.fontSize * 1.2 });
+    }
+    return rects;
+  })();
 
   useEffect(() => {
     if (usingOcrLayer) {
@@ -654,6 +693,11 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
             </button>
           ) : null}
         </div>
+        {searchTerms && searchTerms.length > 0 ? (
+          <button type="button" className="pdfClearSelection" onClick={onClearSearch} title="Remove the search highlight">
+            Search: {searchTerms.join(" ")} ✕
+          </button>
+        ) : null}
         {hasSelection ? (
           <button type="button" className="pdfClearSelection" onClick={onClearSelection}>
             Clear selection
@@ -686,6 +730,9 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
                 <span className="pdfHighlightBox" key={`${highlight.id}-${index}`} style={{ background: highlight.color, left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
               ))
             )}
+            {searchRects.map((rect, index) => (
+              <span className="pdfSearchBox" key={`search-${index}`} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
+            ))}
             {useBoxSelection && dragRect ? (
               <span className="pdfDragRect" style={{ left: dragRect.left, top: dragRect.top, width: dragRect.width, height: dragRect.height }} />
             ) : null}

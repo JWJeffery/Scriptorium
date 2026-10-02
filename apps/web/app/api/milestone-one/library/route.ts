@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { storedFileSize } from "../../../../lib/server-storage";
 
@@ -7,9 +7,10 @@ export const dynamic = "force-dynamic";
 
 // Lists every document stored on the server so one can be reopened when the
 // browser has lost track of it (cleared storage, a different address or port).
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const onlyDocumentId = request.nextUrl.searchParams.get("documentId")?.trim();
   const documents = await prisma.document.findMany({
-    where: { kind: { in: ["PDF", "TXT", "MARKDOWN", "DOCX"] } },
+    where: { kind: { in: ["PDF", "TXT", "MARKDOWN", "DOCX"] }, ...(onlyDocumentId ? { id: onlyDocumentId } : {}) },
     orderBy: { updatedAt: "desc" },
     take: 200,
     include: {

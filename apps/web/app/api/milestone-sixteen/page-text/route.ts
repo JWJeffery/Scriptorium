@@ -25,10 +25,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "versionId and a numeric pdfPageIndex are required." }, { status: 400 });
   }
 
-  const spans = await prisma.textSpan.findMany({ where: { versionId } });
-  const match = spans.find((span) => {
-    const anchor = span.anchor as { pdfPageIndex?: number; ocr?: boolean } | null;
-    return anchor?.pdfPageIndex === pdfPageIndex;
+  // Filter in the database: a scanned book has one large row per page, and
+  // loading all of them just to read one made every page turn slow.
+  const match = await prisma.textSpan.findFirst({
+    where: { versionId, anchor: { path: "$.pdfPageIndex", equals: pdfPageIndex } }
   });
 
   if (!match || !match.text.trim()) {

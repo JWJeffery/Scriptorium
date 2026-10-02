@@ -1809,3 +1809,146 @@ a:focus-visible {
   margin: 0;
   color: #6b5a47;
 }
+
+/* Search dialog */
+.searchDialog {
+  position: fixed;
+  z-index: 95;
+  top: 4rem;
+  left: 50%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(46rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 6rem);
+  transform: translateX(-50%);
+  border: 1px solid rgb(103 52 19 / 22%);
+  border-radius: 14px;
+  background: var(--ledger-paper);
+  box-shadow: var(--ledger-shadow);
+  overflow: hidden;
+}
+
+.searchControls {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem 0.7rem;
+  border-bottom: 1px solid rgb(103 52 19 / 14%);
+}
+
+.searchControls input[type="search"] {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgb(103 52 19 / 30%);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 1.05rem;
+}
+
+.searchToggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.searchToggles [role="group"] {
+  display: inline-flex;
+  border: 1px solid rgb(103 52 19 / 28%);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.searchToggles [role="group"] button {
+  padding: 0.3rem 0.8rem;
+  border: 0;
+  background: transparent;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.searchToggles [role="group"] button.active {
+  background: var(--ledger-terracotta-dark);
+  color: #fff;
+}
+
+.searchToggles [role="group"] button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.searchClose {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.searchBody {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem 1rem;
+  overflow-y: auto;
+}
+
+.searchBody h3 {
+  margin: 0.7rem 0 0.2rem;
+  color: #6b5a47;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.searchNote {
+  margin: 0.6rem 0;
+  color: #6b5a47;
+}
+
+.searchHit {
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.searchHit:hover,
+.searchHit:focus-visible {
+  border-color: rgb(103 52 19 / 30%);
+  background: #fff;
+}
+
+.searchHitHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.searchHitHead span:not(.recordColor) {
+  color: #6b5a47;
+}
+
+.searchHitText {
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.searchHitText mark {
+  background: rgb(255 140 0 / 30%);
+  color: inherit;
+  padding: 0 0.1em;
+  border-radius: 2px;
+}
+
+.searchHitTags {
+  color: var(--ledger-sage);
+  font-size: 0.78rem;
+}

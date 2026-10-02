@@ -196,3 +196,12 @@
     justify-content: flex-start;
   }
 }
+
+.pdfSearchBox {
+  position: absolute;
+  display: block;
+  border-radius: 3px;
+  background: rgb(255 140 0 / 28%);
+  outline: 2px solid rgb(214 98 0 / 85%);
+  outline-offset: 0;
+}

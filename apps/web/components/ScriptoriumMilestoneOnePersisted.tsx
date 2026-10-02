@@ -7,6 +7,7 @@ import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetad
 import { ScholarlyToolsPanel, type ImportedReadingNoteRecord } from "./ScholarlyToolsPanel";
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
 import { SavedDocumentsPanel, type SavedDocumentEntry } from "./SavedDocumentsPanel";
+import { SearchPanel, type SearchOpenRequest } from "./SearchPanel";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = CitationStyleId;
@@ -43,6 +44,7 @@ const TEXT_CONTENT_KEY = "scriptorium.currentTextContent";
 const ANNOTATIONS_KEY = "scriptorium.annotations";
 const INSPECTOR_PIN_KEY = "scriptorium.ui.inspectorPinned";
 const PENDING_SPLIT_OCR_KEY = "scriptorium.pendingSplitOcr";
+const PENDING_JUMP_KEY = "scriptorium.pendingJump";
 const EMPTY_SOURCE: SourceRecord = { author: "", title: "", place: "", publisher: "", year: "" };
 const DEFAULT_PAGE_MAP: PageMap = { basePdfPageIndex: 1, baseBookPage: 1, currentPdfPageIndex: 1 };
 const DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -246,6 +248,8 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [ledgerFilter, setLedgerFilter] = useState("all");
   const [editingId, setEditingId] = useState<string | undefined>();
   const [savedDocsOpen, setSavedDocsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchHighlight, setSearchHighlight] = useState<{ terms: string[]; pageNumber: number } | null>(null);
   const [compactLayout, setCompactLayout] = useState(false);
 
   useEffect(() => {
@@ -264,6 +268,20 @@ export function ScriptoriumMilestoneOnePersisted() {
   useEffect(() => {
     localStorage.setItem(INSPECTOR_PIN_KEY, String(inspectorPinned));
   }, [inspectorPinned]);
+
+  // Ctrl/Cmd+K, or "/" when not typing in a field, opens Search.
+  useEffect(() => {
+    function openSearchShortcut(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const typing = Boolean(target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable));
+      if (((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") || (!typing && event.key === "/" && !event.metaKey && !event.ctrlKey)) {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+    window.addEventListener("keydown", openSearchShortcut);
+    return () => window.removeEventListener("keydown", openSearchShortcut);
+  }, []);
 
   useEffect(() => {
     function closeOverlay(event: KeyboardEvent) {
@@ -712,6 +730,65 @@ export function ScriptoriumMilestoneOnePersisted() {
     }
   }
 
+  // Open a Search result: jump to the page and light up the matched words, or
+  // load a note into the inspector. A result in another document first opens
+  // that document (the page reloads), then finishes the jump.
+  async function openSearchResult(request: SearchOpenRequest) {
+    setSearchOpen(false);
+    if (request.kind === "thread") {
+      setStatus("Research threads are managed under Scholarly tools > Research threads.");
+      setToolsOpen(true);
+      return;
+    }
+    const hit = request.hit;
+    const sameDocument = documentRecord?.server?.documentId === hit.documentId;
+    if (!sameDocument) {
+      try {
+        const response = await fetch(`/api/milestone-one/library?documentId=${encodeURIComponent(hit.documentId)}`);
+        const body = await response.json() as { documents?: SavedDocumentEntry[] };
+        const entry = body.documents?.[0];
+        if (!response.ok || !entry) throw new Error("That document could not be found on the server.");
+        sessionStorage.setItem(PENDING_JUMP_KEY, JSON.stringify({ documentId: hit.documentId, pdfPageIndex: hit.pdfPageIndex, terms: request.terms, annotationId: request.kind === "annotation" ? request.hit.annotationId : null }));
+        void openSavedDocument(entry);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "The search result could not be opened.");
+      }
+      return;
+    }
+    applySearchJump(hit.pdfPageIndex, request.terms, request.kind === "annotation" ? request.hit.annotationId : null, request.kind === "page" ? request.hit.line : null);
+  }
+
+  function applySearchJump(pdfPageIndex: number | null, terms: string[], annotationId: string | null, line: number | null) {
+    if (annotationId) {
+      const record = annotations.find((item) => item.serverAnnotationId === annotationId);
+      if (record) { startEditing(record); if (pdfPageIndex) setSearchHighlight({ terms, pageNumber: pdfPageIndex }); return; }
+    }
+    if (pdfPageIndex && documentRecord?.kind === "PDF") {
+      goToPage(pdfPageIndex);
+      setSearchHighlight({ terms, pageNumber: pdfPageIndex });
+      setStatus(`Opened PDF page ${pdfPageIndex}. The matched words are outlined in orange.`);
+    } else if (line) {
+      setStatus(`The match is near line ${line} of this text document.`);
+    }
+  }
+
+  // Finish a jump begun in another document, once that document has loaded.
+  useEffect(() => {
+    if (!documentRecord) return;
+    const raw = sessionStorage.getItem(PENDING_JUMP_KEY);
+    if (!raw) return;
+    try {
+      const pending = JSON.parse(raw) as { documentId: string; pdfPageIndex: number | null; terms: string[]; annotationId: string | null };
+      if (pending.documentId !== documentRecord.server?.documentId) return;
+      sessionStorage.removeItem(PENDING_JUMP_KEY);
+      applySearchJump(pending.pdfPageIndex, pending.terms, pending.annotationId, null);
+    } catch {
+      sessionStorage.removeItem(PENDING_JUMP_KEY);
+    }
+    // applySearchJump closes over current state; this should run once per loaded document.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentRecord?.id, annotations.length]);
+
   function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setRecentAnnotationId(undefined); setStatus("Cleared annotation records for the current browser workspace."); }
 
   function previewReadingNote(candidate: ReadingNoteCandidate) {
@@ -830,6 +907,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         </div>
         <div className="ledgerActions">
           <button className="compactAction ledgerToggle" type="button" onClick={() => setLedgerOpen(true)}>Records · {annotations.length}</button>
+          <button className="compactAction" type="button" onClick={() => setSearchOpen(true)} title="Search (Ctrl+K or /)">Search</button>
           <button className="compactAction" type="button" onClick={() => setSavedDocsOpen(true)}>Open saved</button>
           <button className="compactAction toolsToggle" type="button" onClick={() => setToolsOpen(true)}>Scholarly tools{pendingSplitOcr ? " · attention" : ""}</button>
           <button className="compactAction pinToggle" type="button" aria-pressed={inspectorPinned} onClick={toggleInspectorPin}>{inspectorPinned ? "Unpin inspector" : "Pin inspector"}</button>
@@ -893,7 +971,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         <main className="ledgerReader" id="ledger-reader" tabIndex={-1}>
           <section className="pdfPanel" aria-label="Document display">
             {isPdf(documentRecord) ? (
-              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
+              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} searchTerms={searchHighlight && searchHighlight.pageNumber === currentPage ? searchHighlight.terms : null} onClearSearch={() => setSearchHighlight(null)} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
             ) : isText(documentRecord) ? (
               textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
             ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}
@@ -947,6 +1025,7 @@ export function ScriptoriumMilestoneOnePersisted() {
 
       <p className="ledgerStatus" role="status" aria-live="polite">{status}</p>
 
+      <SearchPanel open={searchOpen} currentDocumentId={documentRecord?.server?.documentId} onOpenResult={(request) => void openSearchResult(request)} onClose={() => setSearchOpen(false)} />
       <SavedDocumentsPanel open={savedDocsOpen} currentDocumentId={documentRecord?.server?.documentId} onOpenDocument={(entry) => { setSavedDocsOpen(false); void openSavedDocument(entry); }} onClose={() => setSavedDocsOpen(false)} />
 
       <div className={`toolsDrawer${toolsOpen ? " open" : ""}`} aria-hidden={!toolsOpen}>
