@@ -10,6 +10,7 @@ import { SavedDocumentsPanel, type SavedDocumentEntry } from "./SavedDocumentsPa
 import { SearchPanel, type SearchOpenRequest } from "./SearchPanel";
 import { AddToThread } from "./ThreadsPanel";
 import { TagInput, normalizeTags } from "./TagInput";
+import { SourceLookupDialog } from "./SourceLookupDialog";
 import { PageNumberingEditor } from "./PageNumberingEditor";
 import { labelForPage, pdfPageForLabel, type PageRangeSpec } from "../lib/page-labels";
 import { authorsToText, parseAuthors } from "../lib/author-names";
@@ -294,6 +295,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [tags, setTags] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | undefined>();
   const [savedDocsOpen, setSavedDocsOpen] = useState(false);
+  const [lookupOpen, setLookupOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchHighlight, setSearchHighlight] = useState<{ terms: string[]; pageNumber: number } | null>(null);
   const [compactLayout, setCompactLayout] = useState(false);
@@ -584,6 +586,28 @@ export function ScriptoriumMilestoneOnePersisted() {
   }
   function updatePageMap(field: keyof PageMap, value: number) { if (documentRecord) updateDocument({ ...documentRecord, pageMap: { ...documentRecord.pageMap, [field]: Number.isFinite(value) ? value : 1 } }); }
   function goToPage(page: number) { if (!documentRecord || documentRecord.kind !== "PDF") return; const upper = pageCount > 0 ? pageCount : page; setAnchor(undefined); setSelectedText(""); updatePageMap("currentPdfPageIndex", Math.min(Math.max(page, 1), upper)); }
+
+  // Take details looked up from an ISBN/DOI or imported from Zotero and make them this book's source.
+  async function applyLookedUpSource(csl: Record<string, unknown>) {
+    if (!documentRecord) return;
+    const year = (csl.issued as { "date-parts"?: unknown[][] } | undefined)?.["date-parts"]?.[0]?.[0];
+    const nextSource: SourceRecord = {
+      title: typeof csl.title === "string" ? csl.title : documentRecord.source.title,
+      author: Array.isArray(csl.author) ? authorsToText(csl.author as Parameters<typeof authorsToText>[0]) : "",
+      place: typeof csl["publisher-place"] === "string" ? csl["publisher-place"] : "",
+      publisher: typeof csl.publisher === "string" ? csl.publisher : "",
+      year: year === undefined || year === null ? "" : String(year)
+    };
+    const nextDocument: StoredDocument = { ...documentRecord, title: nextSource.title || documentRecord.title, source: nextSource };
+    if (documentRecord.server?.sourceId) {
+      const response = await fetch("/api/sources/apply", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceId: documentRecord.server.sourceId, csl }) });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? "The details could not be saved.");
+    }
+    updateDocument(nextDocument);
+    setSourceSaveMessage("Source details filled in and saved.");
+    setStatus(`Source details updated: ${nextSource.title}.`);
+  }
 
   async function saveSourceRecord() {
     if (!documentRecord) { setStatus("Register a document before saving CSL source metadata."); return; }
@@ -1153,6 +1177,7 @@ export function ScriptoriumMilestoneOnePersisted() {
               <div className="twoColumnInputs"><label>Place<input value={documentRecord?.source.place ?? ""} onChange={(event) => updateSource("place", event.target.value)} disabled={!documentRecord} /></label><label>Year<input value={documentRecord?.source.year ?? ""} onChange={(event) => updateSource("year", event.target.value)} disabled={!documentRecord} /></label></div>
               <label>Publisher<input value={documentRecord?.source.publisher ?? ""} onChange={(event) => updateSource("publisher", event.target.value)} disabled={!documentRecord} /></label>
               <button className="secondaryButton" onClick={saveSourceRecord} type="button" disabled={!documentRecord}>Save CSL source metadata</button>
+              <button className="textAction" type="button" onClick={() => setLookupOpen(true)} disabled={!documentRecord}>Fill in details from an ISBN, DOI or Zotero…</button>
               {sourceSaveMessage ? <p className="inlineSaveNotice">{sourceSaveMessage}</p> : null}
             </div>
           </details>
@@ -1172,6 +1197,7 @@ export function ScriptoriumMilestoneOnePersisted() {
 
       <p className="ledgerStatus" role="status" aria-live="polite">{status}</p>
 
+      <SourceLookupDialog open={lookupOpen} onApply={applyLookedUpSource} onClose={() => setLookupOpen(false)} />
       <SearchPanel open={searchOpen} currentDocumentId={documentRecord?.server?.documentId} onOpenResult={(request) => void openSearchResult(request)} onClose={() => setSearchOpen(false)} />
       <SavedDocumentsPanel open={savedDocsOpen} currentDocumentId={documentRecord?.server?.documentId} onOpenDocument={(entry) => { setSavedDocsOpen(false); void openSavedDocument(entry); }} onClose={() => setSavedDocsOpen(false)} />
 

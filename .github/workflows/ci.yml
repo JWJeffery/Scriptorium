@@ -109,6 +109,9 @@ jobs:
       - name: Verify citation engine (official CSL styles)
         run: node --experimental-strip-types scripts/verify-csl-engine.mjs
 
+      - name: Verify source lookup and import
+        run: node --experimental-strip-types scripts/verify-source-lookup.mjs
+
       - name: Verify Ledger UI contract
         run: node scripts/verify-ledger-ui-contract.mjs
 
@@ -281,6 +284,10 @@ jobs:
             exit 1
           }
           SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-page-ranges-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-sources-api.mjs || {
             cat next-server.log
             exit 1
           }
