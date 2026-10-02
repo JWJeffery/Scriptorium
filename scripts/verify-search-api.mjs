@@ -60,6 +60,15 @@ assert.equal(notes.annotations[0].pdfPageIndex, 2);
 assert.deepEqual(notes.annotations[0].tags, ["ecclesiology"]);
 const byTag = await json(await fetch(`${baseUrl}/api/search?q=ecclesiology&documentId=${documentId}`));
 assert.equal(byTag.counts.annotations, 1, "tags are searched");
+// Tags can be replaced after saving, and the old ones stop matching.
+const retag = await json(await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+  method: "PATCH",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ annotationId: ann.annotation.id, tags: ["Soteriology", "soteriology", " #grace "] })
+}));
+assert.deepEqual(retag.tags, ["Soteriology", "grace"], "tags are trimmed, de-hashed and de-duplicated ignoring case");
+assert.equal((await json(await fetch(`${baseUrl}/api/search?q=ecclesiology&documentId=${documentId}`))).counts.annotations, 0, "replaced tags no longer match");
+assert.equal((await json(await fetch(`${baseUrl}/api/search?q=soteriology&documentId=${documentId}`))).counts.annotations, 1);
 await fetch(`${baseUrl}/api/milestone-one/annotations?annotationId=${ann.annotation.id}`, { method: "DELETE" });
 
 console.log("Search API verified: exact, phrase, cross-document, related ranking, notes, and tags.");

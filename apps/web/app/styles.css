@@ -1981,3 +1981,16 @@ a:focus-visible {
 .addToThread { display: grid; gap: 0.3rem; margin-top: 0.3rem; }
 .addToThread select,
 .addToThread input { padding: 0.35rem 0.5rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 6px; font: inherit; font-size: 0.82rem; }
+
+/* Tags */
+.tagInput { display: grid; gap: 0.3rem; }
+.tagInputLabel { font-size: 0.85rem; }
+.tagChips { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; padding: 0.35rem 0.5rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: #fff; }
+.tagChips input { flex: 1; min-width: 7rem; border: 0; outline: 0; background: transparent; font: inherit; font-size: 0.9rem; }
+.tagChip { display: inline-flex; gap: 0.25rem; align-items: center; padding: 0.1rem 0.5rem; border-radius: 999px; background: rgb(102 115 75 / 16%); color: #3f4a2b; font-size: 0.82rem; }
+.tagChip button { border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; line-height: 1; }
+.tagSuggestions { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.tagSuggestions button { padding: 0.1rem 0.5rem; border: 1px dashed rgb(102 115 75 / 55%); border-radius: 999px; background: transparent; color: #3f4a2b; font-size: 0.78rem; cursor: pointer; }
+.recordTags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.recordTags span { padding: 0 0.45rem; border-radius: 999px; background: rgb(102 115 75 / 16%); color: #3f4a2b; font-size: 0.76rem; }
+.ledgerTagFilter { width: 100%; margin-top: 0.4rem; padding: 0.3rem 0.5rem; border: 1px solid rgb(103 52 19 / 25%); border-radius: 8px; background: #fff; font: inherit; font-size: 0.82rem; }

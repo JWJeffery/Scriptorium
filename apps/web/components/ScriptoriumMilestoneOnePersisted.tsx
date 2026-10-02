@@ -9,6 +9,7 @@ import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
 import { SavedDocumentsPanel, type SavedDocumentEntry } from "./SavedDocumentsPanel";
 import { SearchPanel, type SearchOpenRequest } from "./SearchPanel";
 import { AddToThread } from "./ThreadsPanel";
+import { TagInput, normalizeTags } from "./TagInput";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = CitationStyleId;
@@ -18,7 +19,7 @@ type PageMap = { basePdfPageIndex: number; baseBookPage: number; currentPdfPageI
 type ServerIds = { documentId: string; versionId: string; sourceId: string; pageMapId: string; storageKey?: string; snapshotKey?: string; sourceChecksum?: string };
 type StoredDocument = { id: string; title: string; filename: string; kind: DocumentKind; mediaType: string; size: number; source: SourceRecord; pageMap: PageMap; server?: ServerIds };
 type SelectionAnchor = PdfSelectionAnchor | TextSelectionAnchor;
-type SavedAnnotation = { id: string; documentId: string; versionId?: string; snapshotKey?: string; colorKey: string; selectedText: string; note: string; pdfPageIndex: number; bookPageLabel: string; citationStyle: CitationStyle; citationText: string; anchor?: SelectionAnchor; createdAt: string; serverAnnotationId?: string; serverCitationId?: string };
+type SavedAnnotation = { id: string; documentId: string; versionId?: string; snapshotKey?: string; colorKey: string; selectedText: string; note: string; pdfPageIndex: number; bookPageLabel: string; citationStyle: CitationStyle; citationText: string; anchor?: SelectionAnchor; createdAt: string; serverAnnotationId?: string; serverCitationId?: string; tags?: string[] };
 
 type TextPersistResponse = {
   document: { id: string; storageKey?: string | null };
@@ -225,7 +226,7 @@ async function persistAnnotation(document: StoredDocument, record: SavedAnnotati
   const response = await fetch("/api/milestone-one/annotations", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ documentId: document.server.documentId, versionId: document.server.versionId, sourceId: document.server.sourceId, pageMapId: document.server.pageMapId, colorKey: record.colorKey, selectedText: record.selectedText, note: record.note, tags: [], anchor: record.anchor, citationStyle: record.citationStyle, citationText: record.citationText, locatorType: locatorTypeFor(document, record.anchor), locatorValue: record.bookPageLabel })
+    body: JSON.stringify({ documentId: document.server.documentId, versionId: document.server.versionId, sourceId: document.server.sourceId, pageMapId: document.server.pageMapId, colorKey: record.colorKey, selectedText: record.selectedText, note: record.note, tags: record.tags ?? [], anchor: record.anchor, citationStyle: record.citationStyle, citationText: record.citationText, locatorType: locatorTypeFor(document, record.anchor), locatorValue: record.bookPageLabel })
   });
   if (!response.ok) throw new Error("Annotation persistence failed.");
   return await response.json() as { annotation: { id: string }; citation: { id: string } };
@@ -247,6 +248,8 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [pendingSplitOcr, setPendingSplitOcr] = useState(false);
   const [ledgerFilter, setLedgerFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | undefined>();
   const [savedDocsOpen, setSavedDocsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -472,7 +475,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     }
     setSelectedText("");
     setAnchor(undefined);
-    setNote("");
+    setNote(""); setTags([]);
     setPageCount(0);
     setSourceSaveMessage("");
     setRecentAnnotationId(undefined);
@@ -556,7 +559,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (isText(documentRecord) && !isTextAnchor(anchor)) { setStatus("Select text directly in the text reader so the annotation has a stable line/offset anchor."); return; }
 
     const normalizedAnchor = anchor ? { ...anchor, selectedText: normalizedSelectedText } as SelectionAnchor : undefined;
-    let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: normalizedNote, pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor), style), anchor: normalizedAnchor, createdAt: new Date().toISOString() };
+    let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: normalizedNote, pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor), style), anchor: normalizedAnchor, createdAt: new Date().toISOString(), tags: normalizeTags(tags) };
 
     try {
       const serverRecord = await persistAnnotation(documentRecord, record);
@@ -574,7 +577,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setRecentAnnotationId(record.id);
     setSelectedText("");
     setAnchor(undefined);
-    setNote("");
+    setNote(""); setTags([]);
   }
 
   const editingRecord = editingId ? annotations.find((record) => record.id === editingId) : undefined;
@@ -586,6 +589,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setSelectedText(record.selectedText);
     setAnchor(undefined);
     setNote(record.note);
+    setTags(record.tags ?? []);
     setSelectedColor(record.colorKey);
     setInspectorOpen(true);
     setLedgerOpen(false);
@@ -597,7 +601,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setEditingId(undefined);
     setSelectedText("");
     setAnchor(undefined);
-    setNote("");
+    setNote(""); setTags([]);
     setStatus("Stopped editing. No changes were made.");
   }
 
@@ -605,14 +609,15 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (!editingRecord) return;
     const nextNote = note.trim();
     if (!nextNote && !editingRecord.selectedText.trim()) { setStatus("A page note cannot be left empty. Delete the record instead."); return; }
-    const updated: SavedAnnotation = { ...editingRecord, note: nextNote, colorKey: selectedColor };
+    const nextTags = normalizeTags(tags);
+    const updated: SavedAnnotation = { ...editingRecord, note: nextNote, colorKey: selectedColor, tags: nextTags };
     let message = "Updated the record locally and in the database.";
     if (editingRecord.serverAnnotationId) {
       try {
         const response = await fetch("/api/milestone-one/annotations", {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ annotationId: editingRecord.serverAnnotationId, note: nextNote, colorKey: selectedColor })
+          body: JSON.stringify({ annotationId: editingRecord.serverAnnotationId, note: nextNote, colorKey: selectedColor, tags: nextTags })
         });
         if (!response.ok) throw new Error("update failed");
       } catch {
@@ -629,7 +634,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setEditingId(undefined);
     setSelectedText("");
     setAnchor(undefined);
-    setNote("");
+    setNote(""); setTags([]);
     setStatus(message);
   }
 
@@ -656,7 +661,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setEditingId(undefined);
     setSelectedText("");
     setAnchor(undefined);
-    setNote("");
+    setNote(""); setTags([]);
     setStatus(message);
   }
 
@@ -670,7 +675,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     try {
       const response = await fetch(`/api/milestone-one/workspace?documentId=${encodeURIComponent(entry.documentId)}`);
       if (!response.ok) throw new Error("The document's records could not be loaded.");
-      const body = await response.json() as { document: { versions: Array<{ id: string; snapshotKey?: string | null; annotations: Array<{ id: string; versionId: string; colorKey: string; selectedText: string; note: string | null; anchor: unknown; createdAt: string; citations: Array<{ id: string; styleId: string; locatorValue: string | null; generatedText: string }> }> }> } };
+      const body = await response.json() as { document: { versions: Array<{ id: string; snapshotKey?: string | null; annotations: Array<{ id: string; versionId: string; colorKey: string; selectedText: string; note: string | null; anchor: unknown; createdAt: string; tags?: Array<{ value: string }>; citations: Array<{ id: string; styleId: string; locatorValue: string | null; generatedText: string }> }> }> } };
 
       const csl = (typeof entry.cslJson === "object" && entry.cslJson !== null ? entry.cslJson : {}) as Record<string, unknown>;
       const firstAuthor = Array.isArray(csl.author) ? csl.author[0] as { literal?: string; given?: string; family?: string } | undefined : undefined;
@@ -718,7 +723,8 @@ export function ScriptoriumMilestoneOnePersisted() {
           anchor: itemAnchor,
           createdAt: item.createdAt,
           serverAnnotationId: item.id,
-          serverCitationId: itemCitation?.id
+          serverCitationId: itemCitation?.id,
+          tags: (item.tags ?? []).map((tag) => tag.value)
         }];
       }));
 
@@ -794,7 +800,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentRecord?.id, annotations.length]);
 
-  function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setRecentAnnotationId(undefined); setStatus("Cleared annotation records for the current browser workspace."); }
+  function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setTags([]); setRecentAnnotationId(undefined); setStatus("Cleared annotation records for the current browser workspace."); }
 
   function previewReadingNote(candidate: ReadingNoteCandidate) {
     if (!documentRecord || documentRecord.kind !== "PDF" || !candidate.anchor) return;
@@ -865,8 +871,14 @@ export function ScriptoriumMilestoneOnePersisted() {
     return () => { cancelled = true; };
   }, [documentRecord?.server?.versionId, documentRecord?.kind, currentPage]);
 
+  const knownTags = (() => {
+    const counts = new Map<string, number>();
+    for (const record of annotations) for (const tag of record.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([tag]) => tag);
+  })();
   const usedHighlightColors = highlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
   const filteredAnnotations = annotations.filter((record) => {
+    if (tagFilter && !(record.tags ?? []).some((tag) => tag.toLowerCase() === tagFilter.toLowerCase())) return false;
     if (ledgerFilter === "all") return true;
     if (ledgerFilter === "prior") return !recordMatchesCurrentVersion(record, documentRecord);
     return record.colorKey === ledgerFilter;
@@ -949,6 +961,12 @@ export function ScriptoriumMilestoneOnePersisted() {
             {usedHighlightColors.map((color) => <button type="button" title={color.defaultMeaning} aria-label={`Filter by ${color.defaultMeaning}`} className={ledgerFilter === color.key ? "active" : ""} onClick={() => setLedgerFilter(color.key)} key={color.key}><span style={{ background: color.color }} /></button>)}
             {annotations.some((record) => !recordMatchesCurrentVersion(record, documentRecord)) ? <button type="button" className={ledgerFilter === "prior" ? "active" : ""} onClick={() => setLedgerFilter("prior")}>Prior</button> : null}
           </div>
+          {knownTags.length > 0 ? (
+            <select className="ledgerTagFilter" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} aria-label="Filter by tag">
+              <option value="">All tags</option>
+              {knownTags.map((tag) => <option key={tag} value={tag}>#{tag}</option>)}
+            </select>
+          ) : null}
           <div className="ledgerRecords">
             {filteredAnnotations.length === 0 ? <p className="emptyAnnotationState">No annotations in this view yet.</p> : filteredAnnotations.map((record) => {
               const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
@@ -958,6 +976,7 @@ export function ScriptoriumMilestoneOnePersisted() {
                 <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
                 {record.selectedText ? <blockquote>{record.selectedText}</blockquote> : null}
                 {record.note ? <p>{record.note}</p> : null}
+                {(record.tags ?? []).length ? <div className="recordTags">{(record.tags ?? []).map((tag) => <span key={tag}>#{tag}</span>)}</div> : null}
                 <div className="recordCitation">{record.citationText}</div>
                 <small>{current ? "Current snapshot" : "Prior snapshot"} · {record.serverAnnotationId ? "database" : "local"}</small>
                 <div className="recordActions">
@@ -993,6 +1012,7 @@ export function ScriptoriumMilestoneOnePersisted() {
             <label>Selected passage<textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} readOnly={Boolean(editingRecord)} /></label>
             {editingRecord ? <p className="anchorSummary">The passage and citation of a saved record are fixed. You can change the note and colour.</p> : (selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
             <label>Note<textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} /></label>
+            <TagInput value={tags} onChange={setTags} suggestions={knownTags} disabled={!documentRecord} />
             <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${color.defaultMeaning}${selectedColor === color.key ? ", selected" : ""}`} title={color.defaultMeaning} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><strong>{highlightColors.find((color) => color.key === selectedColor)?.defaultMeaning}</strong></fieldset>
             <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL / Chicago / Turabian note</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
             <div className="generatedCitation"><span>Generated citation</span><p>{editingRecord ? editingRecord.citationText : generatedCitation}</p></div>

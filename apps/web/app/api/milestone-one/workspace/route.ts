@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
           textSpans: true,
           annotations: {
             orderBy: { createdAt: "desc" },
-            include: { citations: true }
+            include: { citations: true, tags: true }
           }
         }
       },

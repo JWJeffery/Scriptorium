@@ -14,7 +14,13 @@ function isValidInput(value: unknown): value is MilestoneOneAnnotationInput {
 }
 
 function cleanTags(tags: string[] | undefined) {
-  return Array.from(new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean))).slice(0, 50);
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of tags ?? []) {
+    const tag = raw.trim().replace(/^#/, "").slice(0, 60);
+    if (tag && !seen.has(tag.toLowerCase())) { seen.add(tag.toLowerCase()); result.push(tag); }
+  }
+  return result.slice(0, 50);
 }
 
 function anchorJsonFor(anchor: MilestoneOneAnchorInput | undefined): Prisma.InputJsonObject | undefined {
@@ -87,7 +93,7 @@ function failure(message: string, status: number) {
 // anchor, and generated citation are deliberately not editable here: they
 // describe what was actually highlighted and cited.
 export async function PATCH(request: NextRequest) {
-  let body: { annotationId?: unknown; note?: unknown; colorKey?: unknown };
+  let body: { annotationId?: unknown; note?: unknown; colorKey?: unknown; tags?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -107,11 +113,19 @@ export async function PATCH(request: NextRequest) {
   const note = typeof body.note === "string" ? body.note.trim() : undefined;
   if (note === "" && !existing.selectedText.trim()) return failure("A page note cannot be emptied; delete the record instead.", 400);
 
-  const annotation = await prisma.annotation.update({
-    where: { id: annotationId },
-    data: { note: note === undefined ? undefined : note || null, colorKey: typeof body.colorKey === "string" ? body.colorKey : undefined }
+  const tags = Array.isArray(body.tags) ? cleanTags(body.tags.filter((tag): tag is string => typeof tag === "string")) : undefined;
+  const annotation = await prisma.$transaction(async (tx) => {
+    const updated = await tx.annotation.update({
+      where: { id: annotationId },
+      data: { note: note === undefined ? undefined : note || null, colorKey: typeof body.colorKey === "string" ? body.colorKey : undefined }
+    });
+    if (tags) {
+      await tx.annotationTag.deleteMany({ where: { annotationId } });
+      if (tags.length) await tx.annotationTag.createMany({ data: tags.map((value) => ({ annotationId, value })) });
+    }
+    return updated;
   });
-  return NextResponse.json({ annotation });
+  return NextResponse.json({ annotation, tags: tags ?? undefined });
 }
 
 // Delete an annotation together with the citation(s) generated for it.
