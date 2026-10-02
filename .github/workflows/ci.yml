@@ -118,6 +118,9 @@ jobs:
       - name: Verify embedding maths
         run: node --experimental-strip-types scripts/verify-embedding-math.mjs
 
+      - name: Verify sessions and rate limiting
+        run: node --experimental-strip-types scripts/verify-session-and-rate.mjs
+
       - name: Verify Ledger UI contract
         run: node scripts/verify-ledger-ui-contract.mjs
 

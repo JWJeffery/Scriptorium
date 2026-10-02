@@ -357,6 +357,31 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [draftReady, setDraftReady] = useState(false);
   const [searchHighlight, setSearchHighlight] = useState<{ terms: string[]; pageNumber: number } | null>(null);
   const [compactLayout, setCompactLayout] = useState(false);
+  const [canSignOut, setCanSignOut] = useState(false);
+
+  useEffect(() => {
+    // If the login session runs out, send the reader to the sign-in page instead of showing errors.
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const response = await originalFetch(...args);
+      if (response.status === 401 && !response.url.includes("/api/auth/")) {
+        window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      }
+      return response;
+    };
+    void originalFetch("/api/auth/session")
+      .then((response) => response.json())
+      .then((data: { authRequired?: boolean; signedIn?: boolean }) => setCanSignOut(Boolean(data.authRequired && data.signedIn)))
+      .catch(() => undefined);
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, []);
+
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    window.location.assign("/login");
+  }
 
   useEffect(() => {
     const savedPin = localStorage.getItem(INSPECTOR_PIN_KEY);
@@ -1303,6 +1328,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           >
             Annotate
           </button>
+          {canSignOut ? <button className="compactAction" type="button" onClick={() => void signOut()}>Sign out</button> : null}
           <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} /></label>
         </div>
       </header>

@@ -2068,3 +2068,12 @@ a:focus-visible {
 
 .searchMethod { margin: 0.3rem 0 0; padding: 0.4rem 0.6rem; border-radius: 8px; background: rgb(102 115 75 / 12%); font-size: 0.8rem; color: #3f4a2b; }
 .meaningSection { display: grid; gap: 0.7rem; }
+
+/* Sign-in page */
+.loginPage { min-height: 100vh; display: grid; place-items: center; padding: 1rem; background: var(--ledger-ground, #f3ecdf); }
+.loginCard { width: min(24rem, 100%); display: grid; gap: 0.6rem; padding: 2rem 1.8rem; border: 1px solid rgb(103 52 19 / 22%); border-radius: 16px; background: var(--ledger-paper, #fffdf8); box-shadow: var(--ledger-shadow, 0 16px 42px rgb(62 43 25 / 14%)); }
+.loginCard h1 { margin: 0 0 0.4rem; font-size: 2rem; }
+.loginForm { display: grid; gap: 0.8rem; }
+.loginForm label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
+.loginForm input { padding: 0.6rem 0.75rem; border: 1px solid rgb(103 52 19 / 30%); border-radius: 8px; background: #fff; font: inherit; }
+.loginMessage { margin: 0; color: #8f2d2d; font-size: 0.88rem; }
