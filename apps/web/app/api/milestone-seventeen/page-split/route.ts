@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { readStoredPdfFile, storePdfFile } from "../../../../lib/server-storage";
 import { splitTwoPageSpreadPdf } from "../../../../lib/pdf-page-splitter";
+import { releaseHeavyJob, tryAcquireHeavyJob } from "../../../../lib/heavy-job-guard";
 import { beginJob, getJob, isJobRunning, setFinishedJob, setRunningJob } from "../../../../lib/page-split-jobs";
 
 export const runtime = "nodejs";
@@ -97,11 +98,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  await beginJob(versionId);
+  const slot = tryAcquireHeavyJob("page-split", versionId);
+  if (!slot.acquired) {
+    return NextResponse.json(
+      { error: "Another OCR or page-split job is already running. Wait for it to finish, then try again." },
+      { status: 429 }
+    );
+  }
 
-  runSplitInBackground(versionId, version.snapshotKey, version.documentId).catch((error) => {
-    console.error(`Background page-split failed for version ${versionId}:`, error);
-  });
+  try {
+    await beginJob(versionId);
+  } catch (error) {
+    releaseHeavyJob("page-split", versionId);
+    throw error;
+  }
+
+  runSplitInBackground(versionId, version.snapshotKey, version.documentId)
+    .catch((error) => {
+      console.error(`Background page-split failed for version ${versionId}:`, error);
+    })
+    .finally(() => releaseHeavyJob("page-split", versionId));
 
   return NextResponse.json({ splitStarted: true, versionId }, { status: 202 });
 }

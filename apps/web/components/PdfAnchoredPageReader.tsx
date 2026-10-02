@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
+import { snapRectsToOcrLines } from "../lib/highlight-geometry";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
@@ -515,7 +516,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
           return sameLine ? a.left - b.left : a.top - b.top;
         });
     const selectedText = sorted.map((word) => word.text).join(" ");
-    const rects = sorted.map((word) => ({ left: word.left, top: word.top, width: word.width, height: word.height }));
+    const rects = snapRectsToOcrLines(sorted.map((word) => ({ left: word.left, top: word.top, width: word.width, height: word.height })), authoritativeWords);
 
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
     const coverageNote = excludedOtherBlockCount > 0
@@ -584,7 +585,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
     const selectedText = parts.join(" ").replace(/\s+/g, " ").trim();
     if (!selectedText) return;
 
-    const rects = rectsFor(range, frame, finalScale);
+    const rects = usingOcrLayer ? snapRectsToOcrLines(rectsFor(range, frame, finalScale), authoritativeWords) : rectsFor(range, frame, finalScale);
     selection.removeAllRanges();
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
 
@@ -681,7 +682,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
           <canvas ref={canvasRef} className="pdfCanvas" />
           <div className="pdfHighlightLayer" aria-hidden="true">
             {highlights.filter((highlight) => highlight.anchor.pageNumber === pageNumber).flatMap((highlight) =>
-              highlight.anchor.rects.map((rect, index) => (
+              (usingOcrLayer ? snapRectsToOcrLines(highlight.anchor.rects, authoritativeWords) : highlight.anchor.rects).map((rect, index) => (
                 <span className="pdfHighlightBox" key={`${highlight.id}-${index}`} style={{ background: highlight.color, left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
               ))
             )}

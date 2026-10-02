@@ -1,5 +1,40 @@
 /** @type {import('next').NextConfig} */
+// `next dev` compiles with eval-based source maps and talks to its dev server
+// over a websocket; production needs neither, so only allow them in dev.
+const isDev = process.env.NODE_ENV !== "production";
+
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  // Next.js injects inline bootstrap scripts; 'wasm-unsafe-eval' is for pdf.js.
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  `connect-src 'self' blob: data:${isDev ? " ws: wss:" : ""}`,
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'"
+].join("; ");
+
+const securityHeaders = [
+  { key: "Content-Security-Policy", value: contentSecurityPolicy },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "same-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  { key: "Strict-Transport-Security", value: "max-age=31536000" }
+];
+
 const nextConfig = {
+  poweredByHeader: false,
+  // Scriptorium shows no remote or optimized images; switching the image
+  // optimizer off removes that attack surface (and the sharp dependency's).
+  images: { unoptimized: true },
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders }];
+  },
   // These ship native binaries or dynamically load worker/WASM files in
   // ways webpack can't statically bundle. Without this, webpack tries to
   // parse @napi-rs/canvas's platform .node binary as JavaScript and the

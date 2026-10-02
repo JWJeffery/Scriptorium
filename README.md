@@ -117,6 +117,22 @@ pnpm dev
 No need to restart MySQL or reinstall dependencies for this - it only clears the Next.js
 build cache and kills a stuck process.
 
+## Security configuration (required for any hosted deployment)
+
+Scriptorium enforces its own login in `apps/web/middleware.ts`, in addition to any host-level
+password. In production it answers `503` until both are set:
+
+```bash
+SCRIPTORIUM_AUTH_USER="your-username"
+SCRIPTORIUM_AUTH_PASSWORD="a-long-random-password"
+SCRIPTORIUM_STORAGE_DIR="/home/<user>/scriptorium-storage"   # absolute path, outside the web root
+```
+
+Also: serve only over HTTPS, use a strong unique MySQL password that accepts localhost
+connections only, and keep `.env` outside the web root. Cross-site write requests are rejected,
+and only one OCR/page-split job may run at a time. `scripts/verify-security-gate.mjs` checks the
+login gate, cross-site blocking, and security headers against a running server.
+
 ## Development direction
 
 Do not begin with broad governance. Build one end-to-end reading workflow first. The test of the project is whether a theologian can open a document, mark a passage, preserve the correct book page number, attach a note, generate a citation, and recover the whole scholarly object later.

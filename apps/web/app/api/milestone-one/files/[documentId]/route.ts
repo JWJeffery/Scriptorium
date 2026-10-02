@@ -41,7 +41,11 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
   return new NextResponse(new Uint8Array(fileBuffer), {
     headers: {
-      "content-type": document.mediaType || "application/pdf",
+      // Only PDFs are served from here; never echo a client-supplied media
+      // type (a stored "text/html" would otherwise run as a page).
+      "content-type": "application/pdf",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "sandbox",
       "content-length": String(fileBuffer.byteLength),
       "cache-control": "no-store"
     }

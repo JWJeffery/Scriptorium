@@ -6,6 +6,7 @@ import { highlightColors } from "../lib/highlights";
 import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
 import { ScholarlyToolsPanel, type ImportedReadingNoteRecord } from "./ScholarlyToolsPanel";
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
+import { SavedDocumentsPanel, type SavedDocumentEntry } from "./SavedDocumentsPanel";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = CitationStyleId;
@@ -243,6 +244,8 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [pendingSplitOcr, setPendingSplitOcr] = useState(false);
   const [ledgerFilter, setLedgerFilter] = useState("all");
+  const [editingId, setEditingId] = useState<string | undefined>();
+  const [savedDocsOpen, setSavedDocsOpen] = useState(false);
   const [compactLayout, setCompactLayout] = useState(false);
 
   useEffect(() => {
@@ -408,6 +411,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   }, []);
 
   const capturePdfAnchor = useCallback((nextAnchor: PdfSelectionAnchor) => {
+    setEditingId(undefined);
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
     setInspectorOpen(true);
@@ -415,6 +419,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   }, []);
 
   const captureTextAnchor = useCallback((nextAnchor: TextSelectionAnchor) => {
+    setEditingId(undefined);
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
     setInspectorOpen(true);
@@ -553,6 +558,160 @@ export function ScriptoriumMilestoneOnePersisted() {
     setNote("");
   }
 
+  const editingRecord = editingId ? annotations.find((record) => record.id === editingId) : undefined;
+
+  // Load a saved record into the inspector so its note and colour can be
+  // changed, or the record deleted.
+  function startEditing(record: SavedAnnotation) {
+    setEditingId(record.id);
+    setSelectedText(record.selectedText);
+    setAnchor(undefined);
+    setNote(record.note);
+    setSelectedColor(record.colorKey);
+    setInspectorOpen(true);
+    setLedgerOpen(false);
+    if (recordMatchesCurrentVersion(record, documentRecord) && record.anchor && !isTextAnchor(record.anchor)) goToPage(record.anchor.pageNumber);
+    setStatus("Editing a saved record. You can change its note and highlight colour, or delete it.");
+  }
+
+  function cancelEditing() {
+    setEditingId(undefined);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote("");
+    setStatus("Stopped editing. No changes were made.");
+  }
+
+  async function saveEdit() {
+    if (!editingRecord) return;
+    const nextNote = note.trim();
+    if (!nextNote && !editingRecord.selectedText.trim()) { setStatus("A page note cannot be left empty. Delete the record instead."); return; }
+    const updated: SavedAnnotation = { ...editingRecord, note: nextNote, colorKey: selectedColor };
+    let message = "Updated the record locally and in the database.";
+    if (editingRecord.serverAnnotationId) {
+      try {
+        const response = await fetch("/api/milestone-one/annotations", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ annotationId: editingRecord.serverAnnotationId, note: nextNote, colorKey: selectedColor })
+        });
+        if (!response.ok) throw new Error("update failed");
+      } catch {
+        message = "Updated the record in this browser only; the database could not be updated.";
+      }
+    } else {
+      message = "Updated the record in this browser (it was never saved to the database).";
+    }
+    setAnnotations((previous) => {
+      const next = previous.map((record) => (record.id === updated.id ? updated : record));
+      saveAnnotations(next);
+      return next;
+    });
+    setEditingId(undefined);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote("");
+    setStatus(message);
+  }
+
+  async function deleteEditingRecord() {
+    if (!editingRecord) return;
+    if (!window.confirm("Delete this annotation and its citation? This cannot be undone.")) return;
+    const message = "Deleted the record and its citation.";
+    if (editingRecord.serverAnnotationId) {
+      try {
+        const response = await fetch(`/api/milestone-one/annotations?annotationId=${encodeURIComponent(editingRecord.serverAnnotationId)}`, { method: "DELETE" });
+        // 404 means the database no longer has it, which is what we wanted.
+        if (!response.ok && response.status !== 404) throw new Error("delete failed");
+      } catch {
+        setStatus("The database could not delete this record, so it was kept. Try again.");
+        return;
+      }
+    }
+    setAnnotations((previous) => {
+      const next = previous.filter((record) => record.id !== editingRecord.id);
+      saveAnnotations(next);
+      return next;
+    });
+    setRecentAnnotationId((current) => (current === editingRecord.id ? undefined : current));
+    setEditingId(undefined);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote("");
+    setStatus(message);
+  }
+
+  // Reopen a document that is stored on the server. Everything the reader needs
+  // is rebuilt from the database, written to this browser's storage in the same
+  // shape registration uses, and the page reloads so the normal recovery path
+  // (server PDF, or server text snapshot) loads it.
+  async function openSavedDocument(entry: SavedDocumentEntry) {
+    if ((selectedText.trim() || note.trim()) && !window.confirm("Opening another document will discard the unsaved selection and note. Continue?")) return;
+    setStatus(`Opening "${entry.title}" from the server…`);
+    try {
+      const response = await fetch(`/api/milestone-one/workspace?documentId=${encodeURIComponent(entry.documentId)}`);
+      if (!response.ok) throw new Error("The document's records could not be loaded.");
+      const body = await response.json() as { document: { versions: Array<{ id: string; snapshotKey?: string | null; annotations: Array<{ id: string; versionId: string; colorKey: string; selectedText: string; note: string | null; anchor: unknown; createdAt: string; citations: Array<{ id: string; styleId: string; locatorValue: string | null; generatedText: string }> }> }> } };
+
+      const csl = (typeof entry.cslJson === "object" && entry.cslJson !== null ? entry.cslJson : {}) as Record<string, unknown>;
+      const firstAuthor = Array.isArray(csl.author) ? csl.author[0] as { literal?: string; given?: string; family?: string } | undefined : undefined;
+      const issued = (csl.issued as { "date-parts"?: unknown[][] } | undefined)?.["date-parts"]?.[0]?.[0];
+      const rule = /PDF page (\d+) = book page (\d+)/.exec(entry.pageMapNote ?? "");
+      const basePdfPageIndex = rule ? Number(rule[1]) : 1;
+      const baseBookPage = rule ? Number(rule[2]) : 1;
+      const opened: StoredDocument = {
+        id: entry.documentId,
+        title: entry.title,
+        filename: entry.filename,
+        kind: entry.kind,
+        mediaType: entry.mediaType,
+        size: entry.size ?? 0,
+        source: {
+          author: firstAuthor?.literal ?? [firstAuthor?.given, firstAuthor?.family].filter(Boolean).join(" "),
+          title: typeof csl.title === "string" ? csl.title : entry.title,
+          place: typeof csl["publisher-place"] === "string" ? csl["publisher-place"] : "",
+          publisher: typeof csl.publisher === "string" ? csl.publisher : "",
+          year: issued === undefined ? "" : String(issued)
+        },
+        pageMap: { basePdfPageIndex, baseBookPage, currentPdfPageIndex: entry.pdfPageIndex },
+        server: { documentId: entry.documentId, versionId: entry.versionId, sourceId: entry.sourceId, pageMapId: entry.pageMapId, storageKey: entry.storageKey ?? undefined, snapshotKey: entry.snapshotKey ?? undefined, sourceChecksum: entry.sourceChecksum ?? undefined }
+      };
+
+      // Bring this document's saved annotations back into the Ledger, skipping
+      // any the browser already has.
+      const known = new Set(annotations.map((record) => record.serverAnnotationId).filter(Boolean));
+      const restored: SavedAnnotation[] = body.document.versions.flatMap((version) => version.annotations.flatMap((item) => {
+        if (known.has(item.id)) return [];
+        const itemCitation = item.citations[0];
+        const itemAnchor = (item.anchor ?? undefined) as SelectionAnchor | undefined;
+        return [{
+          id: `server_${item.id}`,
+          documentId: entry.documentId,
+          versionId: item.versionId,
+          snapshotKey: version.snapshotKey ?? undefined,
+          colorKey: item.colorKey,
+          selectedText: item.selectedText,
+          note: item.note ?? "",
+          pdfPageIndex: itemAnchor && !isTextAnchor(itemAnchor) ? itemAnchor.pageNumber : entry.pdfPageIndex,
+          bookPageLabel: itemCitation?.locatorValue ?? "",
+          citationStyle: (itemCitation?.styleId ?? "sbl-note") as CitationStyle,
+          citationText: itemCitation?.generatedText ?? "",
+          anchor: itemAnchor,
+          createdAt: item.createdAt,
+          serverAnnotationId: item.id,
+          serverCitationId: itemCitation?.id
+        }];
+      }));
+
+      saveDocument(opened);
+      localStorage.removeItem(TEXT_CONTENT_KEY);
+      saveAnnotations([...restored, ...annotations]);
+      window.location.reload();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The document could not be opened.");
+    }
+  }
+
   function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setRecentAnnotationId(undefined); setStatus("Cleared annotation records for the current browser workspace."); }
 
   function previewReadingNote(candidate: ReadingNoteCandidate) {
@@ -671,6 +830,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         </div>
         <div className="ledgerActions">
           <button className="compactAction ledgerToggle" type="button" onClick={() => setLedgerOpen(true)}>Records · {annotations.length}</button>
+          <button className="compactAction" type="button" onClick={() => setSavedDocsOpen(true)}>Open saved</button>
           <button className="compactAction toolsToggle" type="button" onClick={() => setToolsOpen(true)}>Scholarly tools{pendingSplitOcr ? " · attention" : ""}</button>
           <button className="compactAction pinToggle" type="button" aria-pressed={inspectorPinned} onClick={toggleInspectorPin}>{inspectorPinned ? "Unpin inspector" : "Pin inspector"}</button>
           <button
@@ -711,13 +871,16 @@ export function ScriptoriumMilestoneOnePersisted() {
               const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
               const current = recordMatchesCurrentVersion(record, documentRecord);
               const canOpen = current && record.anchor && !isTextAnchor(record.anchor);
-              return <article className="ledgerRecord" key={record.id}>
+              return <article className={`ledgerRecord${record.id === editingId ? " editing" : ""}`} key={record.id}>
                 <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
                 {record.selectedText ? <blockquote>{record.selectedText}</blockquote> : null}
                 {record.note ? <p>{record.note}</p> : null}
                 <div className="recordCitation">{record.citationText}</div>
                 <small>{current ? "Current snapshot" : "Prior snapshot"} · {record.serverAnnotationId ? "database" : "local"}</small>
-                {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
+                <div className="recordActions">
+                  <button className="recordOpen" type="button" onClick={() => startEditing(record)}>Open and edit</button>
+                  {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
+                </div>
               </article>;
             })}
           </div>
@@ -739,18 +902,24 @@ export function ScriptoriumMilestoneOnePersisted() {
 
         <aside id="annotation-inspector" className="inspectorPane" aria-label="Annotation inspector" aria-hidden={(!inspectorPinned || compactLayout) && !inspectorOpen}>
           <div className="paneHeader">
-            <div><p className="eyebrow">Current selection</p><h2>New record</h2></div>
+            <div><p className="eyebrow">Current selection</p><h2>{editingRecord ? "Edit record" : "New record"}</h2></div>
             <button className="paneClose inspectorClose" type="button" onClick={() => setInspectorOpen(false)} aria-label="Close annotation inspector">×</button>
           </div>
           <div className="captureCard">
-            <label>Selected passage<textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} /></label>
-            {(selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
+            <label>Selected passage<textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} readOnly={Boolean(editingRecord)} /></label>
+            {editingRecord ? <p className="anchorSummary">The passage and citation of a saved record are fixed. You can change the note and colour.</p> : (selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
             <label>Note<textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} /></label>
             <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${color.defaultMeaning}${selectedColor === color.key ? ", selected" : ""}`} title={color.defaultMeaning} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><strong>{highlightColors.find((color) => color.key === selectedColor)?.defaultMeaning}</strong></fieldset>
             <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL / Chicago / Turabian note</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
-            <div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>
+            <div className="generatedCitation"><span>Generated citation</span><p>{editingRecord ? editingRecord.citationText : generatedCitation}</p></div>
             {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
-            <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save annotation + citation" : "Save page note + citation"}</button>
+            {editingRecord ? <>
+              <button className="primaryButton saveRecordButton" onClick={saveEdit} type="button">Save changes</button>
+              <div className="editActions">
+                <button className="textAction" type="button" onClick={cancelEditing}>Cancel</button>
+                <button className="textAction dangerAction" type="button" onClick={deleteEditingRecord}>Delete this record</button>
+              </div>
+            </> : <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save annotation + citation" : "Save page note + citation"}</button>}
           </div>
           {recentSavedRecord && recentSavedColor ? <div className="recentSavedRecord"><div><span className="recordColor" style={{ background: recentSavedColor.color }} /><strong>Latest saved record</strong></div>{recentSavedRecord.selectedText ? <blockquote>{recentSavedRecord.selectedText}</blockquote> : null}{recentSavedRecord.note ? <p>{recentSavedRecord.note}</p> : null}<small>{isText(documentRecord) ? "line" : "book page"} {recentSavedRecord.bookPageLabel} · {recentSavedRecord.serverAnnotationId ? "database" : "local"}</small></div> : null}
           <details className="inspectorGroup" open>
@@ -777,6 +946,8 @@ export function ScriptoriumMilestoneOnePersisted() {
       </div>
 
       <p className="ledgerStatus" role="status" aria-live="polite">{status}</p>
+
+      <SavedDocumentsPanel open={savedDocsOpen} currentDocumentId={documentRecord?.server?.documentId} onOpenDocument={(entry) => { setSavedDocsOpen(false); void openSavedDocument(entry); }} onClose={() => setSavedDocsOpen(false)} />
 
       <div className={`toolsDrawer${toolsOpen ? " open" : ""}`} aria-hidden={!toolsOpen}>
         <div className="drawerHeader"><div><p className="eyebrow">Research utilities</p><strong>Scholarly tools</strong></div><button type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools">×</button></div>

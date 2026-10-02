@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
+import { highlightColors } from "../../../../lib/highlights";
 import type { MilestoneOneAnchorInput, MilestoneOneAnnotationInput } from "../../../../lib/milestone-one-types";
 
 export const runtime = "nodejs";
@@ -76,4 +77,54 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json(result, { status: 201 });
+}
+
+function failure(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
+}
+
+// Edit a saved annotation's note and highlight colour. The selected passage,
+// anchor, and generated citation are deliberately not editable here: they
+// describe what was actually highlighted and cited.
+export async function PATCH(request: NextRequest) {
+  let body: { annotationId?: unknown; note?: unknown; colorKey?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return failure("A JSON request body is required.", 400);
+  }
+
+  const annotationId = typeof body.annotationId === "string" ? body.annotationId.trim() : "";
+  if (!annotationId) return failure("annotationId is required.", 400);
+  if (body.note !== undefined && typeof body.note !== "string") return failure("note must be text.", 400);
+  if (body.colorKey !== undefined && (typeof body.colorKey !== "string" || !highlightColors.some((color) => color.key === body.colorKey))) {
+    return failure("colorKey is not a known highlight colour.", 400);
+  }
+
+  const existing = await prisma.annotation.findUnique({ where: { id: annotationId }, select: { id: true, selectedText: true } });
+  if (!existing) return failure("No annotation found for that id.", 404);
+
+  const note = typeof body.note === "string" ? body.note.trim() : undefined;
+  if (note === "" && !existing.selectedText.trim()) return failure("A page note cannot be emptied; delete the record instead.", 400);
+
+  const annotation = await prisma.annotation.update({
+    where: { id: annotationId },
+    data: { note: note === undefined ? undefined : note || null, colorKey: typeof body.colorKey === "string" ? body.colorKey : undefined }
+  });
+  return NextResponse.json({ annotation });
+}
+
+// Delete an annotation together with the citation(s) generated for it.
+export async function DELETE(request: NextRequest) {
+  const annotationId = request.nextUrl.searchParams.get("annotationId")?.trim();
+  if (!annotationId) return failure("annotationId is required.", 400);
+
+  const existing = await prisma.annotation.findUnique({ where: { id: annotationId }, select: { id: true } });
+  if (!existing) return failure("No annotation found for that id.", 404);
+
+  await prisma.$transaction([
+    prisma.citation.deleteMany({ where: { annotationId } }),
+    prisma.annotation.delete({ where: { id: annotationId } })
+  ]);
+  return NextResponse.json({ deleted: true, annotationId });
 }

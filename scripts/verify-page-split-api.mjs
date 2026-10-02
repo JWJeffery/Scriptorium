@@ -96,4 +96,54 @@ assert.equal(reopened.document.id, imported.document.id);
 assert.equal(reopened.document.versions[0].id, imported.version.id);
 assert.ok(reopened.document.versions[0].snapshotKey, "new document must retain its server PDF snapshot");
 
-console.log("Page-split API smoke test passed (upload, background split, status, PDF download, new-document import, and reopen). ");
+// The saved-document list shows what is on the server, so a document can be reopened.
+const library = await json(await fetch(`${baseUrl}/api/milestone-one/library`));
+const listed = library.documents.find((entry) => entry.documentId === uploaded.document.id);
+assert.ok(listed, "an uploaded document appears in the saved-document list");
+assert.equal(listed.versionId, uploaded.version.id);
+assert.equal(listed.sourceId, uploaded.source.id);
+assert.equal(listed.pageMapId, uploaded.pageMap.id);
+assert.ok(listed.size > 0 && !listed.fileMissing, "the stored file is found");
+
+// Saved annotations can be edited and deleted (note + colour only).
+const createdAnnotation = await json(
+  await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: uploaded.document.id,
+      versionId: uploaded.version.id,
+      sourceId: uploaded.source.id,
+      pageMapId: uploaded.pageMap.id,
+      colorKey: "yellow",
+      selectedText: "Edit me",
+      note: "first note",
+      citationStyle: "sbl-note",
+      citationText: "Citation.",
+      locatorValue: "1"
+    })
+  })
+);
+const annotationId = createdAnnotation.annotation.id;
+const patched = await json(
+  await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ annotationId, note: "second note", colorKey: "green" })
+  })
+);
+assert.equal(patched.annotation.note, "second note");
+assert.equal(patched.annotation.colorKey, "green");
+assert.equal(patched.annotation.selectedText, "Edit me", "the highlighted passage must not change");
+const badColor = await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+  method: "PATCH",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ annotationId, colorKey: "not-a-colour" })
+});
+assert.equal(badColor.status, 400);
+const removed = await fetch(`${baseUrl}/api/milestone-one/annotations?annotationId=${encodeURIComponent(annotationId)}`, { method: "DELETE" });
+assert.equal(removed.status, 200);
+const removedAgain = await fetch(`${baseUrl}/api/milestone-one/annotations?annotationId=${encodeURIComponent(annotationId)}`, { method: "DELETE" });
+assert.equal(removedAgain.status, 404, "deleting twice reports not found");
+
+console.log("Page-split API smoke test passed (upload, background split, status, PDF download, new-document import, reopen, saved-document list, and annotation edit/delete). ");

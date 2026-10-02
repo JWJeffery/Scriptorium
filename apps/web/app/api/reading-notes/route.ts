@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../lib/prisma";
 import { extractDocxRawText } from "../../../lib/docx-extraction";
 import { analyzeReadingNotes, parseReadingNotes, type ReadingNoteCandidate, type ReadingNotesPage } from "../../../lib/reading-notes-import";
+import { validateDocx } from "../../../lib/upload-guards";
 import { formatCitation, isCitationStyleId, type CslItem } from "../../../lib/citation-styles";
 
 export const runtime = "nodejs";
@@ -48,6 +49,9 @@ export async function POST(request: NextRequest) {
   if (!(file instanceof File) || !isDocx(file) || !documentId || !versionId || !sourceId || !isCitationStyleId(citationStyle)) {
     return NextResponse.json({ error: "A DOCX notes file and a registered PDF are required." }, { status: 400 });
   }
+
+  const docxProblem = await validateDocx(file);
+  if (docxProblem) return NextResponse.json({ error: docxProblem }, { status: 400 });
 
   const [version, source, extraction] = await Promise.all([
     prisma.documentVersion.findFirst({ where: { id: versionId, documentId }, select: { id: true } }),

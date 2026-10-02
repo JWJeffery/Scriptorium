@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
 import { deleteStoredPdfFile, storePdfFile } from "../../../../lib/server-storage";
 import { extractPdfText } from "../../../../lib/pdf-text-extraction";
+import { looksLikePdf } from "../../../../lib/upload-guards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,6 +70,9 @@ export async function POST(request: NextRequest) {
   const currentPdfPageIndex = parsePositivePage(readText(formData, "currentPdfPageIndex"), 1);
   const bookPageLabel = readText(formData, "bookPageLabel") || String(baseBookPage + currentPdfPageIndex - basePdfPageIndex);
   const pdfBytes = Buffer.from(await file.arrayBuffer());
+  if (!looksLikePdf(pdfBytes)) {
+    return failure("The uploaded file is not a valid PDF.", 400);
+  }
   let storageKeyToClean: string | undefined;
 
   try {
