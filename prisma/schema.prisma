@@ -64,6 +64,7 @@ model Document {
   sources          Source[]
   annotations      Annotation[]
   bookmarks        Bookmark[]
+  embeddings       PassageEmbedding[]
 
   @@index([title])
 }
@@ -113,6 +114,27 @@ model PageMap {
 
   @@unique([versionId, pdfPageIndex])
   @@index([bookPageLabel])
+}
+
+// Search-by-meaning index: one vector per passage of a book's text (kind "page")
+// or per saved note (kind "annotation"). It is derived data and can always be
+// rebuilt, so it is left out of backups.
+model PassageEmbedding {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  kind       String   @db.VarChar(16)
+  refId      String   @db.VarChar(191)
+  pdfPage    Int?
+  startChar  Int      @default(0)
+  endChar    Int      @default(0)
+  textHash   String   @db.VarChar(40)
+  model      String   @db.VarChar(64)
+  vector     Bytes
+  createdAt  DateTime @default(now())
+
+  @@index([documentId, kind])
+  @@index([refId])
 }
 
 // A place marked in a book, to come back to.

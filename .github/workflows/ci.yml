@@ -115,6 +115,9 @@ jobs:
       - name: Verify annotation sync rules
         run: node --experimental-strip-types scripts/verify-annotation-sync.mjs
 
+      - name: Verify embedding maths
+        run: node --experimental-strip-types scripts/verify-embedding-math.mjs
+
       - name: Verify Ledger UI contract
         run: node scripts/verify-ledger-ui-contract.mjs
 
@@ -260,7 +263,7 @@ jobs:
 
       - name: Verify page-split API end to end
         run: |
-          export SCRIPTORIUM_AUTH_DISABLED=true
+          export SCRIPTORIUM_AUTH_DISABLED=true SCRIPTORIUM_FAKE_EMBEDDINGS=1
           pnpm --filter @scriptorium/web exec next start -H 127.0.0.1 -p 3100 > next-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
@@ -295,6 +298,10 @@ jobs:
             exit 1
           }
           SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-reading-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-meaning-api.mjs || {
             cat next-server.log
             exit 1
           }

@@ -2065,3 +2065,6 @@ a:focus-visible {
 /* Database sync */
 .syncNotice { display: grid; gap: 0.2rem; margin: 0.4rem 0; padding: 0.5rem 0.7rem; border-radius: 8px; background: rgb(154 79 28 / 14%); font-size: 0.82rem; }
 .recordUnsaved { color: #8f2d2d; }
+
+.searchMethod { margin: 0.3rem 0 0; padding: 0.4rem 0.6rem; border-radius: 8px; background: rgb(102 115 75 / 12%); font-size: 0.8rem; color: #3f4a2b; }
+.meaningSection { display: grid; gap: 0.7rem; }

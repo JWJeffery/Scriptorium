@@ -8,7 +8,7 @@ type Snippet = { before: string; match: string; after: string };
 export type SearchPageHit = { documentId: string; documentTitle: string; versionId: string; pdfPageIndex: number | null; bookPage: string | null; line: number | null; snippet: Snippet };
 export type SearchAnnotationHit = { annotationId: string; documentId: string; documentTitle: string; versionId: string; pdfPageIndex: number | null; bookPage: string | null; colorKey: string; tags: string[]; note: string; selectedText: string; snippet: Snippet };
 type SearchThreadHit = { threadId: string; title: string; itemCount: number };
-type SearchResponse = { counts: { pages: number; annotations: number; threads: number }; pages: SearchPageHit[]; annotations: SearchAnnotationHit[]; threads: SearchThreadHit[]; truncated: boolean };
+type SearchResponse = { method?: "words" | "meaning"; methodNote?: string; unindexed?: string[]; unindexedCount?: number; counts: { pages: number; annotations: number; threads: number }; pages: SearchPageHit[]; annotations: SearchAnnotationHit[]; threads: SearchThreadHit[]; truncated: boolean };
 
 export type SearchOpenRequest =
   | { kind: "page"; hit: SearchPageHit; terms: string[] }
@@ -101,6 +101,13 @@ export function SearchPanel({ open, currentDocumentId, onOpenResult, onClose }: 
         </div>
         <div className="searchBody" aria-live="polite">
           {error ? <p className="searchNote">{error}</p> : null}
+          {!error && results && mode === "related" ? (
+            <p className="searchMethod">
+              {results.method === "meaning" ? "Ranked by meaning." : "Ranked by shared words."}{" "}
+              {results.methodNote}
+              {results.method === "meaning" && results.unindexed && results.unindexed.length > 0 ? ` Not yet indexed, so not searched: ${results.unindexed.slice(0, 3).join("; ")}${(results.unindexedCount ?? results.unindexed.length) > 3 ? ` and ${(results.unindexedCount ?? 0) - 3} more` : ""}.` : ""}
+            </p>
+          ) : null}
           {!error && query.trim().length < 2 ? <p className="searchNote">Type to search the text of your books, your notes, tags and threads. Press Esc to close.</p> : null}
           {!error && loading && !results ? <p className="searchNote">Searching…</p> : null}
           {!error && results && total === 0 && !loading ? <p className="searchNote">Nothing found. {mode === "exact" ? "Try fewer words, or Related passages." : "Try different words."}</p> : null}
