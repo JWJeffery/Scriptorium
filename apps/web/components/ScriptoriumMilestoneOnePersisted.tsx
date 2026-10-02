@@ -8,6 +8,7 @@ import { ScholarlyToolsPanel, type ImportedReadingNoteRecord } from "./Scholarly
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
 import { SavedDocumentsPanel, type SavedDocumentEntry } from "./SavedDocumentsPanel";
 import { SearchPanel, type SearchOpenRequest } from "./SearchPanel";
+import { AddToThread } from "./ThreadsPanel";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = CitationStyleId;
@@ -736,26 +737,30 @@ export function ScriptoriumMilestoneOnePersisted() {
   async function openSearchResult(request: SearchOpenRequest) {
     setSearchOpen(false);
     if (request.kind === "thread") {
-      setStatus("Research threads are managed under Scholarly tools > Research threads.");
+      setStatus("Opened the thread under Scholarly tools > Research threads.");
       setToolsOpen(true);
       return;
     }
     const hit = request.hit;
-    const sameDocument = documentRecord?.server?.documentId === hit.documentId;
-    if (!sameDocument) {
-      try {
-        const response = await fetch(`/api/milestone-one/library?documentId=${encodeURIComponent(hit.documentId)}`);
-        const body = await response.json() as { documents?: SavedDocumentEntry[] };
-        const entry = body.documents?.[0];
-        if (!response.ok || !entry) throw new Error("That document could not be found on the server.");
-        sessionStorage.setItem(PENDING_JUMP_KEY, JSON.stringify({ documentId: hit.documentId, pdfPageIndex: hit.pdfPageIndex, terms: request.terms, annotationId: request.kind === "annotation" ? request.hit.annotationId : null }));
-        void openSavedDocument(entry);
-      } catch (error) {
-        setStatus(error instanceof Error ? error.message : "The search result could not be opened.");
-      }
+    await openLocation({ documentId: hit.documentId, pdfPageIndex: hit.pdfPageIndex, terms: request.terms, annotationId: request.kind === "annotation" ? request.hit.annotationId : null, line: request.kind === "page" ? request.hit.line : null });
+  }
+
+  // Go to a place in any stored document, opening that document first if needed.
+  async function openLocation(target: { documentId: string; pdfPageIndex: number | null; terms: string[]; annotationId: string | null; line: number | null }) {
+    if (documentRecord?.server?.documentId === target.documentId) {
+      applySearchJump(target.pdfPageIndex, target.terms, target.annotationId, target.line);
       return;
     }
-    applySearchJump(hit.pdfPageIndex, request.terms, request.kind === "annotation" ? request.hit.annotationId : null, request.kind === "page" ? request.hit.line : null);
+    try {
+      const response = await fetch(`/api/milestone-one/library?documentId=${encodeURIComponent(target.documentId)}`);
+      const body = await response.json() as { documents?: SavedDocumentEntry[] };
+      const entry = body.documents?.[0];
+      if (!response.ok || !entry) throw new Error("That document could not be found on the server.");
+      sessionStorage.setItem(PENDING_JUMP_KEY, JSON.stringify({ documentId: target.documentId, pdfPageIndex: target.pdfPageIndex, terms: target.terms, annotationId: target.annotationId }));
+      void openSavedDocument(entry);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The place could not be opened.");
+    }
   }
 
   function applySearchJump(pdfPageIndex: number | null, terms: string[], annotationId: string | null, line: number | null) {
@@ -958,6 +963,7 @@ export function ScriptoriumMilestoneOnePersisted() {
                 <div className="recordActions">
                   <button className="recordOpen" type="button" onClick={() => startEditing(record)}>Open and edit</button>
                   {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
+                  {record.serverAnnotationId ? <AddToThread annotationId={record.serverAnnotationId} onResult={setStatus} /> : null}
                 </div>
               </article>;
             })}
@@ -1030,7 +1036,7 @@ export function ScriptoriumMilestoneOnePersisted() {
 
       <div className={`toolsDrawer${toolsOpen ? " open" : ""}`} aria-hidden={!toolsOpen}>
         <div className="drawerHeader"><div><p className="eyebrow">Research utilities</p><strong>Scholarly tools</strong></div><button type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools">×</button></div>
-        <ScholarlyToolsPanel active={toolsOpen} onPreviewReadingNote={previewReadingNote} onReadingNotesImported={addImportedReadingNotes} />
+        <ScholarlyToolsPanel active={toolsOpen} onPreviewReadingNote={previewReadingNote} onReadingNotesImported={addImportedReadingNotes} onOpenAnnotation={(request) => { setToolsOpen(false); void openLocation({ documentId: request.documentId, pdfPageIndex: request.pdfPageIndex, terms: [], annotationId: request.annotationId, line: null }); }} />
       </div>
       {toolsOpen ? <button className="drawerScrim" type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools" /> : null}
       {ledgerOpen ? <button className="ledgerScrim" type="button" onClick={() => setLedgerOpen(false)} aria-label="Close saved records" /> : null}

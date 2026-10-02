@@ -1952,3 +1952,32 @@ a:focus-visible {
   color: var(--ledger-sage);
   font-size: 0.78rem;
 }
+
+/* Research threads */
+.threadsSection { display: grid; gap: 0.7rem; }
+.threadsSection label { display: grid; gap: 0.2rem; font-size: 0.85rem; }
+.threadsSection input,
+.threadsSection textarea { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: #fff; font: inherit; }
+.threadNew { display: flex; gap: 0.6rem; }
+.threadNew input { flex: 1; }
+.threadList { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.threadList button { display: grid; gap: 0.15rem; width: 100%; padding: 0.6rem 0.8rem; border: 1px solid rgb(103 52 19 / 20%); border-radius: 10px; background: #fff; text-align: left; cursor: pointer; }
+.threadList button span { color: #6b5a47; font-size: 0.8rem; }
+.threadExport { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.threadExport a { text-decoration: none; }
+.threadItems { display: grid; gap: 0.7rem; margin: 0; padding: 0; list-style: none; }
+.threadItem { display: grid; gap: 0.4rem; padding: 0.75rem 0.85rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: #fff; }
+.threadItemHead { display: flex; flex-wrap: wrap; gap: 0.3rem 0.7rem; align-items: center; font-size: 0.85rem; }
+.threadItemButtons { margin-left: auto; display: inline-flex; gap: 0.3rem; }
+.threadItemButtons button { padding: 0.1rem 0.5rem; border: 1px solid rgb(103 52 19 / 25%); border-radius: 6px; background: transparent; cursor: pointer; font-size: 0.8rem; }
+.threadItemButtons button:disabled { opacity: 0.4; cursor: default; }
+.threadItem blockquote { margin: 0; padding-left: 0.7rem; border-left: 3px solid var(--ledger-sage); font-size: 0.92rem; }
+.threadOwnNote,
+.threadCitation { margin: 0; font-size: 0.82rem; color: #5b4a38; }
+.threadCitation { font-style: italic; }
+.threadEmpty { margin: 0; color: #6b5a47; }
+.threadMessage { margin: 0; color: #8f2d2d; }
+.threadAddNote { display: grid; gap: 0.4rem; }
+.addToThread { display: grid; gap: 0.3rem; margin-top: 0.3rem; }
+.addToThread select,
+.addToThread input { padding: 0.35rem 0.5rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 6px; font: inherit; font-size: 0.82rem; }

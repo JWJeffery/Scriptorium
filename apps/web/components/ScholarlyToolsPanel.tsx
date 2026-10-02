@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
+import { ThreadsSection, type OpenAnnotationRequest } from "./ThreadsPanel";
 
 // This panel presents the advanced citation, export, OCR, and page-splitting
 // workflows that sit alongside the main reading workspace.
@@ -68,9 +69,10 @@ function readPendingSplitOcr(): PendingSplitOcr | null {
   }
 }
 
-type ToolsTab = "source-editor" | "regeneration" | "export" | "ocr" | "page-split" | "notes-import";
+type ToolsTab = "threads" | "source-editor" | "regeneration" | "export" | "ocr" | "page-split" | "notes-import";
 
 const TABS: { key: ToolsTab; label: string }[] = [
+  { key: "threads", label: "Research threads" },
   { key: "source-editor", label: "Expanded citation source" },
   { key: "regeneration", label: "Citation regeneration" },
   { key: "export", label: "Corpus export" },
@@ -82,13 +84,15 @@ const TABS: { key: ToolsTab; label: string }[] = [
 export function ScholarlyToolsPanel({
   active = true,
   onPreviewReadingNote,
-  onReadingNotesImported
+  onReadingNotesImported,
+  onOpenAnnotation
 }: {
   active?: boolean;
+  onOpenAnnotation?: (request: OpenAnnotationRequest) => void;
   onPreviewReadingNote?: (candidate: ReadingNoteCandidate) => void;
   onReadingNotesImported?: (records: ImportedReadingNoteRecord[]) => void;
 }) {
-  const [tab, setTab] = useState<ToolsTab>("source-editor");
+  const [tab, setTab] = useState<ToolsTab>("threads");
   const [currentRef, setCurrentRef] = useState<CurrentDocumentRef>({});
   const [pendingSplitOcr, setPendingSplitOcr] = useState<PendingSplitOcr | null>(null);
 
@@ -159,6 +163,7 @@ export function ScholarlyToolsPanel({
         ))}
       </div>
       <div className="toolsSection">
+        {tab === "threads" ? <ThreadsSection active={active} onOpenAnnotation={onOpenAnnotation} /> : null}
         {tab === "source-editor" ? <CslSourceEditorSection currentRef={currentRef} /> : null}
         {tab === "regeneration" ? <CitationRegenerationSection currentRef={currentRef} /> : null}
         {tab === "export" ? <CorpusExportSection /> : null}
