@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+// The big components are split across several files; the contract checks their combined text.
+async function readMany(...paths) {
+  const parts = await Promise.all(paths.map((path) => readFile(new URL(path, import.meta.url), "utf8")));
+  return parts.join("\n");
+}
+
 const [page, workspace, reader, tools, styles, pageSplitRoute, pageSplitImport] = await Promise.all([
   readFile(new URL("../apps/web/app/page.tsx", import.meta.url), "utf8"),
-  readFile(new URL("../apps/web/components/ScriptoriumMilestoneOnePersisted.tsx", import.meta.url), "utf8"),
+  readMany("../apps/web/components/ScriptoriumMilestoneOnePersisted.tsx", "../apps/web/lib/reader-model.ts"),
   readFile(new URL("../apps/web/components/PdfAnchoredPageReader.tsx", import.meta.url), "utf8"),
-  readFile(new URL("../apps/web/components/ScholarlyToolsPanel.tsx", import.meta.url), "utf8"),
+  readMany(
+    "../apps/web/components/ScholarlyToolsPanel.tsx",
+    "../apps/web/components/ReadingNotesImportSection.tsx",
+    "../apps/web/components/CslSourceEditorSection.tsx",
+    "../apps/web/components/OcrStatusSection.tsx",
+    "../apps/web/components/PageSplitSection.tsx"
+  ),
   readFile(new URL("../apps/web/app/styles.css", import.meta.url), "utf8"),
   readFile(new URL("../apps/web/app/api/page-split/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../apps/web/app/api/page-split/import/route.ts", import.meta.url), "utf8")

@@ -264,6 +264,9 @@ jobs:
       - name: Build web app for live API smoke test
         run: pnpm build
 
+      - name: Install Chromium for the browser test
+        run: pnpm --filter @scriptorium/web exec playwright install --with-deps chromium
+
       - name: Verify page-split API end to end
         run: |
           export SCRIPTORIUM_AUTH_DISABLED=true SCRIPTORIUM_FAKE_EMBEDDINGS=1
@@ -305,6 +308,11 @@ jobs:
             exit 1
           }
           SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-meaning-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          # Real browser: open a PDF, select text, save an annotation, reload.
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/e2e-browser.mjs || {
             cat next-server.log
             exit 1
           }
