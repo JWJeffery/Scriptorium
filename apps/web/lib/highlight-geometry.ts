@@ -13,7 +13,7 @@
 // this twice gives the same result.
 
 export type GeometryRect = { left: number; top: number; width: number; height: number };
-export type GeometryWord = { left: number; top: number; width: number; height: number };
+export type GeometryWord = { left: number; top: number; width: number; height: number; text?: string };
 
 type Line = { top: number; bottom: number; left: number; right: number; textTop: number; textHeight: number };
 
@@ -26,7 +26,24 @@ function median(values: number[]) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function buildLines(words: GeometryWord[]): Line[] {
+// OCR sometimes reports one word far wider than its letters (a scan edge or
+// shadow read as part of the word). Cap each word's width at a multiple of the
+// page's typical width per character so one bad box cannot stretch a line.
+const MAX_WIDTH_PER_CHAR = 1.7; // times the page's median width per character
+
+function capOutlierWidths(words: GeometryWord[]): GeometryWord[] {
+  const perChar = words.filter((w) => w.text && w.text.length >= 2 && w.width > 0).map((w) => w.width / (w.text as string).length);
+  if (perChar.length < 5) return words;
+  const limit = median(perChar) * MAX_WIDTH_PER_CHAR;
+  return words.map((w) => {
+    if (!w.text) return w;
+    const maxWidth = Math.max(w.text.length, 2) * limit;
+    return w.width > maxWidth ? { ...w, width: maxWidth } : w;
+  });
+}
+
+function buildLines(rawWords: GeometryWord[]): Line[] {
+  const words = capOutlierWidths(rawWords);
   const sorted = [...words].filter((w) => w.width > 0 && w.height > 0).sort((a, b) => a.top - b.top || a.left - b.left);
   const groups: { words: GeometryWord[]; top: number; bottom: number }[] = [];
   for (const word of sorted) {

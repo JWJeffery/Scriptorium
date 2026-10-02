@@ -96,6 +96,15 @@ assert.equal(reopened.document.id, imported.document.id);
 assert.equal(reopened.document.versions[0].id, imported.version.id);
 assert.ok(reopened.document.versions[0].snapshotKey, "new document must retain its server PDF snapshot");
 
+// The saved-document list shows what is on the server, so a document can be reopened.
+const library = await json(await fetch(`${baseUrl}/api/milestone-one/library`));
+const listed = library.documents.find((entry) => entry.documentId === uploaded.document.id);
+assert.ok(listed, "an uploaded document appears in the saved-document list");
+assert.equal(listed.versionId, uploaded.version.id);
+assert.equal(listed.sourceId, uploaded.source.id);
+assert.equal(listed.pageMapId, uploaded.pageMap.id);
+assert.ok(listed.size > 0 && !listed.fileMissing, "the stored file is found");
+
 // Saved annotations can be edited and deleted (note + colour only).
 const createdAnnotation = await json(
   await fetch(`${baseUrl}/api/milestone-one/annotations`, {
@@ -137,4 +146,4 @@ assert.equal(removed.status, 200);
 const removedAgain = await fetch(`${baseUrl}/api/milestone-one/annotations?annotationId=${encodeURIComponent(annotationId)}`, { method: "DELETE" });
 assert.equal(removedAgain.status, 404, "deleting twice reports not found");
 
-console.log("Page-split API smoke test passed (upload, background split, status, PDF download, new-document import, reopen, and annotation edit/delete). ");
+console.log("Page-split API smoke test passed (upload, background split, status, PDF download, new-document import, reopen, saved-document list, and annotation edit/delete). ");

@@ -1742,3 +1742,70 @@ a:focus-visible {
   outline: 2px solid var(--ledger-terracotta-dark);
   outline-offset: 2px;
 }
+
+/* Saved documents dialog */
+.savedDocsDialog {
+  position: fixed;
+  z-index: 95;
+  top: 5rem;
+  left: 50%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 7rem);
+  transform: translateX(-50%);
+  border: 1px solid rgb(103 52 19 / 22%);
+  border-radius: 14px;
+  background: var(--ledger-paper);
+  box-shadow: var(--ledger-shadow);
+  overflow: hidden;
+}
+
+.savedDocsBody {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem 1.1rem;
+  overflow-y: auto;
+}
+
+.savedDocRow {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgb(103 52 19 / 16%);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.savedDocRow.current {
+  border-color: var(--ledger-sage);
+}
+
+.savedDocRow > div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.savedDocRow span {
+  color: #6b5a47;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.savedDocRow .savedDocWarning {
+  color: #8f2d2d;
+}
+
+.savedDocRow .savedDocCurrent {
+  color: var(--ledger-sage);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.savedDocsNote {
+  margin: 0;
+  color: #6b5a47;
+}

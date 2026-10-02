@@ -260,3 +260,16 @@ export async function listStoredFiles(): Promise<StoredFileEntry[]> {
   for (const root of storageRootCandidates()) await walk(root, "");
   return Array.from(entries.values()).sort((a, b) => a.storageKey.localeCompare(b.storageKey));
 }
+
+// Size in bytes of a stored file, or null when it cannot be found. Used to
+// describe documents in the saved-document list without reading their bytes.
+export async function storedFileSize(storageKey: string): Promise<number | null> {
+  for (const root of storageRootCandidates()) {
+    try {
+      return (await stat(resolveStorageKeyAtRoot(root, storageKey))).size;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}

@@ -26,4 +26,14 @@ const again = snapRectsToOcrLines(out, words);
 assert.deepEqual(again, out, "applying it twice changes nothing");
 assert.deepEqual(snapRectsToOcrLines(rects, null), rects, "pages without OCR words are left unchanged");
 
+// One OCR word reported far wider than its letters must not stretch the bar.
+const texted = [];
+for (let line = 0; line < 3; line += 1) {
+  ["alpha", "beta", "gamma", "delta"].forEach((text, i) => texted.push({ text, left: 100 + i * 80, top: 100 + line * 30, width: text.length * 12, height: 20 }));
+}
+texted[3] = { ...texted[3], width: 900 }; // "delta" on line 1 claims to reach x=1180
+const capped = snapRectsToOcrLines([{ left: 90, top: 98, width: 1200, height: 24 }], texted);
+assert.equal(capped.length, 1);
+assert.ok(capped[0].left + capped[0].width < 100 + 3 * 80 + 5 * 12 * 1.7 + 1, "an over-wide word is capped to a plausible width");
+
 console.log("Highlight geometry verified: clipped to text, one bar per line, idempotent.");

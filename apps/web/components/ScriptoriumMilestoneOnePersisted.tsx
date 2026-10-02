@@ -6,6 +6,7 @@ import { highlightColors } from "../lib/highlights";
 import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
 import { ScholarlyToolsPanel, type ImportedReadingNoteRecord } from "./ScholarlyToolsPanel";
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
+import { SavedDocumentsPanel, type SavedDocumentEntry } from "./SavedDocumentsPanel";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
 type CitationStyle = CitationStyleId;
@@ -244,6 +245,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [pendingSplitOcr, setPendingSplitOcr] = useState(false);
   const [ledgerFilter, setLedgerFilter] = useState("all");
   const [editingId, setEditingId] = useState<string | undefined>();
+  const [savedDocsOpen, setSavedDocsOpen] = useState(false);
   const [compactLayout, setCompactLayout] = useState(false);
 
   useEffect(() => {
@@ -639,6 +641,77 @@ export function ScriptoriumMilestoneOnePersisted() {
     setStatus(message);
   }
 
+  // Reopen a document that is stored on the server. Everything the reader needs
+  // is rebuilt from the database, written to this browser's storage in the same
+  // shape registration uses, and the page reloads so the normal recovery path
+  // (server PDF, or server text snapshot) loads it.
+  async function openSavedDocument(entry: SavedDocumentEntry) {
+    if ((selectedText.trim() || note.trim()) && !window.confirm("Opening another document will discard the unsaved selection and note. Continue?")) return;
+    setStatus(`Opening "${entry.title}" from the server…`);
+    try {
+      const response = await fetch(`/api/milestone-one/workspace?documentId=${encodeURIComponent(entry.documentId)}`);
+      if (!response.ok) throw new Error("The document's records could not be loaded.");
+      const body = await response.json() as { document: { versions: Array<{ id: string; snapshotKey?: string | null; annotations: Array<{ id: string; versionId: string; colorKey: string; selectedText: string; note: string | null; anchor: unknown; createdAt: string; citations: Array<{ id: string; styleId: string; locatorValue: string | null; generatedText: string }> }> }> } };
+
+      const csl = (typeof entry.cslJson === "object" && entry.cslJson !== null ? entry.cslJson : {}) as Record<string, unknown>;
+      const firstAuthor = Array.isArray(csl.author) ? csl.author[0] as { literal?: string; given?: string; family?: string } | undefined : undefined;
+      const issued = (csl.issued as { "date-parts"?: unknown[][] } | undefined)?.["date-parts"]?.[0]?.[0];
+      const rule = /PDF page (\d+) = book page (\d+)/.exec(entry.pageMapNote ?? "");
+      const basePdfPageIndex = rule ? Number(rule[1]) : 1;
+      const baseBookPage = rule ? Number(rule[2]) : 1;
+      const opened: StoredDocument = {
+        id: entry.documentId,
+        title: entry.title,
+        filename: entry.filename,
+        kind: entry.kind,
+        mediaType: entry.mediaType,
+        size: entry.size ?? 0,
+        source: {
+          author: firstAuthor?.literal ?? [firstAuthor?.given, firstAuthor?.family].filter(Boolean).join(" "),
+          title: typeof csl.title === "string" ? csl.title : entry.title,
+          place: typeof csl["publisher-place"] === "string" ? csl["publisher-place"] : "",
+          publisher: typeof csl.publisher === "string" ? csl.publisher : "",
+          year: issued === undefined ? "" : String(issued)
+        },
+        pageMap: { basePdfPageIndex, baseBookPage, currentPdfPageIndex: entry.pdfPageIndex },
+        server: { documentId: entry.documentId, versionId: entry.versionId, sourceId: entry.sourceId, pageMapId: entry.pageMapId, storageKey: entry.storageKey ?? undefined, snapshotKey: entry.snapshotKey ?? undefined, sourceChecksum: entry.sourceChecksum ?? undefined }
+      };
+
+      // Bring this document's saved annotations back into the Ledger, skipping
+      // any the browser already has.
+      const known = new Set(annotations.map((record) => record.serverAnnotationId).filter(Boolean));
+      const restored: SavedAnnotation[] = body.document.versions.flatMap((version) => version.annotations.flatMap((item) => {
+        if (known.has(item.id)) return [];
+        const itemCitation = item.citations[0];
+        const itemAnchor = (item.anchor ?? undefined) as SelectionAnchor | undefined;
+        return [{
+          id: `server_${item.id}`,
+          documentId: entry.documentId,
+          versionId: item.versionId,
+          snapshotKey: version.snapshotKey ?? undefined,
+          colorKey: item.colorKey,
+          selectedText: item.selectedText,
+          note: item.note ?? "",
+          pdfPageIndex: itemAnchor && !isTextAnchor(itemAnchor) ? itemAnchor.pageNumber : entry.pdfPageIndex,
+          bookPageLabel: itemCitation?.locatorValue ?? "",
+          citationStyle: (itemCitation?.styleId ?? "sbl-note") as CitationStyle,
+          citationText: itemCitation?.generatedText ?? "",
+          anchor: itemAnchor,
+          createdAt: item.createdAt,
+          serverAnnotationId: item.id,
+          serverCitationId: itemCitation?.id
+        }];
+      }));
+
+      saveDocument(opened);
+      localStorage.removeItem(TEXT_CONTENT_KEY);
+      saveAnnotations([...restored, ...annotations]);
+      window.location.reload();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The document could not be opened.");
+    }
+  }
+
   function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setRecentAnnotationId(undefined); setStatus("Cleared annotation records for the current browser workspace."); }
 
   function previewReadingNote(candidate: ReadingNoteCandidate) {
@@ -757,6 +830,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         </div>
         <div className="ledgerActions">
           <button className="compactAction ledgerToggle" type="button" onClick={() => setLedgerOpen(true)}>Records · {annotations.length}</button>
+          <button className="compactAction" type="button" onClick={() => setSavedDocsOpen(true)}>Open saved</button>
           <button className="compactAction toolsToggle" type="button" onClick={() => setToolsOpen(true)}>Scholarly tools{pendingSplitOcr ? " · attention" : ""}</button>
           <button className="compactAction pinToggle" type="button" aria-pressed={inspectorPinned} onClick={toggleInspectorPin}>{inspectorPinned ? "Unpin inspector" : "Pin inspector"}</button>
           <button
@@ -872,6 +946,8 @@ export function ScriptoriumMilestoneOnePersisted() {
       </div>
 
       <p className="ledgerStatus" role="status" aria-live="polite">{status}</p>
+
+      <SavedDocumentsPanel open={savedDocsOpen} currentDocumentId={documentRecord?.server?.documentId} onOpenDocument={(entry) => { setSavedDocsOpen(false); void openSavedDocument(entry); }} onClose={() => setSavedDocsOpen(false)} />
 
       <div className={`toolsDrawer${toolsOpen ? " open" : ""}`} aria-hidden={!toolsOpen}>
         <div className="drawerHeader"><div><p className="eyebrow">Research utilities</p><strong>Scholarly tools</strong></div><button type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools">×</button></div>
