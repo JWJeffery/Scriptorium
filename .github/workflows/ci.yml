@@ -97,6 +97,9 @@ jobs:
       - name: Verify storage-root recovery
         run: node --experimental-strip-types scripts/verify-storage-root-recovery.mjs
 
+      - name: Verify highlight geometry
+        run: node --experimental-strip-types scripts/verify-highlight-geometry.mjs
+
       - name: Verify Ledger UI contract
         run: node scripts/verify-ledger-ui-contract.mjs
 

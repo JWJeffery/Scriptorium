@@ -243,6 +243,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [pendingSplitOcr, setPendingSplitOcr] = useState(false);
   const [ledgerFilter, setLedgerFilter] = useState("all");
+  const [editingId, setEditingId] = useState<string | undefined>();
   const [compactLayout, setCompactLayout] = useState(false);
 
   useEffect(() => {
@@ -408,6 +409,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   }, []);
 
   const capturePdfAnchor = useCallback((nextAnchor: PdfSelectionAnchor) => {
+    setEditingId(undefined);
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
     setInspectorOpen(true);
@@ -415,6 +417,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   }, []);
 
   const captureTextAnchor = useCallback((nextAnchor: TextSelectionAnchor) => {
+    setEditingId(undefined);
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
     setInspectorOpen(true);
@@ -551,6 +554,89 @@ export function ScriptoriumMilestoneOnePersisted() {
     setSelectedText("");
     setAnchor(undefined);
     setNote("");
+  }
+
+  const editingRecord = editingId ? annotations.find((record) => record.id === editingId) : undefined;
+
+  // Load a saved record into the inspector so its note and colour can be
+  // changed, or the record deleted.
+  function startEditing(record: SavedAnnotation) {
+    setEditingId(record.id);
+    setSelectedText(record.selectedText);
+    setAnchor(undefined);
+    setNote(record.note);
+    setSelectedColor(record.colorKey);
+    setInspectorOpen(true);
+    setLedgerOpen(false);
+    if (recordMatchesCurrentVersion(record, documentRecord) && record.anchor && !isTextAnchor(record.anchor)) goToPage(record.anchor.pageNumber);
+    setStatus("Editing a saved record. You can change its note and highlight colour, or delete it.");
+  }
+
+  function cancelEditing() {
+    setEditingId(undefined);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote("");
+    setStatus("Stopped editing. No changes were made.");
+  }
+
+  async function saveEdit() {
+    if (!editingRecord) return;
+    const nextNote = note.trim();
+    if (!nextNote && !editingRecord.selectedText.trim()) { setStatus("A page note cannot be left empty. Delete the record instead."); return; }
+    const updated: SavedAnnotation = { ...editingRecord, note: nextNote, colorKey: selectedColor };
+    let message = "Updated the record locally and in the database.";
+    if (editingRecord.serverAnnotationId) {
+      try {
+        const response = await fetch("/api/milestone-one/annotations", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ annotationId: editingRecord.serverAnnotationId, note: nextNote, colorKey: selectedColor })
+        });
+        if (!response.ok) throw new Error("update failed");
+      } catch {
+        message = "Updated the record in this browser only; the database could not be updated.";
+      }
+    } else {
+      message = "Updated the record in this browser (it was never saved to the database).";
+    }
+    setAnnotations((previous) => {
+      const next = previous.map((record) => (record.id === updated.id ? updated : record));
+      saveAnnotations(next);
+      return next;
+    });
+    setEditingId(undefined);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote("");
+    setStatus(message);
+  }
+
+  async function deleteEditingRecord() {
+    if (!editingRecord) return;
+    if (!window.confirm("Delete this annotation and its citation? This cannot be undone.")) return;
+    const message = "Deleted the record and its citation.";
+    if (editingRecord.serverAnnotationId) {
+      try {
+        const response = await fetch(`/api/milestone-one/annotations?annotationId=${encodeURIComponent(editingRecord.serverAnnotationId)}`, { method: "DELETE" });
+        // 404 means the database no longer has it, which is what we wanted.
+        if (!response.ok && response.status !== 404) throw new Error("delete failed");
+      } catch {
+        setStatus("The database could not delete this record, so it was kept. Try again.");
+        return;
+      }
+    }
+    setAnnotations((previous) => {
+      const next = previous.filter((record) => record.id !== editingRecord.id);
+      saveAnnotations(next);
+      return next;
+    });
+    setRecentAnnotationId((current) => (current === editingRecord.id ? undefined : current));
+    setEditingId(undefined);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote("");
+    setStatus(message);
   }
 
   function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setRecentAnnotationId(undefined); setStatus("Cleared annotation records for the current browser workspace."); }
@@ -711,13 +797,16 @@ export function ScriptoriumMilestoneOnePersisted() {
               const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
               const current = recordMatchesCurrentVersion(record, documentRecord);
               const canOpen = current && record.anchor && !isTextAnchor(record.anchor);
-              return <article className="ledgerRecord" key={record.id}>
+              return <article className={`ledgerRecord${record.id === editingId ? " editing" : ""}`} key={record.id}>
                 <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
                 {record.selectedText ? <blockquote>{record.selectedText}</blockquote> : null}
                 {record.note ? <p>{record.note}</p> : null}
                 <div className="recordCitation">{record.citationText}</div>
                 <small>{current ? "Current snapshot" : "Prior snapshot"} · {record.serverAnnotationId ? "database" : "local"}</small>
-                {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
+                <div className="recordActions">
+                  <button className="recordOpen" type="button" onClick={() => startEditing(record)}>Open and edit</button>
+                  {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
+                </div>
               </article>;
             })}
           </div>
@@ -739,18 +828,24 @@ export function ScriptoriumMilestoneOnePersisted() {
 
         <aside id="annotation-inspector" className="inspectorPane" aria-label="Annotation inspector" aria-hidden={(!inspectorPinned || compactLayout) && !inspectorOpen}>
           <div className="paneHeader">
-            <div><p className="eyebrow">Current selection</p><h2>New record</h2></div>
+            <div><p className="eyebrow">Current selection</p><h2>{editingRecord ? "Edit record" : "New record"}</h2></div>
             <button className="paneClose inspectorClose" type="button" onClick={() => setInspectorOpen(false)} aria-label="Close annotation inspector">×</button>
           </div>
           <div className="captureCard">
-            <label>Selected passage<textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} /></label>
-            {(selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
+            <label>Selected passage<textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} readOnly={Boolean(editingRecord)} /></label>
+            {editingRecord ? <p className="anchorSummary">The passage and citation of a saved record are fixed. You can change the note and colour.</p> : (selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
             <label>Note<textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} /></label>
             <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${color.defaultMeaning}${selectedColor === color.key ? ", selected" : ""}`} title={color.defaultMeaning} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><strong>{highlightColors.find((color) => color.key === selectedColor)?.defaultMeaning}</strong></fieldset>
             <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL / Chicago / Turabian note</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
-            <div className="generatedCitation"><span>Generated citation</span><p>{generatedCitation}</p></div>
+            <div className="generatedCitation"><span>Generated citation</span><p>{editingRecord ? editingRecord.citationText : generatedCitation}</p></div>
             {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
-            <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save annotation + citation" : "Save page note + citation"}</button>
+            {editingRecord ? <>
+              <button className="primaryButton saveRecordButton" onClick={saveEdit} type="button">Save changes</button>
+              <div className="editActions">
+                <button className="textAction" type="button" onClick={cancelEditing}>Cancel</button>
+                <button className="textAction dangerAction" type="button" onClick={deleteEditingRecord}>Delete this record</button>
+              </div>
+            </> : <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save annotation + citation" : "Save page note + citation"}</button>}
           </div>
           {recentSavedRecord && recentSavedColor ? <div className="recentSavedRecord"><div><span className="recordColor" style={{ background: recentSavedColor.color }} /><strong>Latest saved record</strong></div>{recentSavedRecord.selectedText ? <blockquote>{recentSavedRecord.selectedText}</blockquote> : null}{recentSavedRecord.note ? <p>{recentSavedRecord.note}</p> : null}<small>{isText(documentRecord) ? "line" : "book page"} {recentSavedRecord.bookPageLabel} · {recentSavedRecord.serverAnnotationId ? "database" : "local"}</small></div> : null}
           <details className="inspectorGroup" open>

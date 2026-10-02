@@ -1719,3 +1719,26 @@ a:focus-visible {
   outline: 2px solid var(--ledger-terracotta);
   outline-offset: 2px;
 }
+
+/* Saved-record editing */
+.recordActions,
+.editActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  align-items: center;
+}
+
+.editActions {
+  justify-content: space-between;
+  margin-top: 0.6rem;
+}
+
+.dangerAction {
+  color: #8f2d2d;
+}
+
+.ledgerRecord.editing {
+  outline: 2px solid var(--ledger-terracotta-dark);
+  outline-offset: 2px;
+}

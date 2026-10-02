@@ -96,4 +96,45 @@ assert.equal(reopened.document.id, imported.document.id);
 assert.equal(reopened.document.versions[0].id, imported.version.id);
 assert.ok(reopened.document.versions[0].snapshotKey, "new document must retain its server PDF snapshot");
 
-console.log("Page-split API smoke test passed (upload, background split, status, PDF download, new-document import, and reopen). ");
+// Saved annotations can be edited and deleted (note + colour only).
+const createdAnnotation = await json(
+  await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: uploaded.document.id,
+      versionId: uploaded.version.id,
+      sourceId: uploaded.source.id,
+      pageMapId: uploaded.pageMap.id,
+      colorKey: "yellow",
+      selectedText: "Edit me",
+      note: "first note",
+      citationStyle: "sbl-note",
+      citationText: "Citation.",
+      locatorValue: "1"
+    })
+  })
+);
+const annotationId = createdAnnotation.annotation.id;
+const patched = await json(
+  await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ annotationId, note: "second note", colorKey: "green" })
+  })
+);
+assert.equal(patched.annotation.note, "second note");
+assert.equal(patched.annotation.colorKey, "green");
+assert.equal(patched.annotation.selectedText, "Edit me", "the highlighted passage must not change");
+const badColor = await fetch(`${baseUrl}/api/milestone-one/annotations`, {
+  method: "PATCH",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ annotationId, colorKey: "not-a-colour" })
+});
+assert.equal(badColor.status, 400);
+const removed = await fetch(`${baseUrl}/api/milestone-one/annotations?annotationId=${encodeURIComponent(annotationId)}`, { method: "DELETE" });
+assert.equal(removed.status, 200);
+const removedAgain = await fetch(`${baseUrl}/api/milestone-one/annotations?annotationId=${encodeURIComponent(annotationId)}`, { method: "DELETE" });
+assert.equal(removedAgain.status, 404, "deleting twice reports not found");
+
+console.log("Page-split API smoke test passed (upload, background split, status, PDF download, new-document import, reopen, and annotation edit/delete). ");
