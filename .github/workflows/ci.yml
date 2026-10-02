@@ -281,3 +281,8 @@ jobs:
             cat next-server.log
             exit 1
           }
+          # Last, because it empties the (throwaway CI) database and restores it from a backup.
+          SCRIPTORIUM_ALLOW_WIPE=yes SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-backup-restore.mjs || {
+            cat next-server.log
+            exit 1
+          }

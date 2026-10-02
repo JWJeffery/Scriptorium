@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
 import { ThreadsSection, type OpenAnnotationRequest } from "./ThreadsPanel";
+import { BackupSection } from "./BackupPanel";
 
 // This panel presents the advanced citation, export, OCR, and page-splitting
 // workflows that sit alongside the main reading workspace.
@@ -69,10 +70,11 @@ function readPendingSplitOcr(): PendingSplitOcr | null {
   }
 }
 
-type ToolsTab = "threads" | "source-editor" | "regeneration" | "export" | "ocr" | "page-split" | "notes-import";
+type ToolsTab = "threads" | "backup" | "source-editor" | "regeneration" | "export" | "ocr" | "page-split" | "notes-import";
 
 const TABS: { key: ToolsTab; label: string }[] = [
   { key: "threads", label: "Research threads" },
+  { key: "backup", label: "Backup" },
   { key: "source-editor", label: "Expanded citation source" },
   { key: "regeneration", label: "Citation regeneration" },
   { key: "export", label: "Corpus export" },
@@ -164,6 +166,7 @@ export function ScholarlyToolsPanel({
       </div>
       <div className="toolsSection">
         {tab === "threads" ? <ThreadsSection active={active} onOpenAnnotation={onOpenAnnotation} /> : null}
+        {tab === "backup" ? <BackupSection active={active} /> : null}
         {tab === "source-editor" ? <CslSourceEditorSection currentRef={currentRef} /> : null}
         {tab === "regeneration" ? <CitationRegenerationSection currentRef={currentRef} /> : null}
         {tab === "export" ? <CorpusExportSection /> : null}

@@ -16,3 +16,4 @@ storage
 # script to regenerate rather than committing the output.
 /*.pdf
 output-*.pdf
+scriptorium-backups

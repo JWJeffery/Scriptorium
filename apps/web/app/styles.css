@@ -2008,3 +2008,17 @@ a:focus-visible {
 .rangeRow .textAction { grid-column: 1 / -1; justify-self: end; }
 .goToBookPage { display: flex; gap: 0.4rem; align-items: flex-end; }
 .goToBookPage label { flex: 1; }
+
+/* Backup */
+.backupSection { display: grid; gap: 0.7rem; }
+.backupSection h3 { margin: 0.6rem 0 0; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: #6b5a47; }
+.backupStatus { margin: 0; padding: 0.4rem 0.7rem; border-radius: 8px; background: rgb(102 115 75 / 14%); }
+.backupStatus.stale { background: rgb(154 79 28 / 14%); }
+.backupActions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.backupActions a { text-decoration: none; }
+.backupList { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.backupList li { display: flex; gap: 0.8rem; align-items: center; justify-content: space-between; padding: 0.5rem 0.7rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 8px; background: #fff; }
+.backupList li > span:first-child { display: grid; min-width: 0; }
+.backupList small { color: #6b5a47; }
+.backupFine { margin: 0; font-size: 0.82rem; color: #5b4a38; }
+.backupCode { margin: 0; padding: 0.6rem 0.8rem; border-radius: 8px; background: #2d241a; color: #f3ecdf; font-size: 0.8rem; overflow-x: auto; }
