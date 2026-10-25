@@ -25,6 +25,9 @@ FROM base AS runtime
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 # The worker runs TypeScript directly (tsx), so the source and dev dependencies stay in the image.
 COPY --from=build --chown=node:node /app /app
+# Uploaded files, backups and the search model live under /data (a volume). It must belong to the app's
+# user BEFORE the volume is first used, or the app cannot write there.
+RUN mkdir -p /data/storage /data/backups /data/models && chown -R node:node /data
 USER node
 WORKDIR /app/apps/web
 EXPOSE 3000
