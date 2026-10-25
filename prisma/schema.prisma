@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -174,7 +174,7 @@ model TextSpan {
   version   DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   pageMapId String?
   pageMap   PageMap?        @relation(fields: [pageMapId], references: [id], onDelete: SetNull)
-  text      String          @db.LongText
+  text      String
   anchor    Json?
   createdAt DateTime        @default(now())
 
@@ -191,8 +191,8 @@ model Annotation {
   pageMapId    String?
   pageMap      PageMap?        @relation(fields: [pageMapId], references: [id], onDelete: SetNull)
   colorKey     String          @db.VarChar(64)
-  selectedText String          @db.LongText
-  note         String?         @db.LongText
+  selectedText String
+  note         String?
   anchor       Json?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -227,7 +227,7 @@ model Citation {
   locatorValue            String?     @db.VarChar(255)
   prefix                  String?     @db.Text
   suffix                  String?     @db.Text
-  generatedText           String      @db.LongText
+  generatedText           String
   createdAt               DateTime    @default(now())
   // Snapshot of Source.updatedAt at the moment this citation was generated.
   // Staleness = sourceSnapshotUpdatedAt < source.updatedAt. Defaulting to
@@ -251,7 +251,7 @@ model Citation {
 model ResearchThread {
   id          String               @id @default(cuid())
   title       String               @db.VarChar(512)
-  description String?              @db.LongText
+  description String?
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
   items       ResearchThreadItem[]
@@ -274,7 +274,7 @@ model ResearchThreadItem {
   researchThread   ResearchThread         @relation(fields: [researchThreadId], references: [id], onDelete: Cascade)
   itemType         ResearchThreadItemType
   itemId           String
-  note             String?                @db.LongText
+  note             String?
   orderIndex       Int                    @default(0)
 
   @@index([researchThreadId])
@@ -283,7 +283,7 @@ model ResearchThreadItem {
 
 model QueryLog {
   id        String   @id @default(cuid())
-  query     String   @db.LongText
+  query     String
   mode      String   @db.VarChar(128)
   filters   Json?
   resultIds Json?

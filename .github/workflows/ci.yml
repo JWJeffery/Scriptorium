@@ -20,7 +20,7 @@ jobs:
     name: Typecheck and build
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: mysql://scriptorium:scriptorium@127.0.0.1:3306/scriptorium
+      DATABASE_URL: postgresql://scriptorium:scriptorium@127.0.0.1:5432/scriptorium
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -215,22 +215,21 @@ jobs:
           }
 
   mysql-migration:
-    name: MySQL migration deploy
+    name: PostgreSQL migration deploy
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: mysql://scriptorium:scriptorium@127.0.0.1:3306/scriptorium
+      DATABASE_URL: postgresql://scriptorium:scriptorium@127.0.0.1:5432/scriptorium
     services:
-      mysql:
-        image: mysql:8.4
+      postgres:
+        image: pgvector/pgvector:pg16
         env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: scriptorium
-          MYSQL_USER: scriptorium
-          MYSQL_PASSWORD: scriptorium
+          POSTGRES_USER: scriptorium
+          POSTGRES_PASSWORD: scriptorium
+          POSTGRES_DB: scriptorium
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uscriptorium -pscriptorium"
+          --health-cmd="pg_isready -U scriptorium -d scriptorium"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -258,7 +257,7 @@ jobs:
       - name: Generate Prisma client
         run: pnpm prisma:generate
 
-      - name: Deploy MySQL migration
+      - name: Deploy PostgreSQL migration
         run: pnpm prisma:migrate:deploy
 
       - name: Build web app for live API smoke test

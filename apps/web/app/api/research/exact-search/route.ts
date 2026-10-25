@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
   }
 
   const perBucket = Math.max(1, Math.ceil(limit / 7));
-  const contains = { contains: query };
+  const contains = { contains: query, mode: "insensitive" as const };
 
   const [documents, textSpans, annotations, annotationTags, citations, threads, threadTags] = await Promise.all([
     prisma.document.findMany({

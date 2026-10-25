@@ -15,11 +15,11 @@ type SpanRow = { id: string; text: string; pdfPage: bigint | number | null };
 
 async function spansOf(documentId: string): Promise<SpanRow[]> {
   return prisma.$queryRaw<SpanRow[]>(Prisma.sql`
-    SELECT ts.id, ts.text, CAST(JSON_UNQUOTE(JSON_EXTRACT(ts.anchor, '$.pdfPageIndex')) AS SIGNED) AS pdfPage
-    FROM TextSpan ts JOIN DocumentVersion v ON v.id = ts.versionId
-    WHERE v.documentId = ${documentId}
-      AND v.id = (SELECT v2.id FROM DocumentVersion v2 WHERE v2.documentId = v.documentId ORDER BY v2.createdAt DESC, v2.id DESC LIMIT 1)
-    ORDER BY pdfPage, ts.id`);
+    SELECT ts.id, ts.text, (ts.anchor->>'pdfPageIndex')::int AS "pdfPage"
+    FROM "TextSpan" ts JOIN "DocumentVersion" v ON v.id = ts."versionId"
+    WHERE v."documentId" = ${documentId}
+      AND v.id = (SELECT v2.id FROM "DocumentVersion" v2 WHERE v2."documentId" = v."documentId" ORDER BY v2."createdAt" DESC, v2.id DESC LIMIT 1)
+    ORDER BY "pdfPage", ts.id`);
 }
 
 const annotationText = (annotation: { selectedText: string; note: string | null; tags: Array<{ value: string }> }) =>
