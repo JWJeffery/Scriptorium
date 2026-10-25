@@ -269,7 +269,7 @@ jobs:
 
       - name: Verify page-split API end to end
         run: |
-          export SCRIPTORIUM_AUTH_DISABLED=true SCRIPTORIUM_FAKE_EMBEDDINGS=1
+          export SCRIPTORIUM_AUTH_DISABLED=true SCRIPTORIUM_FAKE_EMBEDDINGS=1 SCRIPTORIUM_RATE_LIMITS_DISABLED=true
           pnpm --filter @scriptorium/web exec next start -H 127.0.0.1 -p 3100 > next-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT

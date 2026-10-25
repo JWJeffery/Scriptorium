@@ -68,17 +68,20 @@ export async function middleware(request: NextRequest) {
   const wantsHtml = request.method === "GET" && (request.headers.get("accept") ?? "").includes("text/html");
   const visitor = clientKey(request.headers);
 
-  // 1. Brakes
-  const general = hit(`all:${visitor}`, GENERAL_PER_MINUTE, 60);
-  if (!general.allowed) return tooManyRequests(general.retryAfterSeconds, wantsHtml);
-  if (!SAFE_METHODS.has(request.method)) {
-    const writes = hit(`write:${visitor}`, WRITES_PER_MINUTE, 60);
-    if (!writes.allowed) return tooManyRequests(writes.retryAfterSeconds, wantsHtml);
-  }
-  const heavyPrefixes = SAFE_METHODS.has(request.method) ? HEAVY_GET_PREFIXES : HEAVY_PREFIXES;
-  if (heavyPrefixes.some((prefix) => pathname.startsWith(prefix))) {
-    const heavy = hit(`heavy:${visitor}`, HEAVY_PER_MINUTE, 60);
-    if (!heavy.allowed) return tooManyRequests(heavy.retryAfterSeconds, wantsHtml);
+  // 1. Brakes (switched off only for automated test runs that fire many requests from one address)
+  const brakes = process.env.SCRIPTORIUM_RATE_LIMITS_DISABLED !== "true";
+  if (brakes) {
+    const general = hit(`all:${visitor}`, GENERAL_PER_MINUTE, 60);
+    if (!general.allowed) return tooManyRequests(general.retryAfterSeconds, wantsHtml);
+    if (!SAFE_METHODS.has(request.method)) {
+      const writes = hit(`write:${visitor}`, WRITES_PER_MINUTE, 60);
+      if (!writes.allowed) return tooManyRequests(writes.retryAfterSeconds, wantsHtml);
+    }
+    const heavyPrefixes = SAFE_METHODS.has(request.method) ? HEAVY_GET_PREFIXES : HEAVY_PREFIXES;
+    if (heavyPrefixes.some((prefix) => pathname.startsWith(prefix))) {
+      const heavy = hit(`heavy:${visitor}`, HEAVY_PER_MINUTE, 60);
+      if (!heavy.allowed) return tooManyRequests(heavy.retryAfterSeconds, wantsHtml);
+    }
   }
 
   // 2. Cross-site writes
