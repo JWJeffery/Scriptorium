@@ -292,3 +292,47 @@ jobs:
           SCRIPTORIUM_S3_CREATE_BUCKET: "true"
           SCRIPTORIUM_STORAGE_DIR: ./storage-legacy
         run: scripts/run-live-suite.sh
+
+  production-stack:
+    name: Production stack (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies (for the test script)
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Write the production settings (throwaway values)
+        run: |
+          {
+            echo "SCRIPTORIUM_DOMAIN=:80"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "SCRIPTORIUM_AUTH_USER=ci"
+            echo "SCRIPTORIUM_AUTH_PASSWORD=$(openssl rand -hex 16)"
+          } > .env.production
+          grep -E "AUTH_(USER|PASSWORD)" .env.production | sed 's/^/export /' > ci-auth.sh
+
+      - name: Build the image and start the stack
+        run: docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build --wait --wait-timeout 900
+
+      - name: Smoke-test the stack through its front door
+        run: |
+          source ci-auth.sh
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1 node scripts/verify-production-stack.mjs
+
+      - name: Show logs if anything failed
+        if: failure()
+        run: docker compose -f docker-compose.prod.yml --env-file .env.production logs --no-color --tail 200
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose -f docker-compose.prod.yml --env-file .env.production down -v
