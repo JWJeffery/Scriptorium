@@ -97,6 +97,9 @@ const write = (headers) =>
   });
 assert.equal((await write({ origin: "https://evil.example" })).status, 403);
 assert.equal((await write({ "sec-fetch-site": "cross-site" })).status, 403);
+// Behind a forwarding proxy (e.g. a Codespace) the public address differs from the server's own;
+// the browser's same-origin marker is what counts.
+assert.equal((await write({ origin: "https://public-proxy.example", "sec-fetch-site": "same-origin" })).status, 400);
 assert.equal((await write({ origin: new URL(baseUrl).origin, "content-type": "application/json" })).status, 400);
 assert.equal((await write({})).status, 400);
 

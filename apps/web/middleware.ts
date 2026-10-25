@@ -39,7 +39,9 @@ function tooManyRequests(retryAfterSeconds: number, wantsHtml: boolean) {
 function isCrossSiteWrite(request: NextRequest) {
   if (SAFE_METHODS.has(request.method)) return false;
   const fetchSite = request.headers.get("sec-fetch-site");
-  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") return true;
+  // Browsers always send Sec-Fetch-Site and a web page cannot forge it, so it decides on its own.
+  // (Comparing addresses is unreliable behind a forwarding proxy such as a Codespace.)
+  if (fetchSite) return fetchSite !== "same-origin" && fetchSite !== "none";
   const origin = request.headers.get("origin");
   if (!origin) return false; // Non-browser clients (scripts, curl) send no Origin.
   let originHost: string;
