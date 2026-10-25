@@ -49,7 +49,10 @@ const nextConfig = {
     "@napi-rs/canvas-darwin-x64",
     "@napi-rs/canvas-darwin-arm64",
     "tesseract.js",
-    "tesseract.js-core"
+    "tesseract.js-core",
+    // WebAssembly runtime + tokenizer for search by meaning (loaded when first needed)
+    "onnxruntime-web",
+    "@huggingface/tokenizers"
   ],
   // Belt-and-suspenders on top of serverExternalPackages: if webpack ever
   // does try to touch a .node binary (whatever the reason - a different

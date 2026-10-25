@@ -63,6 +63,8 @@ model Document {
   versions         DocumentVersion[]
   sources          Source[]
   annotations      Annotation[]
+  bookmarks        Bookmark[]
+  embeddings       PassageEmbedding[]
 
   @@index([title])
 }
@@ -77,6 +79,7 @@ model DocumentVersion {
   extractionState String       @default("pending") @db.VarChar(255)
   createdAt       DateTime     @default(now())
   pages           PageMap[]
+  pageRanges      PageRange[]
   textSpans       TextSpan[]
   annotations     Annotation[]
 
@@ -111,6 +114,58 @@ model PageMap {
 
   @@unique([versionId, pdfPageIndex])
   @@index([bookPageLabel])
+}
+
+// Search-by-meaning index: one vector per passage of a book's text (kind "page")
+// or per saved note (kind "annotation"). It is derived data and can always be
+// rebuilt, so it is left out of backups.
+model PassageEmbedding {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  kind       String   @db.VarChar(16)
+  refId      String   @db.VarChar(191)
+  pdfPage    Int?
+  startChar  Int      @default(0)
+  endChar    Int      @default(0)
+  textHash   String   @db.VarChar(40)
+  model      String   @db.VarChar(64)
+  vector     Bytes
+  createdAt  DateTime @default(now())
+
+  @@index([documentId, kind])
+  @@index([refId])
+}
+
+// A place marked in a book, to come back to.
+model Bookmark {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  pdfPage    Int
+  label      String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, pdfPage])
+}
+
+// Printed page numbering for a stretch of PDF pages: a Roman-numeral preface,
+// the Arabic body, an appendix "A-1, A-2, ...", or pages with no number at all.
+// `system` is one of: arabic, roman-lower, roman-upper, unnumbered.
+// `startValue` is the number printed on `startPdfPage`; the number then rises by
+// one per page. `endPdfPage` null means "to the end of the book".
+model PageRange {
+  id           String          @id @default(cuid())
+  versionId    String
+  version      DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  startPdfPage Int
+  endPdfPage   Int?
+  system       String          @db.VarChar(32)
+  startValue   Int             @default(1)
+  prefix       String          @default("") @db.VarChar(16)
+  note         String?         @db.VarChar(255)
+
+  @@index([versionId, startPdfPage])
 }
 
 model TextSpan {

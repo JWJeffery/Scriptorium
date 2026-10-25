@@ -2,7 +2,7 @@
 
 ## Implemented
 
-The Milestone 1 workflow is implemented as a client-side prototype in `apps/web/components/ScriptoriumMilestoneOne.tsx`, with PDF rendering and anchor capture isolated in `apps/web/components/PdfAnchoredPageReader.tsx`.
+The Milestone 1 workflow is implemented as a client-side prototype in `apps/web/components/ScriptoriumMilestoneOnePersisted.tsx` (the original prototype component has since been removed), with PDF rendering and anchor capture isolated in `apps/web/components/PdfAnchoredPageReader.tsx`.
 
 It currently supports:
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const route = await readFile("apps/web/app/api/milestone-eleven/exact-search/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/research/exact-search/route.ts", "utf8");
 const schema = await readFile("prisma/schema.prisma", "utf8");
 
 for (const term of [

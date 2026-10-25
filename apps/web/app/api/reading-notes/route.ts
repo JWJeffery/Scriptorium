@@ -5,6 +5,7 @@ import { extractDocxRawText } from "../../../lib/docx-extraction";
 import { analyzeReadingNotes, parseReadingNotes, type ReadingNoteCandidate, type ReadingNotesPage } from "../../../lib/reading-notes-import";
 import { validateDocx } from "../../../lib/upload-guards";
 import { formatCitation, isCitationStyleId, type CslItem } from "../../../lib/citation-styles";
+import { formatCitations } from "../../../lib/csl-engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,11 @@ function pageIndexFromAnchor(anchor: unknown) {
 
 function citationText(cslJson: Prisma.JsonValue, style: string, locator: string) {
   if (!isCitationStyleId(style)) throw new Error("Unsupported citation style.");
-  return formatCitation(cslJson as CslItem, style, { type: "page", value: locator }).replace(/<\/?i>/g, "");
+  try {
+    return formatCitations(style, [{ key: "source", csl: cslJson, locator }])[0].text;
+  } catch {
+    return formatCitation(cslJson as CslItem, style, { type: "page", value: locator }).replace(/<\/?i>/g, "");
+  }
 }
 
 export async function POST(request: NextRequest) {

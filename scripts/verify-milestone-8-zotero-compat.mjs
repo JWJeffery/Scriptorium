@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const mapper = await readFile("apps/web/lib/zotero-compat.ts", "utf8");
-const route = await readFile("apps/web/app/api/milestone-eight/zotero/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/interchange/zotero/route.ts", "utf8");
 
 const cslFixture = {
   type: "book",

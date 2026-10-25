@@ -100,6 +100,27 @@ jobs:
       - name: Verify highlight geometry
         run: node --experimental-strip-types scripts/verify-highlight-geometry.mjs
 
+      - name: Verify search text helpers
+        run: node --experimental-strip-types scripts/verify-search-text.mjs
+
+      - name: Verify page labels (Roman and Arabic numbering)
+        run: node --experimental-strip-types scripts/verify-page-labels.mjs
+
+      - name: Verify citation engine (official CSL styles)
+        run: node --experimental-strip-types scripts/verify-csl-engine.mjs
+
+      - name: Verify source lookup and import
+        run: node --experimental-strip-types scripts/verify-source-lookup.mjs
+
+      - name: Verify annotation sync rules
+        run: node --experimental-strip-types scripts/verify-annotation-sync.mjs
+
+      - name: Verify embedding maths
+        run: node --experimental-strip-types scripts/verify-embedding-math.mjs
+
+      - name: Verify sessions and rate limiting
+        run: node --experimental-strip-types scripts/verify-session-and-rate.mjs
+
       - name: Verify Ledger UI contract
         run: node scripts/verify-ledger-ui-contract.mjs
 
@@ -243,9 +264,12 @@ jobs:
       - name: Build web app for live API smoke test
         run: pnpm build
 
+      - name: Install Chromium for the browser test
+        run: pnpm --filter @scriptorium/web exec playwright install --with-deps chromium
+
       - name: Verify page-split API end to end
         run: |
-          export SCRIPTORIUM_AUTH_DISABLED=true
+          export SCRIPTORIUM_AUTH_DISABLED=true SCRIPTORIUM_FAKE_EMBEDDINGS=1 SCRIPTORIUM_RATE_LIMITS_DISABLED=true
           pnpm --filter @scriptorium/web exec next start -H 127.0.0.1 -p 3100 > next-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
@@ -260,6 +284,40 @@ jobs:
             exit 1
           fi
           SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-page-split-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-search-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-threads-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-page-ranges-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-sources-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-reading-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-meaning-api.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          # Real browser: open a PDF, select text, save an annotation, reload.
+          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/e2e-browser.mjs || {
+            cat next-server.log
+            exit 1
+          }
+          # Last, because it empties the (throwaway CI) database and restores it from a backup.
+          SCRIPTORIUM_ALLOW_WIPE=yes SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-backup-restore.mjs || {
             cat next-server.log
             exit 1
           }

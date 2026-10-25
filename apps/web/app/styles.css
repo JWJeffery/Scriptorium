@@ -355,6 +355,14 @@ h2 {
   line-height: 1;
 }
 
+.pdfSelectionModeToggle.unavailable {
+  opacity: 0.45;
+}
+
+.pdfSelectionModeToggle button:disabled {
+  cursor: default;
+}
+
 .pdfSelectionModeToggle button.active {
   background: var(--accent-strong);
   color: #fff;
@@ -383,6 +391,9 @@ h2 {
 }
 
 .pdfZoomLevel {
+  display: inline-block;
+  min-width: 4ch;
+  text-align: center;
   min-width: 3.5em;
   text-align: center;
   color: var(--muted);
@@ -1253,6 +1264,28 @@ body {
   backdrop-filter: blur(16px);
 }
 
+/* Transient chips float above the bar so they never push the page buttons sideways. */
+.pdfToolbarExtras {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.pdfZoomReset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pdfPageControls > span {
+  min-width: 9.5ch;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .pdfPageControls {
   display: flex;
   align-items: center;
@@ -1515,9 +1548,8 @@ body {
 }
 
 .toolsDrawer .toolsTabs {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   padding-bottom: 5px;
-  overflow-x: auto;
 }
 
 .toolsDrawer .toolsTab {
@@ -1809,3 +1841,271 @@ a:focus-visible {
   margin: 0;
   color: #6b5a47;
 }
+
+/* Search dialog */
+.searchDialog {
+  position: fixed;
+  z-index: 95;
+  top: 4rem;
+  left: 50%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(46rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 6rem);
+  transform: translateX(-50%);
+  border: 1px solid rgb(103 52 19 / 22%);
+  border-radius: 14px;
+  background: var(--ledger-paper);
+  box-shadow: var(--ledger-shadow);
+  overflow: hidden;
+}
+
+.searchControls {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem 0.7rem;
+  border-bottom: 1px solid rgb(103 52 19 / 14%);
+}
+
+.searchControls input[type="search"] {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgb(103 52 19 / 30%);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 1.05rem;
+}
+
+.searchToggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.searchToggles [role="group"] {
+  display: inline-flex;
+  border: 1px solid rgb(103 52 19 / 28%);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.searchToggles [role="group"] button {
+  padding: 0.3rem 0.8rem;
+  border: 0;
+  background: transparent;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.searchToggles [role="group"] button.active {
+  background: var(--ledger-terracotta-dark);
+  color: #fff;
+}
+
+.searchToggles [role="group"] button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.searchClose {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.searchBody {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem 1rem;
+  overflow-y: auto;
+}
+
+.searchBody h3 {
+  margin: 0.7rem 0 0.2rem;
+  color: #6b5a47;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.searchNote {
+  margin: 0.6rem 0;
+  color: #6b5a47;
+}
+
+.searchHit {
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.searchHit:hover,
+.searchHit:focus-visible {
+  border-color: rgb(103 52 19 / 30%);
+  background: #fff;
+}
+
+.searchHitHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.searchHitHead span:not(.recordColor) {
+  color: #6b5a47;
+}
+
+.searchHitText {
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.searchHitText mark {
+  background: rgb(255 140 0 / 30%);
+  color: inherit;
+  padding: 0 0.1em;
+  border-radius: 2px;
+}
+
+.searchHitTags {
+  color: var(--ledger-sage);
+  font-size: 0.78rem;
+}
+
+/* Research threads */
+.threadsSection { display: grid; gap: 0.7rem; }
+.threadsSection label { display: grid; gap: 0.2rem; font-size: 0.85rem; }
+.threadsSection input,
+.threadsSection textarea { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: #fff; font: inherit; }
+.threadNew { display: flex; gap: 0.6rem; }
+.threadNew input { flex: 1; }
+.threadList { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.threadList button { display: grid; gap: 0.15rem; width: 100%; padding: 0.6rem 0.8rem; border: 1px solid rgb(103 52 19 / 20%); border-radius: 10px; background: #fff; text-align: left; cursor: pointer; }
+.threadList button span { color: #6b5a47; font-size: 0.8rem; }
+.threadExport { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.threadExport a { text-decoration: none; }
+.threadItems { display: grid; gap: 0.7rem; margin: 0; padding: 0; list-style: none; }
+.threadItem { display: grid; gap: 0.4rem; padding: 0.75rem 0.85rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: #fff; }
+.threadItemHead { display: flex; flex-wrap: wrap; gap: 0.3rem 0.7rem; align-items: center; font-size: 0.85rem; }
+.threadItemButtons { margin-left: auto; display: inline-flex; gap: 0.3rem; }
+.threadItemButtons button { padding: 0.1rem 0.5rem; border: 1px solid rgb(103 52 19 / 25%); border-radius: 6px; background: transparent; cursor: pointer; font-size: 0.8rem; }
+.threadItemButtons button:disabled { opacity: 0.4; cursor: default; }
+.threadItem blockquote { margin: 0; padding-left: 0.7rem; border-left: 3px solid var(--ledger-sage); font-size: 0.92rem; }
+.threadOwnNote,
+.threadCitation { margin: 0; font-size: 0.82rem; color: #5b4a38; }
+.threadCitation { font-style: italic; }
+.threadEmpty { margin: 0; color: #6b5a47; }
+.threadMessage { margin: 0; color: #8f2d2d; }
+.threadAddNote { display: grid; gap: 0.4rem; }
+.addToThread { display: grid; gap: 0.3rem; margin-top: 0.3rem; }
+.addToThread select,
+.addToThread input { padding: 0.35rem 0.5rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 6px; font: inherit; font-size: 0.82rem; }
+
+/* Tags */
+.tagInput { display: grid; gap: 0.3rem; }
+.tagInputLabel { font-size: 0.85rem; }
+.tagChips { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; padding: 0.35rem 0.5rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: #fff; }
+.tagChips input { flex: 1; min-width: 7rem; border: 0; outline: 0; background: transparent; font: inherit; font-size: 0.9rem; }
+.tagChip { display: inline-flex; gap: 0.25rem; align-items: center; padding: 0.1rem 0.5rem; border-radius: 999px; background: rgb(102 115 75 / 16%); color: #3f4a2b; font-size: 0.82rem; }
+.tagChip button { border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; line-height: 1; }
+.tagSuggestions { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.tagSuggestions button { padding: 0.1rem 0.5rem; border: 1px dashed rgb(102 115 75 / 55%); border-radius: 999px; background: transparent; color: #3f4a2b; font-size: 0.78rem; cursor: pointer; }
+.recordTags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.recordTags span { padding: 0 0.45rem; border-radius: 999px; background: rgb(102 115 75 / 16%); color: #3f4a2b; font-size: 0.76rem; }
+.ledgerTagFilter { width: 100%; margin-top: 0.4rem; padding: 0.3rem 0.5rem; border: 1px solid rgb(103 52 19 / 25%); border-radius: 8px; background: #fff; font: inherit; font-size: 0.82rem; }
+
+/* Page numbering editor */
+.pageNumbering { display: grid; gap: 0.6rem; }
+.pageNumberingHelp,
+.pageNumberingPreview { margin: 0; font-size: 0.82rem; color: #5b4a38; }
+.pageNumberingProblem { margin: 0; font-size: 0.82rem; color: #8f2d2d; }
+.pageNumberingActions { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: center; justify-content: space-between; }
+.rangeRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem 0.5rem; padding: 0.6rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: #fff; }
+.rangeRow label { display: grid; gap: 0.15rem; font-size: 0.78rem; }
+.rangeRow input,
+.rangeRow select { width: 100%; padding: 0.3rem 0.45rem; border: 1px solid rgb(103 52 19 / 25%); border-radius: 6px; font: inherit; font-size: 0.88rem; }
+.rangeRow .textAction { grid-column: 1 / -1; justify-self: end; }
+.goToBookPage { display: flex; gap: 0.4rem; align-items: flex-end; }
+.goToBookPage label { flex: 1; }
+
+/* Backup */
+.backupSection { display: grid; gap: 0.7rem; }
+.backupSection h3 { margin: 0.6rem 0 0; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: #6b5a47; }
+.backupStatus { margin: 0; padding: 0.4rem 0.7rem; border-radius: 8px; background: rgb(102 115 75 / 14%); }
+.backupStatus.stale { background: rgb(154 79 28 / 14%); }
+.backupActions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.backupActions a { text-decoration: none; }
+.backupList { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.backupList li { display: flex; gap: 0.8rem; align-items: center; justify-content: space-between; padding: 0.5rem 0.7rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 8px; background: #fff; }
+.backupList li > span:first-child { display: grid; min-width: 0; }
+.backupList small { color: #6b5a47; }
+.backupFine { margin: 0; font-size: 0.82rem; color: #5b4a38; }
+.backupCode { margin: 0; padding: 0.6rem 0.8rem; border-radius: 8px; background: #2d241a; color: #f3ecdf; font-size: 0.8rem; overflow-x: auto; }
+
+.citationMissing { display: block; margin-top: 0.4rem; color: #8f2d2d; font-size: 0.8rem; }
+.threadFine { margin: 0; font-size: 0.8rem; color: #5b4a38; }
+
+.fieldHint { color: #6b5a47; font-size: 0.76rem; }
+
+/* Source lookup dialog */
+.lookupDialog { width: min(40rem, calc(100vw - 2rem)); }
+.lookupTabs { display: inline-flex; border: 1px solid rgb(103 52 19 / 28%); border-radius: 999px; overflow: hidden; width: fit-content; }
+.lookupTabs button { padding: 0.35rem 0.9rem; border: 0; background: transparent; font-size: 0.85rem; cursor: pointer; }
+.lookupTabs button.active { background: var(--ledger-terracotta-dark); color: #fff; }
+.lookupForm { display: grid; gap: 0.6rem; }
+.lookupForm label { display: grid; gap: 0.25rem; font-size: 0.85rem; }
+.lookupForm input,
+.lookupForm textarea { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: #fff; font: inherit; }
+.lookupMessage { margin: 0; color: #8f2d2d; font-size: 0.88rem; }
+.lookupCandidate { display: flex; gap: 1rem; align-items: center; justify-content: space-between; padding: 0.75rem 0.9rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: #fff; }
+.lookupCandidate > div { display: grid; gap: 0.2rem; min-width: 0; }
+.lookupCandidate span,
+.lookupCandidate small { color: #6b5a47; font-size: 0.82rem; }
+.lookupCandidate em { font-size: 0.84rem; }
+
+/* Shortcuts */
+.shortcutsDialog { width: min(36rem, calc(100vw - 2rem)); }
+.shortcutList { display: grid; grid-template-columns: max-content 1fr; gap: 0.45rem 1.2rem; margin: 0; }
+.shortcutList dt { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
+.shortcutList dd { margin: 0; color: #4a3b2b; }
+
+/* Bookmarks and export */
+.ledgerBookmarks { margin: 0.4rem 0; padding: 0.4rem 0.6rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 8px; background: #fff; font-size: 0.85rem; }
+.ledgerBookmarks summary { cursor: pointer; font-weight: 600; }
+.ledgerBookmarks ul { display: grid; gap: 0.2rem; margin: 0.4rem 0 0; padding: 0; list-style: none; }
+.ledgerBookmarks li { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; }
+.ledgerBookmarks li button:first-child { flex: 1; padding: 0.15rem 0.3rem; border: 0; background: transparent; text-align: left; cursor: pointer; font: inherit; color: var(--ledger-terracotta-dark); text-decoration: underline; text-underline-offset: 3px; }
+.ledgerBookmarks small { color: #6b5a47; text-decoration: none; }
+.bookmarkRemove { border: 0; background: transparent; cursor: pointer; font-size: 1rem; line-height: 1; }
+.exportMenu { font-size: 0.82rem; }
+.exportMenu summary { cursor: pointer; color: var(--ledger-terracotta-dark); text-decoration: underline; text-underline-offset: 3px; }
+.exportMenu a { display: block; padding: 0.2rem 0 0.2rem 0.8rem; color: var(--ledger-terracotta-dark); }
+
+/* Database sync */
+.syncNotice { display: grid; gap: 0.2rem; margin: 0.4rem 0; padding: 0.5rem 0.7rem; border-radius: 8px; background: rgb(154 79 28 / 14%); font-size: 0.82rem; }
+.recordUnsaved { color: #8f2d2d; }
+
+.searchMethod { margin: 0.3rem 0 0; padding: 0.4rem 0.6rem; border-radius: 8px; background: rgb(102 115 75 / 12%); font-size: 0.8rem; color: #3f4a2b; }
+.meaningSection { display: grid; gap: 0.7rem; }
+
+/* Sign-in page */
+.loginPage { min-height: 100vh; display: grid; place-items: center; padding: 1rem; background: var(--ledger-ground, #f3ecdf); }
+.loginCard { width: min(24rem, 100%); display: grid; gap: 0.6rem; padding: 2rem 1.8rem; border: 1px solid rgb(103 52 19 / 22%); border-radius: 16px; background: var(--ledger-paper, #fffdf8); box-shadow: var(--ledger-shadow, 0 16px 42px rgb(62 43 25 / 14%)); }
+.loginCard h1 { margin: 0 0 0.4rem; font-size: 2rem; }
+.loginForm { display: grid; gap: 0.8rem; }
+.loginForm label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
+.loginForm input { padding: 0.6rem 0.75rem; border: 1px solid rgb(103 52 19 / 30%); border-radius: 8px; background: #fff; font: inherit; }
+.loginMessage { margin: 0; color: #8f2d2d; font-size: 0.88rem; }

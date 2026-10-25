@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { snapRectsToOcrLines } from "../lib/highlight-geometry";
+import { matchWordIndexes } from "../lib/search-text";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
@@ -40,7 +41,7 @@ export type PdfSelectionAnchor = {
   afterContext: string;
   rects: PdfAnchorRect[];
 };
-export type PdfPageHighlight = { id: string; color: string; anchor: PdfSelectionAnchor };
+export type PdfPageHighlight = { id: string; color: string; anchor: PdfSelectionAnchor; /** the note text, if any: shows a marker in the margin */ note?: string };
 export type PdfEmbeddedMetadata = { title?: string; author?: string; keywords?: string; subject?: string };
 
 type Props = {
@@ -54,7 +55,7 @@ type Props = {
   onStatusChange: (status: string) => void;
   onMetadataExtracted?: (metadata: PdfEmbeddedMetadata) => void;
   // Independently-derived text for the current page (server extraction on
-  // ingest, or a real OCR pass) - see api/milestone-sixteen/page-text.
+  // ingest, or a real OCR pass) - see api/ocr/page-text.
   // When present, a captured selection that doesn't appear anywhere in it
   // gets flagged as possibly corrupted rather than reported as a normal
   // successful capture. Optional and silently skipped when absent (e.g. no
@@ -72,6 +73,11 @@ type Props = {
   // this component just renders the button in its toolbar and calls back.
   hasSelection?: boolean;
   onClearSelection?: () => void;
+  // Words from a Search result to light up on this page (null = none).
+  searchTerms?: string[] | null;
+  onClearSearch?: () => void;
+  // Clicking a saved highlight (or its margin marker) on the page.
+  onHighlightClick?: (id: string) => void;
 };
 
 function isTextItem(item: unknown): item is TextItemLike {
@@ -275,7 +281,7 @@ function rectFromPoints(start: { x: number; y: number }, end: { x: number; y: nu
   };
 }
 
-export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageChange, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords, hasSelection, onClearSelection }: Props) {
+export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageChange, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords, hasSelection, onClearSelection, searchTerms, onClearSearch, onHighlightClick }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -323,6 +329,43 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
   const MIN_ZOOM = 0.5;
   const MAX_ZOOM = 3;
 
+  // Fit the page to the width of the reading area (and enlarge small pages to do so).
+  const fitWidth = () => {
+    if (pageSize.width <= 0 || containerWidth <= 0 || fitScale <= 0) return;
+    const wanted = (containerWidth / pageSize.width) / fitScale;
+    setZoomLevel(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(wanted * 100) / 100)));
+  };
+  // Keyboard shortcuts in the page ("+", "-", "0", "f") reach the reader as an event.
+  useEffect(() => {
+    function onZoomCommand(event: Event) {
+      const command = (event as CustomEvent<string>).detail;
+      if (command === "in") setZoomLevel((level) => Math.min(MAX_ZOOM, Math.round((level + ZOOM_STEP) * 100) / 100));
+      else if (command === "out") setZoomLevel((level) => Math.max(MIN_ZOOM, Math.round((level - ZOOM_STEP) * 100) / 100));
+      else if (command === "reset") setZoomLevel(1);
+      else if (command === "fit") fitWidth();
+    }
+    window.addEventListener("scriptorium-zoom", onZoomCommand);
+    return () => window.removeEventListener("scriptorium-zoom", onZoomCommand);
+    // fitWidth reads the latest sizes each render; re-subscribe when they change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageSize.width, containerWidth, fitScale]);
+
+  // A click (not a drag) on a saved highlight opens it.
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
+  function rememberPress(event: React.MouseEvent) { pressRef.current = { x: event.clientX, y: event.clientY }; }
+  function handleFrameClick(event: React.MouseEvent) {
+    const press = pressRef.current;
+    pressRef.current = null;
+    if (!onHighlightClick || !press || Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    const frame = frameRef.current;
+    if (!frame) return;
+    const point = pointInFrame(event, frame, finalScale);
+    const hit = [...highlights].reverse().find((highlight) => highlight.anchor.pageNumber === pageNumber && highlight.id !== "active-selection-preview" && (usingOcrLayer ? snapRectsToOcrLines(highlight.anchor.rects, authoritativeWords) : highlight.anchor.rects).some((rect) => point.x >= rect.left && point.x <= rect.left + rect.width && point.y >= rect.top && point.y <= rect.top + rect.height));
+    if (hit) onHighlightClick(hit.id);
+  }
+
   const usingOcrLayer = Boolean(authoritativeWords && authoritativeWords.length > 0);
   // The rectangle-drag "selection box" mode exists because native browser
   // text selection was unreliable on top of genuinely garbled OCR word
@@ -337,6 +380,41 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
   const [selectionMode, setSelectionMode] = useState<"highlight" | "box">("highlight");
   const useBoxSelection = usingOcrLayer && selectionMode === "box";
   const textRuns = usingOcrLayer ? runsFromWords(authoritativeWords!) : pdfTextRuns;
+
+  // Search hits: precise word boxes where OCR positions exist, otherwise the
+  // text runs the PDF itself reports.
+  const searchRects: PdfAnchorRect[] = (() => {
+    if (!searchTerms || searchTerms.length === 0) return [];
+    if (usingOcrLayer && authoritativeWords) {
+      const hits = matchWordIndexes(authoritativeWords.map((word) => word.text), searchTerms);
+      return snapRectsToOcrLines(hits.map((index) => authoritativeWords[index]), authoritativeWords);
+    }
+    // The PDF reports whole lines, so place each matched word by its share of
+    // the line's characters (exact for monospaced text, close for the rest).
+    const tokens = searchTerms.flatMap((term) => term.toLowerCase().split(/\s+/)).filter(Boolean);
+    const rects: PdfAnchorRect[] = [];
+    for (const run of pdfTextRuns) {
+      const lower = run.text.toLowerCase();
+      if (!lower.trim()) continue;
+      const runWidth = run.width ?? run.fontSize * run.text.length * 0.5;
+      const perChar = runWidth / run.text.length;
+      const phrase = tokens.join(" ");
+      const spans: Array<[number, number]> = [];
+      const phraseAt = tokens.length > 1 ? lower.indexOf(phrase) : -1;
+      if (phraseAt >= 0) spans.push([phraseAt, phrase.length]);
+      else {
+        for (const token of new Set(tokens)) {
+          let from = 0;
+          for (let at = lower.indexOf(token, from); at >= 0; at = lower.indexOf(token, from)) {
+            spans.push([at, token.length]);
+            from = at + token.length;
+          }
+        }
+      }
+      for (const [at, length] of spans) rects.push({ left: run.left + at * perChar, top: run.top, width: length * perChar, height: run.fontSize * 1.2 });
+    }
+    return rects;
+  })();
 
   useEffect(() => {
     if (usingOcrLayer) {
@@ -612,24 +690,24 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
             <button type="button" onClick={() => onPageChange(pageNumber + 1)} disabled={Boolean(pageCount && pageNumber >= pageCount)} aria-label="Next PDF page">›</button>
           </div>
         ) : null}
-        {usingOcrLayer ? (
-          <div className="pdfSelectionModeToggle" role="group" aria-label="Text selection mode">
-            <button
-              type="button"
-              className={selectionMode === "highlight" ? "active" : undefined}
-              onClick={() => setSelectionMode("highlight")}
-            >
-              Highlight text
-            </button>
-            <button
-              type="button"
-              className={selectionMode === "box" ? "active" : undefined}
-              onClick={() => setSelectionMode("box")}
-            >
-              Selection box
-            </button>
-          </div>
-        ) : null}
+        <div className={`pdfSelectionModeToggle${usingOcrLayer ? "" : " unavailable"}`} role="group" aria-label="Text selection mode" title={usingOcrLayer ? undefined : "Available on pages with a scanned-text (OCR) layer"}>
+          <button
+            type="button"
+            className={selectionMode === "highlight" ? "active" : undefined}
+            onClick={() => setSelectionMode("highlight")}
+            disabled={!usingOcrLayer}
+          >
+            Highlight text
+          </button>
+          <button
+            type="button"
+            className={selectionMode === "box" ? "active" : undefined}
+            onClick={() => setSelectionMode("box")}
+            disabled={!usingOcrLayer}
+          >
+            Selection box
+          </button>
+        </div>
         <div className="pdfZoomControls">
           <button
             type="button"
@@ -648,17 +726,25 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
           >
             +
           </button>
-          {zoomLevel !== 1 ? (
-            <button type="button" className="pdfZoomReset" onClick={() => setZoomLevel(1)}>
-              Reset zoom
-            </button>
-          ) : null}
+          <button type="button" className="pdfZoomReset" onClick={fitWidth} title="Fit the page to the width of the reading area (f)">
+            Fit width
+          </button>
+          <button type="button" className="pdfZoomReset" onClick={() => setZoomLevel(1)} disabled={zoomLevel === 1}>
+            100%
+          </button>
         </div>
+        {(searchTerms && searchTerms.length > 0) || hasSelection ? <div className="pdfToolbarExtras">
+        {searchTerms && searchTerms.length > 0 ? (
+          <button type="button" className="pdfClearSelection" onClick={onClearSearch} title="Remove the search highlight">
+            Search: {searchTerms.join(" ")} ✕
+          </button>
+        ) : null}
         {hasSelection ? (
           <button type="button" className="pdfClearSelection" onClick={onClearSelection}>
             Clear selection
           </button>
         ) : null}
+        </div> : null}
       </div>
       {isLoading ? <div className="pdfLoading">Rendering PDF page…</div> : null}
       <div
@@ -669,7 +755,8 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
         <div
           className="pdfPageFrame"
           onMouseUp={useBoxSelection ? handleOcrMouseUp : captureSelection}
-          onMouseDown={useBoxSelection ? handleOcrMouseDown : undefined}
+          onMouseDown={(event) => { rememberPress(event); if (useBoxSelection) handleOcrMouseDown(event); }}
+          onClick={handleFrameClick}
           onMouseMove={useBoxSelection ? handleOcrMouseMove : undefined}
           ref={frameRef}
           style={{
@@ -686,6 +773,16 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
                 <span className="pdfHighlightBox" key={`${highlight.id}-${index}`} style={{ background: highlight.color, left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
               ))
             )}
+            {highlights.filter((highlight) => highlight.note && highlight.anchor.pageNumber === pageNumber && highlight.id !== "active-selection-preview").map((highlight) => {
+              const first = highlight.anchor.rects[0];
+              if (!first) return null;
+              return (
+                <button type="button" key={`note-${highlight.id}`} className="pdfNoteMarker" style={{ top: first.top, background: highlight.color }} title={highlight.note} aria-label={`Open note: ${highlight.note}`} onClick={(event) => { event.stopPropagation(); onHighlightClick?.(highlight.id); }}>✎</button>
+              );
+            })}
+            {searchRects.map((rect, index) => (
+              <span className="pdfSearchBox" key={`search-${index}`} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
+            ))}
             {useBoxSelection && dragRect ? (
               <span className="pdfDragRect" style={{ left: dragRect.left, top: dragRect.top, width: dragRect.width, height: dragRect.height }} />
             ) : null}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const route = await readFile("apps/web/app/api/milestone-twelve/semantic-search/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/research/semantic-search/route.ts", "utf8");
 const scorer = await readFile("apps/web/lib/local-similarity.ts", "utf8");
 
 for (const term of [

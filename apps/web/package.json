@@ -11,24 +11,36 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@citation-js/core": "^0.9.0",
+    "@citation-js/plugin-bibtex": "^0.9.0",
+    "@citation-js/plugin-ris": "^0.9.0",
+    "@huggingface/tokenizers": "^0.2.0",
     "@napi-rs/canvas": "^1.0.2",
     "@prisma/client": "^6.0.0",
+    "archiver": "^8.0.0",
+    "citeproc": "^2.4.63",
+    "docx": "^9.8.1",
     "mammoth": "^1.8.0",
     "next": "^15.5.24",
+    "onnxruntime-web": "^1.30.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
+    "@types/archiver": "^8.0.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "@types/yauzl": "^3.4.0",
     "eslint": "^9.17.0",
     "eslint-config-next": "^15.0.0",
     "node-loader": "^2.1.0",
+    "playwright": "1.56.1",
     "typescript": "^5.7.2"
   }
 }

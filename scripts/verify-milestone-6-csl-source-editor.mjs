@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const route = await readFile("apps/web/app/api/milestone-six/sources/route.ts", "utf8");
+const route = await readFile("apps/web/app/api/sources/route.ts", "utf8");
 const component = await readFile("apps/web/components/ScriptoriumMilestoneOnePersisted.tsx", "utf8");
 
 const requiredRouteTerms = [
@@ -17,7 +17,7 @@ const requiredRouteTerms = [
 ];
 
 const requiredComponentTerms = [
-  "/api/milestone-six/sources",
+  "/api/sources",
   "Save CSL source metadata",
   "validateSource",
   "persistSourceMetadata",

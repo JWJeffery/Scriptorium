@@ -87,11 +87,11 @@ assert.equal(bibtexRoundTrip.title, "A Plain Book");
 assert.equal(bibtexRoundTrip.publisher, "Acme");
 
 // --- new additive CSL editor route (Milestone 6's original route is untouched) ---
-const editorRoute = await readFile("apps/web/app/api/milestone-fourteen/csl-source-editor/route.ts", "utf8");
+const editorRoute = await readFile("apps/web/app/api/citations/csl-source-editor/route.ts", "utf8");
 for (const term of ["normalizeCslBookRecord", "cslToInputJson", "editor", "translator", "containerTitle", "prisma.source.update"]) {
   assert.ok(editorRoute.includes(term), `expanded CSL source editor route missing contract term: ${term}`);
 }
-const originalSourcesRoute = await readFile("apps/web/app/api/milestone-six/sources/route.ts", "utf8");
+const originalSourcesRoute = await readFile("apps/web/app/api/sources/route.ts", "utf8");
 assert.ok(originalSourcesRoute.includes('type: "book"'), "Milestone 6's original route must remain untouched (book-only, already audited/closed)");
 
 console.log("Milestone 14 expanded citation styles verifier passed (executed real modules, not string matching).");
