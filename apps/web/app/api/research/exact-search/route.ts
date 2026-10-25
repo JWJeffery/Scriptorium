@@ -73,30 +73,30 @@ export async function GET(request: NextRequest) {
 
   const [documents, textSpans, annotations, annotationTags, citations, threads, threadTags] = await Promise.all([
     prisma.document.findMany({
-      where: { OR: [{ title: contains }, { originalFilename: contains }] },
+      where: { AND: [{ OR: [{ title: contains }, { originalFilename: contains }] }, { deletedAt: null }] },
       include: { sources: true },
       take: perBucket,
       orderBy: { updatedAt: "desc" }
     }),
     prisma.textSpan.findMany({
-      where: { text: contains },
+      where: { text: contains, version: { document: { deletedAt: null } } },
       include: { pageMap: true, version: { include: { document: { include: { sources: true } } } } },
       take: perBucket,
       orderBy: { createdAt: "desc" }
     }),
     prisma.annotation.findMany({
-      where: { OR: [{ selectedText: contains }, { note: contains }] },
+      where: { AND: [{ OR: [{ selectedText: contains }, { note: contains }] }, { document: { deletedAt: null } }] },
       include: { document: true, pageMap: true, citations: { include: { source: true } }, tags: true },
       take: perBucket,
       orderBy: { updatedAt: "desc" }
     }),
     prisma.annotationTag.findMany({
-      where: { value: contains },
+      where: { value: contains, annotation: { document: { deletedAt: null } } },
       include: { annotation: { include: { document: true, pageMap: true, citations: { include: { source: true } } } } },
       take: perBucket
     }),
     prisma.citation.findMany({
-      where: { generatedText: contains },
+      where: { generatedText: contains, OR: [{ annotationId: null }, { annotation: { document: { deletedAt: null } } }] },
       include: { source: true, annotation: { include: { document: true, pageMap: true } } },
       take: perBucket,
       orderBy: { createdAt: "desc" }

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
-import { readStoredPdfFile, storePdfFile } from "../../../lib/server-storage";
-import { splitTwoPageSpreadPdf } from "../../../lib/pdf-page-splitter";
-import { releaseHeavyJob, tryAcquireHeavyJob } from "../../../lib/heavy-job-guard";
-import { beginJob, getJob, isJobRunning, setFinishedJob, setRunningJob } from "../../../lib/page-split-jobs";
+import { SPLIT_OUTPUT_FILENAME } from "../../../lib/jobs/handlers";
+import { enqueueHeavyJob } from "../../../lib/jobs/queue";
+import { getJobs } from "../../../lib/page-split-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,8 +26,6 @@ function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-const SPLIT_OUTPUT_FILENAME = "split-two-page-spreads.pdf";
-
 export async function GET(request: NextRequest) {
   const documentId = clean(request.nextUrl.searchParams.get("documentId"));
 
@@ -38,9 +35,10 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: "desc" }
   });
 
+  const jobs = await getJobs(versions.map((version) => version.id));
   const results = await Promise.all(
     versions.map(async (version) => {
-      const job = await getJob(version.id);
+      const job = jobs.get(version.id);
       const alreadySplit = version.document.originalFilename === SPLIT_OUTPUT_FILENAME;
       return {
         versionId: version.id,
@@ -77,10 +75,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "versionId is required." }, { status: 400 });
   }
 
-  if (isJobRunning(versionId)) {
-    return NextResponse.json({ splitStarted: true, alreadyRunning: true, versionId }, { status: 202 });
-  }
-
   const version = await prisma.documentVersion.findUnique({ where: { id: versionId }, include: { document: true } });
   if (!version) {
     return NextResponse.json({ error: "No document version found for that id." }, { status: 404 });
@@ -98,58 +92,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const slot = tryAcquireHeavyJob("page-split", versionId);
-  if (!slot.acquired) {
-    return NextResponse.json(
-      { error: "Another OCR or page-split job is already running. Wait for it to finish, then try again." },
-      { status: 429 }
-    );
-  }
-
-  try {
-    await beginJob(versionId);
-  } catch (error) {
-    releaseHeavyJob("page-split", versionId);
-    throw error;
-  }
-
-  runSplitInBackground(versionId, version.snapshotKey, version.documentId)
-    .catch((error) => {
-      console.error(`Background page-split failed for version ${versionId}:`, error);
-    })
-    .finally(() => releaseHeavyJob("page-split", versionId));
-
-  return NextResponse.json({ splitStarted: true, versionId }, { status: 202 });
-}
-
-async function runSplitInBackground(versionId: string, snapshotKey: string, documentId: string) {
-  try {
-    const pdfBytes = await readStoredPdfFile(snapshotKey);
-    const result = await splitTwoPageSpreadPdf(pdfBytes, (completed, total) => {
-      setRunningJob(versionId, { completed, total });
-    });
-
-    // Stored under the same document's folder as a distinct file (not
-    // overwriting the original snapshot, and not creating a new Document
-    // row on its own) - storePdfFile expects a browser-shaped File, which
-    // Node provides as a global since v20.
-    const resultFile = new File([result.pdfBytes as BlobPart], "split-two-page-spreads.pdf", { type: "application/pdf" });
-    const stored = await storePdfFile(`${documentId}/page-split`, resultFile);
-
-    await setFinishedJob(versionId, {
-      status: "ready",
-      progress: null,
-      resultStorageKey: stored.storageKey,
-      originalPageCount: result.originalPageCount,
-      newPageCount: result.newPageCount,
-      splitOriginalPageNumbers: result.splitOriginalPageNumbers
-    });
-  } catch (error) {
-    await setFinishedJob(versionId, {
-      status: "failed",
-      progress: null,
-      error: error instanceof Error ? error.message : "Page split failed."
-    });
-    throw error;
-  }
+  // Queued, then worked one heavy job at a time. Asking again while it is queued or running is harmless.
+  const { job, alreadyActive } = await enqueueHeavyJob("page-split", versionId);
+  return NextResponse.json({ splitStarted: true, ...(alreadyActive ? { alreadyRunning: true } : {}), versionId, jobId: job.id }, { status: 202 });
 }

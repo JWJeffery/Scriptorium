@@ -23,7 +23,7 @@ if ! curl --fail --silent "$base/" > /dev/null; then cat "$log"; exit 1; fi
 run() { SCRIPTORIUM_BASE_URL="$base" "$@" || { echo "FAILED: $*"; cat "$log"; exit 1; }; }
 
 echo "== live checks (storage: ${SCRIPTORIUM_STORAGE_BACKEND:-local disk}) =="
-for name in page-split search threads page-ranges sources reading meaning library; do
+for name in page-split search threads page-ranges sources reading meaning library jobs; do
   run node "scripts/verify-$name-api.mjs"
 done
 if [ "${SCRIPTORIUM_STORAGE_BACKEND:-}" = "s3" ]; then run node scripts/verify-object-storage.mjs; fi

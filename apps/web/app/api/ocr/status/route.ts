@@ -1,32 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { detectLikelyScanned } from "../../../../lib/ocr-provider";
-import { tesseractOcrProvider } from "../../../../lib/tesseract-ocr-provider";
-import { readStoredPdfFile } from "../../../../lib/server-storage";
-import { releaseHeavyJob, tryAcquireHeavyJob } from "../../../../lib/heavy-job-guard";
+import { OCR_RUNNING_STATE } from "../../../../lib/jobs/handlers";
+import { latestJobsFor } from "../../../../lib/jobs/jobs";
+import { enqueueHeavyJob } from "../../../../lib/jobs/queue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const RUNNING_STATE = "tesseract-js-eng-v1-running";
-const FAILED_STATE = "tesseract-js-eng-v1-failed";
-const NO_TEXT_STATE = "tesseract-js-eng-v1-no-text";
-const TIMEOUT_STATE = "tesseract-js-eng-v1-timed-out";
-// Generous, but bounded: this exists specifically so a hung language-data
-// download or a stalled recognition step can't leave a version stuck in
-// "-running" forever with no way to tell the difference between "slow" and
-// "dead" from the outside. 3 minutes turned out to be too tight for a real
-// multi-page book (a 64-page run legitimately timed out doing real, visibly
-// progressing work) - raised to a bound generous enough for a genuinely
-// long book while still being an actual bound, not "forever".
-const BACKGROUND_TIMEOUT_MS = 12 * 60 * 1000;
-
-// In-memory only - lost on server restart, same as the background OCR work
-// itself already is (there's no persistent job queue here, just a
-// long-running Node process). Exists purely to answer "how far along is
-// this" for the panel's progress bar; not a source of truth for anything
-// that needs to survive a restart.
-const ocrProgress = new Map<string, { completed: number; total: number }>();
+const RUNNING_STATE = OCR_RUNNING_STATE;
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -47,6 +29,7 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: "desc" }
   });
 
+  const jobs = await latestJobsFor("ocr", versions.map((version) => version.id));
   const results = versions.map((version) => {
     const extractedTextLength = version.textSpans.reduce((sum, span) => sum + span.text.length, 0);
     // Real page count comes from the per-page TextSpans that ingestion (and
@@ -64,7 +47,7 @@ export async function GET(request: NextRequest) {
       documentTitle: version.document.title,
       extractionState: version.extractionState,
       ocrRunning,
-      ocrProgress: ocrRunning ? ocrProgress.get(version.id) ?? null : null,
+      ocrProgress: ocrRunning && jobs.get(version.id)?.progressTotal ? { completed: jobs.get(version.id)!.progressDone, total: jobs.get(version.id)!.progressTotal } : null,
       ocrWarnings,
       pageCount,
       extractedTextLength,
@@ -79,13 +62,11 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// OCR (page rendering + Tesseract recognition, plus a first-run language-data
-// download) can easily take longer than a reverse proxy's request timeout -
-// this is exactly what caused 504 Gateway Timeout errors in a GitHub
-// Codespace even though the work itself was completing fine. So this route
-// no longer does OCR inline: it marks the version as running, kicks the real
-// work off in the background without awaiting it, and returns immediately.
-// The panel polls GET above until extractionState moves off "-running".
+// OCR (page rendering + Tesseract recognition, plus a first-run language-data download) can easily take
+// longer than a reverse proxy's request timeout, so this route never does OCR itself: it queues a job and
+// returns at once. A worker picks the job up (one heavy job at a time, retried once if it dies), and the
+// panel polls GET above until extractionState moves off "-running". The first thing the worker does is
+// keep that state; here we set it immediately so the panel shows "running" even while the job waits.
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as { versionId?: string };
   const versionId = clean(body.versionId);
@@ -105,83 +86,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const slot = tryAcquireHeavyJob("ocr", versionId);
-  if (!slot.acquired) {
-    return NextResponse.json(
-      { error: "Another OCR or page-split job is already running. Wait for it to finish, then try again." },
-      { status: 429 }
-    );
-  }
-
+  await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: RUNNING_STATE } });
   try {
-    await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: RUNNING_STATE } });
+    const { job } = await enqueueHeavyJob("ocr", versionId);
+    return NextResponse.json({ ocrStarted: true, versionId, extractionState: RUNNING_STATE, jobId: job.id }, { status: 202 });
   } catch (error) {
-    releaseHeavyJob("ocr", versionId);
-    throw error;
-  }
-  ocrProgress.delete(versionId);
-
-  runOcrInBackground(versionId, version.snapshotKey)
-    .catch((error) => {
-      console.error(`Background OCR failed for version ${versionId}:`, error);
-    })
-    .finally(() => releaseHeavyJob("ocr", versionId));
-
-  return NextResponse.json({ ocrStarted: true, versionId, extractionState: RUNNING_STATE }, { status: 202 });
-}
-
-async function runOcrInBackground(versionId: string, snapshotKey: string) {
-  try {
-    const pdfBytes = await readStoredPdfFile(snapshotKey);
-    const extractPromise = tesseractOcrProvider.extractText({ pdfBytes, documentId: versionId }, (completed, total) => {
-      ocrProgress.set(versionId, { completed, total });
-    });
-    // Promise.race doesn't cancel extractPromise - if it settles after the
-    // timeout has already fired below, this prevents an unhandled
-    // rejection (which can crash the whole Node process on a later
-    // failure) from an orphaned promise nobody else is watching.
-    extractPromise.catch(() => {});
-
-    const result = await Promise.race([
-      extractPromise,
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("OCR timed out")), BACKGROUND_TIMEOUT_MS);
-      })
-    ]);
-
-    if (result.pages && result.pages.length > 0) {
-      // OCR results replace whatever TextSpans this version had (from
-      // ingestion's empty-text spans on a real scan). This intentionally
-      // loses the one pageMapId link ingestion set on the registered page -
-      // that link isn't used for anything OCR-relevant.
-      await prisma.$transaction([
-        prisma.textSpan.deleteMany({ where: { versionId } }),
-        prisma.textSpan.createMany({
-          data: result.pages.map((page, index) => ({
-            versionId,
-            text: page.text,
-            anchor: {
-              pdfPageIndex: page.pageIndex,
-              ocr: true,
-              confidence: page.confidence,
-              words: page.words,
-              ...(index === 0 && result.warnings.length > 0 ? { ocrWarnings: result.warnings } : {})
-            }
-          }))
-        }),
-        prisma.documentVersion.update({
-          where: { id: versionId },
-          data: { extractionState: tesseractOcrProvider.name }
-        })
-      ]);
-    } else {
-      await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: NO_TEXT_STATE } });
-    }
-  } catch (error) {
-    const timedOut = error instanceof Error && error.message === "OCR timed out";
-    await prisma.documentVersion
-      .update({ where: { id: versionId }, data: { extractionState: timedOut ? TIMEOUT_STATE : FAILED_STATE } })
-      .catch(() => {});
+    // Could not queue it: put the previous state back rather than leave the book "running" forever.
+    await prisma.documentVersion.update({ where: { id: versionId }, data: { extractionState: version.extractionState } }).catch(() => undefined);
     throw error;
   }
 }

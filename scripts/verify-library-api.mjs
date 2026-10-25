@@ -146,6 +146,9 @@ assert.ok(idsOf(await call("/api/v1/items?view=deleted&limit=100")).includes(aId
 assert.ok(!(await call("/api/core/library")).body.documents.some((entry) => entry.documentId === aId), "the Open saved list hides it too");
 const search = await call(`/api/search?q=${encodeURIComponent(`library a ${stamp} first`)}`);
 assert.ok(!JSON.stringify(search.body).includes(aId), "search does not return a deleted book");
+const legacy = await call(`/api/research/exact-search?q=${encodeURIComponent(`Library A ${stamp}`)}`);
+assert.equal(legacy.status, 200);
+assert.ok(!JSON.stringify(legacy.body).includes(aId), "the older exact-search route hides a deleted book as well");
 assert.equal((await call(`/api/v1/items/${aId}`, { method: "DELETE" })).status, 404, "deleting twice is a clean not-found");
 const restored = await call(`/api/v1/items/${aId}/restore`, { method: "POST" });
 assert.equal(restored.status, 200);

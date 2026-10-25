@@ -49,6 +49,13 @@ enum ItemWorkflowState {
   ARCHIVED
 }
 
+enum ProcessingJobState {
+  QUEUED
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
 enum ResearchThreadItemType {
   DOCUMENT
   ANNOTATION
@@ -357,4 +364,29 @@ model QueryLog {
   filters   Json?
   resultIds Json?
   createdAt DateTime @default(now())
+}
+
+// Long-running work (OCR, page splitting, building the by-meaning index). The queue itself lives in
+// pg-boss; this is the durable, user-visible record of each job: what it is for, how far it has got,
+// how often it ran, and what it produced or why it failed. Operational history, not scholarly data,
+// so it is not part of backups.
+model ProcessingJob {
+  id            String             @id @default(cuid())
+  type          String             @db.VarChar(32)
+  subjectId     String             @db.VarChar(191)
+  state         ProcessingJobState @default(QUEUED)
+  progressDone  Int                @default(0)
+  progressTotal Int                @default(0)
+  attempts      Int                @default(0)
+  error         String?
+  result        Json?
+  queueJobId    String?            @db.VarChar(64)
+  createdAt     DateTime           @default(now())
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  updatedAt     DateTime           @updatedAt
+
+  @@index([type, subjectId])
+  @@index([state])
+  @@index([createdAt])
 }

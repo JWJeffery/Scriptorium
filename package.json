@@ -10,7 +10,8 @@
     "typecheck": "pnpm --filter @scriptorium/web typecheck",
     "prisma:validate": "prisma validate --schema prisma/schema.prisma",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
-    "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
+    "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "worker": "pnpm --filter @scriptorium/web worker"
   },
   "devDependencies": {
     "@prisma/client": "^6.0.0",

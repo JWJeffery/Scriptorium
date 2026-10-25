@@ -52,7 +52,10 @@ const nextConfig = {
     "tesseract.js-core",
     // WebAssembly runtime + tokenizer for search by meaning (loaded when first needed)
     "onnxruntime-web",
-    "@huggingface/tokenizers"
+    "@huggingface/tokenizers",
+    // The job queue (ESM, talks to PostgreSQL directly)
+    "pg-boss",
+    "pg"
   ],
   // Belt-and-suspenders on top of serverExternalPackages: if webpack ever
   // does try to touch a .node binary (whatever the reason - a different

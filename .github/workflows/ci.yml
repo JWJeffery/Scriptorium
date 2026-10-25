@@ -269,6 +269,9 @@ jobs:
       - name: Live checks with files on local disk
         run: scripts/run-live-suite.sh
 
+      - name: Worker recovery (a separate worker process is killed mid-job)
+        run: node scripts/verify-worker-recovery.mjs
+
       - name: Start a local S3-compatible object store
         run: |
           python3 -m venv "$RUNNER_TEMP/moto"
