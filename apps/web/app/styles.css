@@ -1515,9 +1515,8 @@ body {
 }
 
 .toolsDrawer .toolsTabs {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   padding-bottom: 5px;
-  overflow-x: auto;
 }
 
 .toolsDrawer .toolsTab {
