@@ -53,7 +53,8 @@ const send = (method, path, body) => fetch(`${baseUrl}${path}`, { method, header
 await json(await send("PATCH", `/api/v1/items/${documentId}`, { state: "archived", favorite: true, tags: ["kept-tag"] }));
 const collection = await json(await send("POST", "/api/v1/collections", { name: `Backup collection ${Date.now()}` }));
 await json(await send("POST", `/api/v1/collections/${collection.id}/items`, { itemIds: [documentId] }));
-await json(await send("POST", "/api/v1/saved-searches", { name: "Backup saved search", query: { view: "archived" } }));
+const savedName = `Backup saved search ${Date.now()}`;
+await json(await send("POST", "/api/v1/saved-searches", { name: savedName, query: { view: "archived" } }));
 const pdfOnDisk = await (await fetch(`${baseUrl}/api/core/files/${uploaded.document.id}`)).arrayBuffer();
 
 // Back up on the server, then download it.
@@ -114,11 +115,14 @@ const restoredItem = await prisma.document.findUniqueOrThrow({ where: { id: docu
 assert.deepEqual([restoredItem.workflowState, restoredItem.favorite, restoredItem.deletedAt], ["ARCHIVED", true, null], "library state survives");
 assert.deepEqual(restoredItem.tags.map((tag) => tag.value), ["kept-tag"], "item tags survive");
 assert.deepEqual(restoredItem.collections.map((entry) => entry.collectionId), [collection.id], "collection membership survives");
-assert.equal((await prisma.savedSearch.count({ where: { name: "Backup saved search" } })), 1, "saved searches survive");
+assert.equal((await prisma.savedSearch.count({ where: { name: savedName } })), 1, "saved searches survive");
 const spans = await prisma.textSpan.findMany({ where: { versionId: uploaded.version.id } });
 assert.ok(spans.some((span) => span.text.includes("Grace and truth")), "extracted page text survives");
 
-const restoredPdf = await readFile(path.join(workDir, "storage", uploaded.document.storageKey ?? (await prisma.document.findFirst()).storageKey));
+// With object storage the restore goes into the bucket, so read it back through the app.
+const restoredPdf = process.env.SCRIPTORIUM_STORAGE_BACKEND === "s3"
+  ? Buffer.from(await (await fetch(`${baseUrl}/api/core/files/${uploaded.document.id}`)).arrayBuffer())
+  : await readFile(path.join(workDir, "storage", uploaded.document.storageKey ?? (await prisma.document.findFirst()).storageKey));
 assert.equal(createHash("sha256").update(restoredPdf).digest("hex"), createHash("sha256").update(Buffer.from(pdfOnDisk)).digest("hex"), "the PDF is byte-for-byte identical");
 
 // Restoring into a non-empty database is refused.

@@ -33,6 +33,7 @@ The specification was written against `882e1b1`. Since then the following has sh
 | Item / Representation naming | **`Item` is the existing `Document` table and `Representation` is `DocumentVersion`**, extended in place | Additive columns and tables only; no Prisma-level rename, so every id, annotation, citation and thread keeps its existing foreign keys. The specification's names are the product vocabulary; a code rename may follow later as optional cleanup. |
 | Library API | New `/api/v1/*` routes (items, collections, saved searches) with the standard error shape, opaque cursors and optimistic versions | Existing `/api/core/*` routes remain until all callers move. |
 | Duplicate handling | A file whose SHA-256 matches an existing item is refused with 409 `duplicate` unless the user chooses to add it anyway | The interface asks first; byte-identical copies are listed under `/api/v1/items/duplicates`. |
+| Object storage | S3 protocol behind the existing storage functions, selected by `SCRIPTORIUM_STORAGE_BACKEND`; copy-first migration script; old folder remains a read fallback | MinIO's community edition is archived, so development uses SeaweedFS and production a managed provider (Cloudflare R2 or Backblaze B2); CI uses the moto emulator. See `docs/OBJECT_STORAGE.md`. |
 | Phase 1 start | Approved | Begins with this baseline update, then a Docker Compose development stack. |
 
 ## Executive decision

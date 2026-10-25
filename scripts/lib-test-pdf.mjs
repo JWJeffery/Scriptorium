@@ -4,7 +4,10 @@ const requireFromWeb = createRequire(new URL("../apps/web/package.json", import.
 const { PDFDocument, StandardFonts } = requireFromWeb("pdf-lib");
 
 export async function textPdf(pages) {
-  const pdf = await PDFDocument.create();
+  // Fixed dates, so the same pages always give byte-identical files (duplicate-detection tests rely on it).
+  const pdf = await PDFDocument.create({ updateMetadata: false });
+  pdf.setCreationDate(new Date(0));
+  pdf.setModificationDate(new Date(0));
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   for (const lines of pages) {
     const page = pdf.addPage([420, 560]);

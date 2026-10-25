@@ -19,3 +19,6 @@ output-*.pdf
 scriptorium-backups
 
 migration-report-*.json
+
+files-report-*.json
+storage-legacy/
