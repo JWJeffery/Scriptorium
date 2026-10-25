@@ -35,6 +35,7 @@ function pageQuery(whereExtra: Prisma.Sql, limit: number) {
            (ts.anchor->>'pdfPageIndex')::int AS "pdfPageIndex"
     FROM "TextSpan" ts
     JOIN "DocumentVersion" v ON v.id = ts."versionId"
+    JOIN "Document" d ON d.id = v."documentId" AND d."deletedAt" IS NULL
     WHERE v.id = (SELECT v2.id FROM "DocumentVersion" v2 WHERE v2."documentId" = v."documentId" ORDER BY v2."createdAt" DESC, v2.id DESC LIMIT 1)
     ${whereExtra}
     ORDER BY v."documentId", "pdfPageIndex", ts.id
@@ -164,7 +165,7 @@ export async function GET(request: NextRequest) {
   }));
   const meaningAnnotationIds = meaningHits.filter((hit) => hit.kind === "annotation").map((hit) => hit.refId);
   const annotationRows = await prisma.annotation.findMany({
-    where: mode === "exact" ? { AND: termFilters, ...(documentId ? { documentId } : {}) } : method === "meaning" ? { id: { in: meaningAnnotationIds } } : { ...(documentId ? { documentId } : {}) },
+    where: { AND: [mode === "exact" ? { AND: termFilters, ...(documentId ? { documentId } : {}) } : method === "meaning" ? { id: { in: meaningAnnotationIds } } : { ...(documentId ? { documentId } : {}) }, { document: { deletedAt: null } }] },
     include: { document: { select: { title: true } }, tags: true, citations: { select: { locatorValue: true }, take: 1 } },
     orderBy: { updatedAt: "desc" },
     take: mode === "exact" ? 200 : 1000

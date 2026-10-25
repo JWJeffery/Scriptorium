@@ -15,7 +15,7 @@ const pages = [["Cover"], ["Preface one"], ["Preface two"], ["Body start"], [`Ch
 const form = new FormData();
 form.set("file", new File([await textPdf(pages)], "ranges.pdf", { type: "application/pdf" }));
 form.set("title", `Ranges fixture ${unique}`);
-const uploaded = (await call("/api/core/files", { method: "POST", body: form })).body;
+const uploaded = (await call("/api/core/files?allowDuplicate=true", { method: "POST", body: form })).body;
 const versionId = uploaded.version.id;
 
 const before = await call(`/api/page-ranges?versionId=${versionId}`);

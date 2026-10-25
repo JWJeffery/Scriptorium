@@ -17,7 +17,7 @@ const bytes = await textPdf([
 const form = new FormData();
 form.set("file", new File([bytes], "search-fixture.pdf", { type: "application/pdf" }));
 form.set("title", `Search fixture ${unique}`);
-const uploaded = await json(await fetch(`${baseUrl}/api/core/files`, { method: "POST", body: form }));
+const uploaded = await json(await fetch(`${baseUrl}/api/core/files?allowDuplicate=true`, { method: "POST", body: form }));
 const documentId = uploaded.document.id;
 
 const exact = await json(await fetch(`${baseUrl}/api/search?q=${encodeURIComponent("integrity church")}&documentId=${documentId}`));

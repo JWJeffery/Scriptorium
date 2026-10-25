@@ -30,6 +30,9 @@ The specification was written against `882e1b1`. Since then the following has sh
 |---|---|---|
 | Job queue | **pg-boss** (queue inside PostgreSQL) | Replaces BullMQ/Redis in the Resolved technical decisions table. One fewer service to run and back up for a single-owner deployment. `ProcessingJob` records remain the user-visible history. |
 | Production hosting | **A Spaceship VPS or similar container-capable host** | Not blocking Phase 1. Phase 1 is built and verified in containers in Codespaces; the concrete host and plan are confirmed at the end of Phase 1. |
+| Item / Representation naming | **`Item` is the existing `Document` table and `Representation` is `DocumentVersion`**, extended in place | Additive columns and tables only; no Prisma-level rename, so every id, annotation, citation and thread keeps its existing foreign keys. The specification's names are the product vocabulary; a code rename may follow later as optional cleanup. |
+| Library API | New `/api/v1/*` routes (items, collections, saved searches) with the standard error shape, opaque cursors and optimistic versions | Existing `/api/core/*` routes remain until all callers move. |
+| Duplicate handling | A file whose SHA-256 matches an existing item is refused with 409 `duplicate` unless the user chooses to add it anyway | The interface asks first; byte-identical copies are listed under `/api/v1/items/duplicates`. |
 | Phase 1 start | Approved | Begins with this baseline update, then a Docker Compose development stack. |
 
 ## Executive decision

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const onlyDocumentId = request.nextUrl.searchParams.get("documentId")?.trim();
   const documents = await prisma.document.findMany({
-    where: { kind: { in: ["PDF", "TXT", "MARKDOWN", "DOCX"] }, ...(onlyDocumentId ? { id: onlyDocumentId } : {}) },
+    where: { kind: { in: ["PDF", "TXT", "MARKDOWN", "DOCX"] }, deletedAt: null, ...(onlyDocumentId ? { id: onlyDocumentId } : {}) },
     orderBy: { updatedAt: "desc" },
     take: 200,
     include: {

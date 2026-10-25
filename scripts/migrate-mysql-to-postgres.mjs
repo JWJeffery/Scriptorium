@@ -93,8 +93,7 @@ function stable(value) {
   if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stable(value[key])}`).join(",")}}`;
   return JSON.stringify(value);
 }
-function tableDigest(model, rows) {
-  const fields = scalarFields(model);
+function tableDigest(model, rows, fields) {
   const idField = fields.find((field) => field.isId) ?? fields[0];
   const lines = rows.map((row) => ({ key: String(canonical(idField, row[idField.name])), line: JSON.stringify(fields.map((field) => canonical(field, row[field.name]))) }));
   lines.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -113,10 +112,22 @@ const ROLLBACK = Symbol("dry-run rollback");
 
 try {
   // Source rows, read once.
+  // Tables and columns added after the MySQL era do not exist there; they keep their PostgreSQL defaults.
   const sourceRows = new Map();
+  const sharedFields = new Map();
   for (const model of ordered) {
+    const [exists] = await source.query("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?", [model.name]);
+    if (exists.length === 0) {
+      sourceRows.set(model.name, []);
+      sharedFields.set(model.name, []);
+      continue;
+    }
     const [rows] = await source.query(`SELECT * FROM \`${model.name}\``);
-    sourceRows.set(model.name, rows.map((row) => Object.fromEntries(scalarFields(model).map((field) => [field.name, toPrismaValue(field, row[field.name])]))));
+    const [columns] = await source.query("SELECT column_name AS name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?", [model.name]);
+    const present = new Set(columns.map((column) => column.name));
+    const fields = scalarFields(model).filter((field) => present.has(field.name));
+    sharedFields.set(model.name, fields);
+    sourceRows.set(model.name, rows.map((row) => Object.fromEntries(fields.map((field) => [field.name, toPrismaValue(field, row[field.name])]))));
   }
 
   // The target must be empty.
@@ -135,10 +146,17 @@ try {
     for (const model of ordered) {
       const sourceList = sourceRows.get(model.name);
       const targetList = await tx[delegateName(model)].findMany();
-      const sourceDigest = tableDigest(model, sourceList);
-      const targetDigest = tableDigest(model, targetList);
+      const sourceDigest = tableDigest(model, sourceList, sharedFields.get(model.name));
+      const targetDigest = tableDigest(model, targetList, sharedFields.get(model.name));
       const entry = { table: model.name, sourceRows: sourceList.length, targetRows: targetList.length, sourceSha256: sourceDigest, targetSha256: targetDigest, match: sourceList.length === targetList.length && sourceDigest === targetDigest };
       report.tables.push(entry);
+    }
+
+    // Library state that did not exist in the MySQL era: books with annotations are in active use.
+    const documentFields = sharedFields.get("Document").map((field) => field.name);
+    if (!documentFields.includes("workflowState")) {
+      await tx.$executeRawUnsafe(`UPDATE "Document" SET "workflowState" = 'READING' WHERE id IN (SELECT DISTINCT "documentId" FROM "Annotation")`);
+      await tx.$executeRawUnsafe(`UPDATE "Document" SET "acceptedAt" = "createdAt"`);
     }
 
     // Foreign keys are enforced by PostgreSQL, but report orphans explicitly anyway.

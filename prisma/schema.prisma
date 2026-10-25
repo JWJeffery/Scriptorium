@@ -43,6 +43,12 @@ enum MappingConfidence {
   UNCERTAIN
 }
 
+enum ItemWorkflowState {
+  READ_LATER
+  READING
+  ARCHIVED
+}
+
 enum ResearchThreadItemType {
   DOCUMENT
   ANNOTATION
@@ -52,21 +58,84 @@ enum ResearchThreadItemType {
 }
 
 model Document {
-  id               String            @id @default(cuid())
-  title            String            @db.VarChar(512)
-  originalFilename String?           @db.VarChar(512)
+  id               String             @id @default(cuid())
+  title            String             @db.VarChar(512)
+  originalFilename String?            @db.VarChar(512)
   kind             DocumentKind
-  mediaType        String?           @db.VarChar(255)
-  storageKey       String?           @db.VarChar(1024)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  mediaType        String?            @db.VarChar(255)
+  storageKey       String?            @db.VarChar(1024)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
   versions         DocumentVersion[]
   sources          Source[]
   annotations      Annotation[]
   bookmarks        Bookmark[]
   embeddings       PassageEmbedding[]
 
+  // Library state. In the Research Environment specification a Document is an "Item".
+  workflowState ItemWorkflowState @default(READ_LATER)
+  favorite      Boolean           @default(false)
+  acceptedAt    DateTime          @default(now())
+  lastOpenedAt  DateTime?
+  lastPage      Int?
+  pageCount     Int?
+  deletedAt     DateTime?
+  revision      Int               @default(0)
+  tags          DocumentTag[]
+  collections   ItemCollection[]
+
   @@index([title])
+  @@index([workflowState])
+  @@index([deletedAt])
+}
+
+model DocumentTag {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  value      String   @db.VarChar(128)
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, value])
+  @@index([value])
+}
+
+// A manual, named group of Items. An Item can be in any number of Collections without being copied.
+model Collection {
+  id          String           @id @default(cuid())
+  name        String           @db.VarChar(255)
+  description String?
+  parentId    String?
+  parent      Collection?      @relation("CollectionTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Collection[]     @relation("CollectionTree")
+  items       ItemCollection[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([parentId])
+}
+
+model ItemCollection {
+  id           String     @id @default(cuid())
+  documentId   String
+  document     Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  position     Int        @default(0)
+  addedAt      DateTime   @default(now())
+
+  @@unique([documentId, collectionId])
+  @@index([collectionId])
+}
+
+// A dynamic view: the stored filters are re-run every time it is opened.
+model SavedSearch {
+  id        String   @id @default(cuid())
+  name      String   @db.VarChar(255)
+  query     Json
+  sort      String   @default("recent") @db.VarChar(64)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model DocumentVersion {
@@ -87,14 +156,14 @@ model DocumentVersion {
 }
 
 model Source {
-  id          String     @id @default(cuid())
-  documentId  String?
-  document    Document?  @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  shortTitle  String?    @db.VarChar(512)
-  cslJson     Json
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  citations   Citation[]
+  id         String     @id @default(cuid())
+  documentId String?
+  document   Document?  @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  shortTitle String?    @db.VarChar(512)
+  cslJson    Json
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  citations  Citation[]
 
   @@index([documentId])
 }

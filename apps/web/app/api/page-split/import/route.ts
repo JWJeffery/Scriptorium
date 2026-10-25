@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
     const formData = new FormData();
     formData.set("file", new File([bytes as BlobPart], "split-two-page-spreads.pdf", { type: "application/pdf" }));
     formData.set("title", title);
+    formData.set("allowDuplicate", "true"); // an explicit "create as new document" click
 
     const internalRequest = new NextRequest(new URL("/api/core/files", request.url), {
       method: "POST",

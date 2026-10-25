@@ -5,6 +5,7 @@ import { deleteStoredPdfFile, storePdfFile } from "../../../../lib/server-storag
 import { extractPdfText } from "../../../../lib/pdf-text-extraction";
 import { looksLikePdf } from "../../../../lib/upload-guards";
 import { parseAuthors } from "../../../../lib/author-names";
+import { findItemByChecksum, sha256Hex } from "../../../../lib/library";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,6 +77,18 @@ export async function POST(request: NextRequest) {
   }
   let storageKeyToClean: string | undefined;
 
+  // The same file twice is almost always an accident. Say so, and let the user decide.
+  const checksum = sha256Hex(pdfBytes);
+  if (readText(formData, "allowDuplicate") !== "true" && request.nextUrl.searchParams.get("allowDuplicate") !== "true") {
+    const existing = await findItemByChecksum(checksum);
+    if (existing) {
+      return NextResponse.json(
+        { error: `This exact file is already in your library as "${existing.title}".`, code: "duplicate", duplicateOf: { documentId: existing.id, title: existing.title } },
+        { status: 409 }
+      );
+    }
+  }
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const document = await tx.document.create({
@@ -117,6 +130,7 @@ export async function POST(request: NextRequest) {
           documentId: document.id,
           snapshotKind: "PDF_RENDERING",
           snapshotKey: storedFile.storageKey,
+          sourceChecksum: checksum,
           extractionState
         }
       });

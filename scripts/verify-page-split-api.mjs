@@ -43,7 +43,7 @@ const sourceBytes = await syntheticSpreadPdf();
 const sourceForm = new FormData();
 sourceForm.set("file", new File([sourceBytes], "ci-two-page-spread.pdf", { type: "application/pdf" }));
 sourceForm.set("title", "CI two-page spread");
-const uploaded = await json(await fetch(`${baseUrl}/api/core/files`, { method: "POST", body: sourceForm }));
+const uploaded = await json(await fetch(`${baseUrl}/api/core/files?allowDuplicate=true`, { method: "POST", body: sourceForm }));
 assert.ok(uploaded.document?.id && uploaded.version?.id && uploaded.source?.id && uploaded.pageMap?.id);
 
 const started = await json(

@@ -13,7 +13,7 @@ const title = `E2E Book ${Date.now()}`;
 const form = new FormData();
 form.set("file", new File([await textPdf([["Faith seeking understanding."], ["Second page text."]])], "e2e.pdf", { type: "application/pdf" }));
 form.set("title", title);
-const upload = await fetch(`${base}/api/core/files`, { method: "POST", body: form });
+const upload = await fetch(`${base}/api/core/files?allowDuplicate=true`, { method: "POST", body: form });
 assert.ok(upload.ok, "fixture upload");
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });

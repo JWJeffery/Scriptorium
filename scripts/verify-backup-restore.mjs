@@ -37,7 +37,7 @@ const post = (path, body) => fetch(`${baseUrl}${path}`, { method: "POST", header
 const form = new FormData();
 form.set("file", new File([await textPdf([["Backup page one", "Grace and truth."], ["Backup page two"]])], "backup.pdf", { type: "application/pdf" }));
 form.set("title", "Backup fixture");
-const uploaded = await json(await fetch(`${baseUrl}/api/core/files`, { method: "POST", body: form }));
+const uploaded = await json(await fetch(`${baseUrl}/api/core/files?allowDuplicate=true`, { method: "POST", body: form }));
 const annotation = (await json(await post("/api/core/annotations", {
   documentId: uploaded.document.id, versionId: uploaded.version.id, sourceId: uploaded.source.id, pageMapId: uploaded.pageMap.id,
   colorKey: "teal", selectedText: "Grace and truth.", note: "keep", tags: ["alpha", "beta"], anchor: { selectedText: "Grace and truth.", pageNumber: 1, rects: [{ left: 1, top: 2, width: 3, height: 4 }] },
@@ -47,6 +47,13 @@ const thread = (await json(await post("/api/threads", { title: "Backup thread", 
 await json(await post("/api/threads/items", { threadId: thread.id, itemType: "ANNOTATION", itemId: annotation.id }));
 await json(await fetch(`${baseUrl}/api/page-ranges`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ versionId: uploaded.version.id, ranges: [{ startPdfPage: 1, endPdfPage: 1, system: "roman-lower", startValue: 3, prefix: "" }, { startPdfPage: 2, endPdfPage: null, system: "arabic", startValue: 1, prefix: "" }] }) }));
 await json(await post("/api/bookmarks", { documentId: uploaded.document.id, pdfPage: 2, label: "Keep this place" }));
+// Library state: item state/favorite/tags, a collection with a member, a saved search.
+const documentId = uploaded.document.id;
+const send = (method, path, body) => fetch(`${baseUrl}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+await json(await send("PATCH", `/api/v1/items/${documentId}`, { state: "archived", favorite: true, tags: ["kept-tag"] }));
+const collection = await json(await send("POST", "/api/v1/collections", { name: `Backup collection ${Date.now()}` }));
+await json(await send("POST", `/api/v1/collections/${collection.id}/items`, { itemIds: [documentId] }));
+await json(await send("POST", "/api/v1/saved-searches", { name: "Backup saved search", query: { view: "archived" } }));
 const pdfOnDisk = await (await fetch(`${baseUrl}/api/core/files/${uploaded.document.id}`)).arrayBuffer();
 
 // Back up on the server, then download it.
@@ -75,12 +82,12 @@ const damagedFile = path.join(workDir, "damaged.zip");
 await writeFile(damagedFile, damaged);
 
 // Row counts before the wipe: the database may hold data from earlier tests too.
-const MODELS = ["document", "documentVersion", "source", "pageMap", "pageRange", "bookmark", "textSpan", "annotation", "annotationTag", "citation", "researchThread", "researchThreadTag", "researchThreadItem"];
+const MODELS = ["document", "documentVersion", "source", "pageMap", "pageRange", "bookmark", "textSpan", "annotation", "annotationTag", "citation", "researchThread", "researchThreadTag", "researchThreadItem", "collection", "savedSearch", "documentTag", "itemCollection"];
 const before = {};
 for (const model of MODELS) before[model] = await prisma[model].count();
 
 // Wipe everything (children first).
-for (const model of ["researchThreadItem", "researchThreadTag", "researchThread", "citation", "annotationTag", "annotation", "textSpan", "bookmark", "pageRange", "pageMap", "source", "documentVersion", "document"]) await prisma[model].deleteMany();
+for (const model of ["itemCollection", "documentTag", "collection", "savedSearch", "researchThreadItem", "researchThreadTag", "researchThread", "citation", "annotationTag", "annotation", "textSpan", "bookmark", "pageRange", "pageMap", "source", "documentVersion", "document"]) await prisma[model].deleteMany();
 assert.equal(await prisma.document.count(), 0);
 
 const restoreEnv = { ...process.env, SCRIPTORIUM_STORAGE_DIR: path.join(workDir, "storage") };
@@ -103,6 +110,11 @@ assert.equal((await prisma.researchThreadItem.findMany({ where: { researchThread
 const ranges = await prisma.pageRange.findMany({ where: { versionId: uploaded.version.id }, orderBy: { startPdfPage: "asc" } });
 assert.deepEqual(ranges.map((range) => `${range.system}:${range.startValue}`), ["roman-lower:3", "arabic:1"]);
 assert.equal((await prisma.bookmark.findMany({ where: { documentId: uploaded.document.id } })).map((b) => `${b.pdfPage}:${b.label}`).join(), "2:Keep this place", "bookmarks survive");
+const restoredItem = await prisma.document.findUniqueOrThrow({ where: { id: documentId }, include: { tags: true, collections: true } });
+assert.deepEqual([restoredItem.workflowState, restoredItem.favorite, restoredItem.deletedAt], ["ARCHIVED", true, null], "library state survives");
+assert.deepEqual(restoredItem.tags.map((tag) => tag.value), ["kept-tag"], "item tags survive");
+assert.deepEqual(restoredItem.collections.map((entry) => entry.collectionId), [collection.id], "collection membership survives");
+assert.equal((await prisma.savedSearch.count({ where: { name: "Backup saved search" } })), 1, "saved searches survive");
 const spans = await prisma.textSpan.findMany({ where: { versionId: uploaded.version.id } });
 assert.ok(spans.some((span) => span.text.includes("Grace and truth")), "extracted page text survives");
 

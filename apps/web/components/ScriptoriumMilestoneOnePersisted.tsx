@@ -17,7 +17,7 @@ import { authorsToText } from "../lib/author-names";
 import { mergeServerRecords } from "../lib/annotation-sync";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
-import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, ANNOTATIONS_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, bytes, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
+import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, ANNOTATIONS_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, bytes, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
 
 export function ScriptoriumMilestoneOnePersisted() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
@@ -405,6 +405,14 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (!kind) {
       setStatus("This workspace accepts PDF, TXT, Markdown, and DOCX files only.");
       return;
+    }
+
+    if (kind === "PDF") {
+      const duplicate = await findDuplicateFile(file);
+      if (duplicate && !window.confirm(`This exact file is already in your library as "${duplicate.title}".\n\nPress OK to add another copy anyway, or Cancel and use "Open saved" to open the existing one.`)) {
+        setStatus(`Not added: "${duplicate.title}" is already in your library. Use Open saved to open it.`);
+        return;
+      }
     }
 
     if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);

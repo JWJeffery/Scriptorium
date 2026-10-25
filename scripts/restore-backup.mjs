@@ -34,8 +34,8 @@ const zipPath = process.argv[2];
 if (!zipPath) { console.error("Usage: node scripts/restore-backup.mjs <backup.zip>"); process.exit(2); }
 
 const storageRoot = path.resolve(repoRoot, process.env.SCRIPTORIUM_STORAGE_DIR ?? "./storage");
-const TABLE_ORDER = ["Document", "DocumentVersion", "Source", "PageMap", "PageRange", "Bookmark", "TextSpan", "Annotation", "AnnotationTag", "Citation", "ResearchThread", "ResearchThreadTag", "ResearchThreadItem"];
-const DELEGATE = { Document: "document", DocumentVersion: "documentVersion", Source: "source", PageMap: "pageMap", PageRange: "pageRange", Bookmark: "bookmark", TextSpan: "textSpan", Annotation: "annotation", AnnotationTag: "annotationTag", Citation: "citation", ResearchThread: "researchThread", ResearchThreadTag: "researchThreadTag", ResearchThreadItem: "researchThreadItem" };
+const TABLE_ORDER = ["Document", "Collection", "SavedSearch", "DocumentTag", "ItemCollection", "DocumentVersion", "Source", "PageMap", "PageRange", "Bookmark", "TextSpan", "Annotation", "AnnotationTag", "Citation", "ResearchThread", "ResearchThreadTag", "ResearchThreadItem"];
+const DELEGATE = { Document: "document", Collection: "collection", SavedSearch: "savedSearch", DocumentTag: "documentTag", ItemCollection: "itemCollection", DocumentVersion: "documentVersion", Source: "source", PageMap: "pageMap", PageRange: "pageRange", Bookmark: "bookmark", TextSpan: "textSpan", Annotation: "annotation", AnnotationTag: "annotationTag", Citation: "citation", ResearchThread: "researchThread", ResearchThreadTag: "researchThreadTag", ResearchThreadItem: "researchThreadItem" };
 
 function openZip() {
   return new Promise((resolve, reject) => yauzl.open(zipPath, { lazyEntries: true, autoClose: false }, (error, zip) => (error ? reject(error) : resolve(zip))));
