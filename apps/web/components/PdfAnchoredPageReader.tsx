@@ -690,24 +690,24 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
             <button type="button" onClick={() => onPageChange(pageNumber + 1)} disabled={Boolean(pageCount && pageNumber >= pageCount)} aria-label="Next PDF page">›</button>
           </div>
         ) : null}
-        {usingOcrLayer ? (
-          <div className="pdfSelectionModeToggle" role="group" aria-label="Text selection mode">
-            <button
-              type="button"
-              className={selectionMode === "highlight" ? "active" : undefined}
-              onClick={() => setSelectionMode("highlight")}
-            >
-              Highlight text
-            </button>
-            <button
-              type="button"
-              className={selectionMode === "box" ? "active" : undefined}
-              onClick={() => setSelectionMode("box")}
-            >
-              Selection box
-            </button>
-          </div>
-        ) : null}
+        <div className={`pdfSelectionModeToggle${usingOcrLayer ? "" : " unavailable"}`} role="group" aria-label="Text selection mode" title={usingOcrLayer ? undefined : "Available on pages with a scanned-text (OCR) layer"}>
+          <button
+            type="button"
+            className={selectionMode === "highlight" ? "active" : undefined}
+            onClick={() => setSelectionMode("highlight")}
+            disabled={!usingOcrLayer}
+          >
+            Highlight text
+          </button>
+          <button
+            type="button"
+            className={selectionMode === "box" ? "active" : undefined}
+            onClick={() => setSelectionMode("box")}
+            disabled={!usingOcrLayer}
+          >
+            Selection box
+          </button>
+        </div>
         <div className="pdfZoomControls">
           <button
             type="button"
@@ -729,12 +729,11 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
           <button type="button" className="pdfZoomReset" onClick={fitWidth} title="Fit the page to the width of the reading area (f)">
             Fit width
           </button>
-          {zoomLevel !== 1 ? (
-            <button type="button" className="pdfZoomReset" onClick={() => setZoomLevel(1)}>
-              Reset zoom
-            </button>
-          ) : null}
+          <button type="button" className="pdfZoomReset" onClick={() => setZoomLevel(1)} disabled={zoomLevel === 1}>
+            100%
+          </button>
         </div>
+        {(searchTerms && searchTerms.length > 0) || hasSelection ? <div className="pdfToolbarExtras">
         {searchTerms && searchTerms.length > 0 ? (
           <button type="button" className="pdfClearSelection" onClick={onClearSearch} title="Remove the search highlight">
             Search: {searchTerms.join(" ")} ✕
@@ -745,6 +744,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
             Clear selection
           </button>
         ) : null}
+        </div> : null}
       </div>
       {isLoading ? <div className="pdfLoading">Rendering PDF page…</div> : null}
       <div

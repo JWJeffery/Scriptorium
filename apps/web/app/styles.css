@@ -355,6 +355,14 @@ h2 {
   line-height: 1;
 }
 
+.pdfSelectionModeToggle.unavailable {
+  opacity: 0.45;
+}
+
+.pdfSelectionModeToggle button:disabled {
+  cursor: default;
+}
+
 .pdfSelectionModeToggle button.active {
   background: var(--accent-strong);
   color: #fff;
@@ -383,6 +391,9 @@ h2 {
 }
 
 .pdfZoomLevel {
+  display: inline-block;
+  min-width: 4ch;
+  text-align: center;
   min-width: 3.5em;
   text-align: center;
   color: var(--muted);
@@ -1251,6 +1262,28 @@ body {
   box-shadow: 0 10px 26px rgb(49 32 17 / 18%);
   transform: translateX(-50%);
   backdrop-filter: blur(16px);
+}
+
+/* Transient chips float above the bar so they never push the page buttons sideways. */
+.pdfToolbarExtras {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.pdfZoomReset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pdfPageControls > span {
+  min-width: 9.5ch;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .pdfPageControls {
