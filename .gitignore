@@ -17,3 +17,5 @@ storage
 /*.pdf
 output-*.pdf
 scriptorium-backups
+
+migration-report-*.json

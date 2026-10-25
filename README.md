@@ -28,7 +28,7 @@ The first complete user flow is intentionally narrow:
 ## Proposed stack
 
 - Web app: Next.js + React + TypeScript
-- Database: MySQL-compatible Prisma schema for the Spaceship/cPanel deployment path
+- Database: PostgreSQL (with pgvector) through Prisma. Moving an older MySQL install: see `docs/POSTGRES_MIGRATION.md`
 - ORM: Prisma
 - PDF rendering: PDF.js
 - Citation formatting: CSL JSON + citeproc-compatible engine
@@ -51,7 +51,7 @@ scripts/                  Development and ingestion scripts
 Run these in order from the repo root. This assumes a GitHub Codespace or similar dev
 container with Docker, Node, and pnpm already available.
 
-### 1. Start MySQL
+### 1. Start the database (PostgreSQL)
 
 ```bash
 docker compose up -d
@@ -60,7 +60,7 @@ docker compose ps
 
 Wait for `docker compose ps` to show `healthy`, not just `starting`, before continuing.
 
-**MySQL does not survive a Codespace restart** - this has to be run again at the start of
+**The database containers do not survive a Codespace restart** - this has to be run again at the start of
 every session. If `docker compose up -d` errors with something like `container with given ID
 already exists` (a stale container from a previous session), clear it first:
 
@@ -72,7 +72,7 @@ docker compose up -d
 If that still fails, the more forceful fallback:
 
 ```bash
-docker rm -f scriptorium-mysql-1
+docker rm -f scriptorium-postgres-1
 docker compose up -d
 ```
 
@@ -114,7 +114,7 @@ rm -rf apps/web/.next
 pnpm dev
 ```
 
-No need to restart MySQL or reinstall dependencies for this - it only clears the Next.js
+No need to restart the database or reinstall dependencies for this - it only clears the Next.js
 build cache and kills a stuck process.
 
 ## Security configuration (required for any hosted deployment)
@@ -128,7 +128,7 @@ SCRIPTORIUM_AUTH_PASSWORD="a-long-random-password"
 SCRIPTORIUM_STORAGE_DIR="/home/<user>/scriptorium-storage"   # absolute path, outside the web root
 ```
 
-Also: serve only over HTTPS, use a strong unique MySQL password that accepts localhost
+Also: serve only over HTTPS, use a strong unique database password that accepts localhost
 connections only, and keep `.env` outside the web root. Cross-site write requests are rejected,
 and only one OCR/page-split job may run at a time. `scripts/verify-security-gate.mjs` checks the
 login gate, cross-site blocking, and security headers against a running server.
