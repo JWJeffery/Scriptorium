@@ -2109,3 +2109,127 @@ a:focus-visible {
 .loginForm label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
 .loginForm input { padding: 0.6rem 0.75rem; border: 1px solid rgb(103 52 19 / 30%); border-radius: 8px; background: #fff; font: inherit; }
 .loginMessage { margin: 0; color: #8f2d2d; font-size: 0.88rem; }
+
+/* ------------------------------------------------------------------ Library, item detail, jobs */
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.libPage { min-height: 100vh; background: var(--bg); color: var(--ink); }
+.libNav { display: flex; align-items: center; gap: 24px; padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.libBrand { font-size: 1.25rem; color: var(--accent-strong); }
+.libNav nav { display: flex; gap: 6px; }
+.libNav nav a, .libNavExtra a { padding: 8px 14px; border-radius: 999px; color: var(--accent); text-decoration: none; }
+.libNav nav a:hover, .libNavExtra a:hover { background: var(--soft); }
+.libNav nav a[aria-current="page"] { background: var(--accent-strong); color: #fff; }
+.libNavExtra { margin-left: auto; }
+
+.libLayout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 24px; padding: 24px; max-width: 1500px; margin: 0 auto; }
+.libSide h2 { margin: 18px 0 6px; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.libSide h2:first-child { margin-top: 0; }
+.libSide ul { list-style: none; margin: 0; padding: 0; }
+.libSide li > button:not(.libTiny) { display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: 10px; color: var(--ink); }
+.libSide li > button:not(.libTiny):hover { background: var(--soft); }
+.libSide li > button[aria-current="true"] { background: var(--accent-strong); color: #fff; }
+.libSide li > button span { color: inherit; opacity: 0.65; }
+.libRowWithTools { display: flex; align-items: center; }
+.libRowWithTools > button:first-child { flex: 1; min-width: 0; }
+.libTiny { border: 0; background: transparent; color: var(--muted); padding: 4px 6px; border-radius: 8px; font-size: 0.85rem; }
+.libTiny:hover { background: var(--soft); color: var(--ink); }
+.libHint { color: var(--muted); font-size: 0.85rem; padding: 4px 10px; }
+.libInline { display: flex; gap: 6px; margin-top: 8px; }
+.libInline input { padding: 7px 10px; }
+.libInline button, .libToolbar button, .libBatch button, .libBatch select, .libDialogActions button, .libMore button, .libButton, .libMessage button {
+  border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 8px 14px; text-decoration: none; display: inline-block; width: auto; line-height: 1.2;
+}
+.libToolbar button[aria-pressed="true"] { background: var(--accent-strong); color: #fff; border-color: var(--accent-strong); }
+.libButton.primary, .libDialogActions button[type="submit"] { background: var(--accent-strong); color: #fff; border-color: var(--accent-strong); }
+.libDanger { color: #8c2a1f !important; border-color: #d9a49c !important; }
+.libWarn { background: #fff3d6 !important; border-color: #e5c97a !important; }
+.libBad { color: #8c2a1f; }
+.libFaint { color: var(--muted); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.libMain { min-width: 0; }
+.libHeading { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; }
+.libHeading h1 { margin: 0; font-size: 1.7rem; color: var(--accent-strong); }
+.libCount { color: var(--muted); }
+.libToolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.libToolbar input[type="search"] { flex: 1 1 260px; max-width: 420px; padding: 9px 14px; border-radius: 999px; }
+.libMessage { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin: 0 0 14px; }
+.libBatch { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; position: sticky; top: 0; z-index: 5; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; box-shadow: 0 4px 14px rgb(49 32 17 / 10%); }
+.libEmpty { color: var(--muted); padding: 28px 8px; max-width: 60ch; }
+
+.libTable { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.libTable th { text-align: left; font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 10px 12px; background: var(--soft); border-bottom: 1px solid var(--line); font-weight: 600; white-space: nowrap; }
+.libTable td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.libTable tbody tr:last-child td { border-bottom: 0; }
+.libTable tr[data-selected] { background: #fbf3df; }
+.libTable input[type="checkbox"] { width: 18px; height: 18px; }
+.libTable select { padding: 6px 8px; border-radius: 10px; min-width: 7.5rem; }
+.libTitleCell a { font-weight: 600; color: var(--accent-strong); }
+.libTitleCell small { display: block; color: var(--muted); }
+.libTags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.libChip { border: 1px solid var(--line); background: var(--soft); color: var(--accent); border-radius: 999px; padding: 2px 10px; font-size: 0.82rem; width: auto; }
+.libChip[aria-pressed="true"] { background: var(--accent-strong); color: #fff; }
+.libStar { border: 0; background: transparent; font-size: 1.15rem; color: #b8861b; padding: 2px 4px; }
+.libProgress { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.libProgress progress, .libPanel progress { width: 90px; height: 8px; }
+.libPanel progress { width: 260px; }
+.libActions { text-align: right; white-space: nowrap; }
+.libMore { text-align: center; margin: 18px 0; }
+.libState { font-weight: 600; }
+.libState.running { color: #8a5a00; }
+.libState.complete { color: #2c6a38; }
+.libState.failed { color: #8c2a1f; }
+.libTable small { display: block; }
+
+.libDetail { max-width: 980px; margin: 0 auto; padding: 24px; }
+.libDetailHead { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.libDetailHead h1 { margin: 0 0 4px; font-size: 1.8rem; color: var(--accent-strong); }
+.libDetailActions { display: flex; gap: 10px; flex-wrap: wrap; }
+.libDetailActions button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; width: auto; }
+.libFacts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 22px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 16px 0; align-items: start; }
+.libFacts label, .libFactWide { display: grid; gap: 4px; color: var(--muted); font-size: 0.85rem; }
+.libFacts label.libCheck { display: flex; align-items: center; gap: 8px; font-size: 1rem; color: var(--ink); }
+.libCheck input { width: 18px; height: 18px; }
+.libFactWide { grid-column: 1 / -1; }
+.libTabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-top: 8px; }
+.libTabs button { border: 0; background: transparent; padding: 10px 14px; border-bottom: 3px solid transparent; color: var(--muted); }
+.libTabs button[aria-selected="true"] { color: var(--accent-strong); border-bottom-color: var(--accent-strong); font-weight: 600; }
+.libPanel { background: var(--panel); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 14px 14px; padding: 18px; }
+.libNotes { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.libNotes li { display: flex; gap: 12px; }
+.libNotes blockquote { margin: 0 0 4px; font-style: italic; }
+.libNotes p { margin: 0 0 4px; }
+.libSwatch { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgb(0 0 0 / 20%); margin-top: 5px; }
+.libMeta { margin: 0 0 10px; display: grid; gap: 8px; }
+.libMeta div { display: grid; grid-template-columns: 9rem 1fr; gap: 10px; }
+.libMeta dt { color: var(--muted); }
+.libMeta dd { margin: 0; }
+
+.libScrim { position: fixed; inset: 0; z-index: 100; background: rgb(33 31 27 / 45%); display: grid; place-items: center; padding: 16px; }
+.libDialog { background: var(--panel); border-radius: 18px; padding: 20px; width: min(460px, 100%); max-height: 90vh; overflow: auto; box-shadow: 0 20px 60px rgb(0 0 0 / 30%); }
+.libDialog.wide { width: min(680px, 100%); }
+.libDialogHead { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.libDialogHead h2 { margin: 0; font-size: 1.2rem; color: var(--accent-strong); }
+.libDialogHead button { border: 0; background: transparent; font-size: 1.5rem; width: auto; }
+.libDialogActions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.libDialogActions span { margin-right: auto; color: var(--muted); font-size: 0.9rem; }
+.libField { display: grid; gap: 4px; margin-top: 12px; color: var(--muted); font-size: 0.85rem; }
+.libImpact { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.libImpact li { background: var(--soft); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; }
+.libImpact li span, .libImpact li a { color: var(--muted); }
+.libImpact li a { color: var(--accent-strong); }
+
+@media (max-width: 900px) {
+  .libLayout { grid-template-columns: 1fr; padding: 16px; }
+  .libSide { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 18px; }
+  .libTable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .libTable, .libTable tbody, .libTable tr, .libTable td { display: block; }
+  .libTable tr { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .libTable td { border: 0; padding: 3px 0; }
+  .libTable td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); font-size: 0.8rem; }
+  .libTable td.libTitleCell::before, .libTable td[data-label="Select"]::before, .libTable td[data-label="Favorite"]::before, .libTable td[data-label="Actions"]::before { content: none; }
+  .libActions { text-align: left; }
+  .libMeta div { grid-template-columns: 1fr; gap: 0; }
+  .libNav { padding: 10px 16px; gap: 10px; }
+}

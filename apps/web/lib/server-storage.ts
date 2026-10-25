@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { s3Delete, s3Get, s3List, s3Put, s3Size } from "./s3-storage";
+import { s3Delete, s3Get, s3List, s3Put, s3Size } from "./s3-storage.ts";
 
 // Files live on local disk by default. Set SCRIPTORIUM_STORAGE_BACKEND=s3 (see s3-storage.ts) to keep
 // them in S3-compatible object storage instead. While moving across, the old folder stays readable as

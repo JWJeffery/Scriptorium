@@ -21,5 +21,17 @@ export const GET = route(async (request) => {
     orderBy: { createdAt: "desc" },
     take: query.limit
   });
-  return NextResponse.json({ jobs: rows.map(summarizeJob) });
+  // Which book is each job about? OCR and page splitting work on a version; indexing works on the book itself.
+  const versionIds = rows.filter((row) => row.type !== "embed-index").map((row) => row.subjectId);
+  const versions = versionIds.length ? await prisma.documentVersion.findMany({ where: { id: { in: versionIds } }, select: { id: true, documentId: true } }) : [];
+  const itemIdByVersion = new Map(versions.map((version) => [version.id, version.documentId]));
+  const itemIds = Array.from(new Set(rows.map((row) => (row.type === "embed-index" ? row.subjectId : itemIdByVersion.get(row.subjectId))).filter((id): id is string => Boolean(id))));
+  const items = itemIds.length ? await prisma.document.findMany({ where: { id: { in: itemIds } }, select: { id: true, title: true } }) : [];
+  const titleById = new Map(items.map((item) => [item.id, item.title]));
+  return NextResponse.json({
+    jobs: rows.map((row) => {
+      const itemId = row.type === "embed-index" ? row.subjectId : itemIdByVersion.get(row.subjectId) ?? null;
+      return { ...summarizeJob(row), itemId, itemTitle: itemId ? titleById.get(itemId) ?? null : null };
+    })
+  });
 });

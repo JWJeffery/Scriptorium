@@ -22,9 +22,10 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.goto(base + "/");
-  await page.click("text=Open saved");
-  await page.locator(".savedDocRow", { hasText: title }).locator("button:has-text('Open')").click();
+  // Open the book the way a reader does: from the Library.
+  await page.goto(base + `/library?q=${encodeURIComponent(title)}`);
+  await page.locator("tr", { hasText: title }).getByRole("link", { name: "Read" }).click();
+  await page.waitForURL(`${base}/`);
   await page.waitForLoadState("load");
 
   const word = page.locator(".pdfTextRun", { hasText: "Faith" }).first();

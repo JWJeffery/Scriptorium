@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
           createdAt: document.createdAt,
           updatedAt: document.updatedAt,
           annotationCount: document._count.annotations,
+          lastPage: document.lastPage,
           pageCount: version._count.textSpans || null,
           fileMissing: Boolean(document.storageKey) && (await storedFileSize(document.storageKey as string)) === null,
           versionId: version.id,
