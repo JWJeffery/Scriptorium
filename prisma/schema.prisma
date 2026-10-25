@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -43,6 +43,19 @@ enum MappingConfidence {
   UNCERTAIN
 }
 
+enum ItemWorkflowState {
+  READ_LATER
+  READING
+  ARCHIVED
+}
+
+enum ProcessingJobState {
+  QUEUED
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
 enum ResearchThreadItemType {
   DOCUMENT
   ANNOTATION
@@ -52,21 +65,84 @@ enum ResearchThreadItemType {
 }
 
 model Document {
-  id               String            @id @default(cuid())
-  title            String            @db.VarChar(512)
-  originalFilename String?           @db.VarChar(512)
+  id               String             @id @default(cuid())
+  title            String             @db.VarChar(512)
+  originalFilename String?            @db.VarChar(512)
   kind             DocumentKind
-  mediaType        String?           @db.VarChar(255)
-  storageKey       String?           @db.VarChar(1024)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  mediaType        String?            @db.VarChar(255)
+  storageKey       String?            @db.VarChar(1024)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
   versions         DocumentVersion[]
   sources          Source[]
   annotations      Annotation[]
   bookmarks        Bookmark[]
   embeddings       PassageEmbedding[]
 
+  // Library state. In the Research Environment specification a Document is an "Item".
+  workflowState ItemWorkflowState @default(READ_LATER)
+  favorite      Boolean           @default(false)
+  acceptedAt    DateTime          @default(now())
+  lastOpenedAt  DateTime?
+  lastPage      Int?
+  pageCount     Int?
+  deletedAt     DateTime?
+  revision      Int               @default(0)
+  tags          DocumentTag[]
+  collections   ItemCollection[]
+
   @@index([title])
+  @@index([workflowState])
+  @@index([deletedAt])
+}
+
+model DocumentTag {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  value      String   @db.VarChar(128)
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, value])
+  @@index([value])
+}
+
+// A manual, named group of Items. An Item can be in any number of Collections without being copied.
+model Collection {
+  id          String           @id @default(cuid())
+  name        String           @db.VarChar(255)
+  description String?
+  parentId    String?
+  parent      Collection?      @relation("CollectionTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Collection[]     @relation("CollectionTree")
+  items       ItemCollection[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([parentId])
+}
+
+model ItemCollection {
+  id           String     @id @default(cuid())
+  documentId   String
+  document     Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  position     Int        @default(0)
+  addedAt      DateTime   @default(now())
+
+  @@unique([documentId, collectionId])
+  @@index([collectionId])
+}
+
+// A dynamic view: the stored filters are re-run every time it is opened.
+model SavedSearch {
+  id        String   @id @default(cuid())
+  name      String   @db.VarChar(255)
+  query     Json
+  sort      String   @default("recent") @db.VarChar(64)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model DocumentVersion {
@@ -87,14 +163,14 @@ model DocumentVersion {
 }
 
 model Source {
-  id          String     @id @default(cuid())
-  documentId  String?
-  document    Document?  @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  shortTitle  String?    @db.VarChar(512)
-  cslJson     Json
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  citations   Citation[]
+  id         String     @id @default(cuid())
+  documentId String?
+  document   Document?  @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  shortTitle String?    @db.VarChar(512)
+  cslJson    Json
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  citations  Citation[]
 
   @@index([documentId])
 }
@@ -174,7 +250,7 @@ model TextSpan {
   version   DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   pageMapId String?
   pageMap   PageMap?        @relation(fields: [pageMapId], references: [id], onDelete: SetNull)
-  text      String          @db.LongText
+  text      String
   anchor    Json?
   createdAt DateTime        @default(now())
 
@@ -191,8 +267,8 @@ model Annotation {
   pageMapId    String?
   pageMap      PageMap?        @relation(fields: [pageMapId], references: [id], onDelete: SetNull)
   colorKey     String          @db.VarChar(64)
-  selectedText String          @db.LongText
-  note         String?         @db.LongText
+  selectedText String
+  note         String?
   anchor       Json?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -227,7 +303,7 @@ model Citation {
   locatorValue            String?     @db.VarChar(255)
   prefix                  String?     @db.Text
   suffix                  String?     @db.Text
-  generatedText           String      @db.LongText
+  generatedText           String
   createdAt               DateTime    @default(now())
   // Snapshot of Source.updatedAt at the moment this citation was generated.
   // Staleness = sourceSnapshotUpdatedAt < source.updatedAt. Defaulting to
@@ -251,7 +327,7 @@ model Citation {
 model ResearchThread {
   id          String               @id @default(cuid())
   title       String               @db.VarChar(512)
-  description String?              @db.LongText
+  description String?
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
   items       ResearchThreadItem[]
@@ -274,7 +350,7 @@ model ResearchThreadItem {
   researchThread   ResearchThread         @relation(fields: [researchThreadId], references: [id], onDelete: Cascade)
   itemType         ResearchThreadItemType
   itemId           String
-  note             String?                @db.LongText
+  note             String?
   orderIndex       Int                    @default(0)
 
   @@index([researchThreadId])
@@ -283,9 +359,34 @@ model ResearchThreadItem {
 
 model QueryLog {
   id        String   @id @default(cuid())
-  query     String   @db.LongText
+  query     String
   mode      String   @db.VarChar(128)
   filters   Json?
   resultIds Json?
   createdAt DateTime @default(now())
+}
+
+// Long-running work (OCR, page splitting, building the by-meaning index). The queue itself lives in
+// pg-boss; this is the durable, user-visible record of each job: what it is for, how far it has got,
+// how often it ran, and what it produced or why it failed. Operational history, not scholarly data,
+// so it is not part of backups.
+model ProcessingJob {
+  id            String             @id @default(cuid())
+  type          String             @db.VarChar(32)
+  subjectId     String             @db.VarChar(191)
+  state         ProcessingJobState @default(QUEUED)
+  progressDone  Int                @default(0)
+  progressTotal Int                @default(0)
+  attempts      Int                @default(0)
+  error         String?
+  result        Json?
+  queueJobId    String?            @db.VarChar(64)
+  createdAt     DateTime           @default(now())
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  updatedAt     DateTime           @updatedAt
+
+  @@index([type, subjectId])
+  @@index([state])
+  @@index([createdAt])
 }

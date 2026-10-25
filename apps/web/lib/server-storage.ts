@@ -1,6 +1,12 @@
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { s3Delete, s3Get, s3List, s3Put, s3Size } from "./s3-storage.ts";
+
+// Files live on local disk by default. Set SCRIPTORIUM_STORAGE_BACKEND=s3 (see s3-storage.ts) to keep
+// them in S3-compatible object storage instead. While moving across, the old folder stays readable as
+// a fallback, so a book is never unreachable halfway through; nothing in it is ever deleted or rewritten.
+const usingS3 = () => process.env.SCRIPTORIUM_STORAGE_BACKEND === "s3";
 
 // pnpm runs a filtered package script from apps/web, while other launch
 // paths can start Next from the repository root. Using process.cwd()
@@ -64,6 +70,7 @@ function safeChecksum(checksum: string) {
 // browser console at the same time). Reuses this file's existing
 // path-safety handling instead of duplicating it in a second module.
 export async function writeStorageJson(storageKey: string, value: unknown): Promise<void> {
+  if (usingS3()) return s3Put(storageKey, Buffer.from(JSON.stringify(value), "utf8"), "application/json");
   const absolutePath = resolveStorageKey(storageKey);
   await mkdir(path.dirname(absolutePath), { recursive: true });
   await writeFile(absolutePath, JSON.stringify(value), "utf8");
@@ -80,6 +87,7 @@ export async function readStorageJson<T>(storageKey: string): Promise<T | null> 
 }
 
 export async function deleteStorageFile(storageKey: string): Promise<void> {
+  if (usingS3()) return s3Delete(storageKey);
   await Promise.all(storageRootCandidates().map((root) => unlink(resolveStorageKeyAtRoot(root, storageKey)).catch(() => undefined)));
 }
 
@@ -125,7 +133,7 @@ function storageRootCandidates() {
   );
 }
 
-async function readStorageFile(storageKey: string) {
+async function readFsStorageFile(storageKey: string) {
   let notFound: NodeJS.ErrnoException | undefined;
   const primaryRoot = getStorageRoot();
   for (const root of storageRootCandidates()) {
@@ -149,6 +157,16 @@ async function readStorageFile(storageKey: string) {
     }
   }
   throw notFound ?? Object.assign(new Error(`Stored file not found: ${storageKey}`), { code: "ENOENT" });
+}
+
+async function readStorageFile(storageKey: string) {
+  if (!usingS3()) return readFsStorageFile(storageKey);
+  try {
+    return await s3Get(storageKey);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return readFsStorageFile(storageKey); // not copied across yet
+  }
 }
 
 export function normalizeTextSnapshot(rawText: string) {
@@ -175,6 +193,10 @@ export async function storePdfFile(documentId: string, file: File): Promise<Stor
   const absolutePath = resolveStorageKey(storageKey);
   const buffer = Buffer.from(await file.arrayBuffer());
 
+  if (usingS3()) {
+    await s3Put(storageKey, buffer, "application/pdf");
+    return { storageKey, size: buffer.byteLength };
+  }
   await mkdir(documentDirectory, { recursive: true });
   await writeFile(absolutePath, buffer);
 
@@ -200,8 +222,12 @@ export async function storeTextSnapshot(documentId: string, rawText: string): Pr
   const snapshotDirectory = resolveStorageKey(`documents/${documentSegment}/snapshots`);
   const absolutePath = resolveStorageKey(storageKey);
 
-  await mkdir(snapshotDirectory, { recursive: true });
-  await writeFile(absolutePath, buffer);
+  if (usingS3()) {
+    await s3Put(storageKey, buffer, "text/plain; charset=utf-8");
+  } else {
+    await mkdir(snapshotDirectory, { recursive: true });
+    await writeFile(absolutePath, buffer);
+  }
 
   return {
     storageKey,
@@ -234,6 +260,7 @@ export type StoredFileEntry = { storageKey: string; size: number; modifiedAt: st
  */
 export async function listStoredFiles(): Promise<StoredFileEntry[]> {
   const entries = new Map<string, StoredFileEntry>();
+  if (usingS3()) for (const entry of await s3List()) entries.set(entry.storageKey, entry);
 
   async function walk(storageRoot: string, relativeDir: string) {
     const absoluteDir = resolveStorageKeyAtRoot(storageRoot, relativeDir);
@@ -264,6 +291,10 @@ export async function listStoredFiles(): Promise<StoredFileEntry[]> {
 // Size in bytes of a stored file, or null when it cannot be found. Used to
 // describe documents in the saved-document list without reading their bytes.
 export async function storedFileSize(storageKey: string): Promise<number | null> {
+  if (usingS3()) {
+    const remote = await s3Size(storageKey);
+    if (remote !== null) return remote;
+  }
   for (const root of storageRootCandidates()) {
     try {
       return (await stat(resolveStorageKeyAtRoot(root, storageKey))).size;

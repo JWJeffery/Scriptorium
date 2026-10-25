@@ -253,6 +253,19 @@ export async function persistDocument(document: StoredDocument, locator: string)
   return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id } satisfies ServerIds;
 }
 
+// SHA-256 of a file in the browser, then ask the server whether the library already has it.
+export async function findDuplicateFile(file: File): Promise<{ id: string; title: string } | null> {
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    const hex = Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const response = await fetch(`/api/v1/items/by-checksum?sha256=${hex}`);
+    if (!response.ok) return null;
+    return ((await response.json()) as { item: { id: string; title: string } | null }).item;
+  } catch {
+    return null;
+  }
+}
+
 export async function persistPdfFile(file: File, document: StoredDocument, locator: string) {
   const formData = new FormData();
   formData.set("file", file);
@@ -265,7 +278,7 @@ export async function persistPdfFile(file: File, document: StoredDocument, locat
   formData.set("baseBookPage", String(document.pageMap.baseBookPage));
   formData.set("currentPdfPageIndex", String(document.pageMap.currentPdfPageIndex));
   formData.set("bookPageLabel", locator);
-  const response = await fetch("/api/core/files", { method: "POST", body: formData });
+  const response = await fetch("/api/core/files?allowDuplicate=true", { method: "POST", body: formData });
   if (!response.ok) throw new Error("PDF upload persistence failed.");
   const body = await response.json() as { document: { id: string; storageKey?: string | null }; version: { id: string }; source: { id: string }; pageMap: { id: string }; storedFile?: { storageKey: string } };
   return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id, storageKey: body.storedFile?.storageKey ?? body.document.storageKey ?? undefined } satisfies ServerIds;

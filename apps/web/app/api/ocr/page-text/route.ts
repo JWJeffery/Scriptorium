@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   // Filter in the database: a scanned book has one large row per page, and
   // loading all of them just to read one made every page turn slow.
   const match = await prisma.textSpan.findFirst({
-    where: { versionId, anchor: { path: "$.pdfPageIndex", equals: pdfPageIndex } }
+    where: { versionId, anchor: { path: ["pdfPageIndex"], equals: pdfPageIndex } }
   });
 
   if (!match || !match.text.trim()) {

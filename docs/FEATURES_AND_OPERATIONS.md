@@ -1,5 +1,11 @@
 # Features added after Milestone 18, and how to run them
 
+## Library
+`/library` lists every book with views (Read later, Reading, Archived, Favorites, Recently added, Recently
+annotated, Missing metadata, Deleted), collections, saved views, tags, search, batch changes and a delete preview.
+`/items/<id>` shows one book (Read, Annotations, Metadata, Versions, Relations, Activity). `/jobs` shows background
+work. `/inbox` is reserved for the next phase. The reader saves your place on the server, so every browser agrees.
+
 ## Reading
 Search (Ctrl+K or `/`), exact words or by meaning; go to a printed book page; bookmarks (`b`);
 click a highlight to open its note; margin markers for notes; fit-to-width; the app resumes at

@@ -20,7 +20,7 @@ jobs:
     name: Typecheck and build
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: mysql://scriptorium:scriptorium@127.0.0.1:3306/scriptorium
+      DATABASE_URL: postgresql://scriptorium:scriptorium@127.0.0.1:5432/scriptorium
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -215,22 +215,21 @@ jobs:
           }
 
   mysql-migration:
-    name: MySQL migration deploy
+    name: PostgreSQL migration deploy
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: mysql://scriptorium:scriptorium@127.0.0.1:3306/scriptorium
+      DATABASE_URL: postgresql://scriptorium:scriptorium@127.0.0.1:5432/scriptorium
     services:
-      mysql:
-        image: mysql:8.4
+      postgres:
+        image: pgvector/pgvector:pg16
         env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: scriptorium
-          MYSQL_USER: scriptorium
-          MYSQL_PASSWORD: scriptorium
+          POSTGRES_USER: scriptorium
+          POSTGRES_PASSWORD: scriptorium
+          POSTGRES_DB: scriptorium
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uscriptorium -pscriptorium"
+          --health-cmd="pg_isready -U scriptorium -d scriptorium"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -258,7 +257,7 @@ jobs:
       - name: Generate Prisma client
         run: pnpm prisma:generate
 
-      - name: Deploy MySQL migration
+      - name: Deploy PostgreSQL migration
         run: pnpm prisma:migrate:deploy
 
       - name: Build web app for live API smoke test
@@ -267,57 +266,29 @@ jobs:
       - name: Install Chromium for the browser test
         run: pnpm --filter @scriptorium/web exec playwright install --with-deps chromium
 
-      - name: Verify page-split API end to end
+      - name: Live checks with files on local disk
+        run: scripts/run-live-suite.sh
+
+      - name: Worker recovery (a separate worker process is killed mid-job)
+        run: node scripts/verify-worker-recovery.mjs
+
+      - name: Start a local S3-compatible object store
         run: |
-          export SCRIPTORIUM_AUTH_DISABLED=true SCRIPTORIUM_FAKE_EMBEDDINGS=1 SCRIPTORIUM_RATE_LIMITS_DISABLED=true
-          pnpm --filter @scriptorium/web exec next start -H 127.0.0.1 -p 3100 > next-server.log 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          python3 -m venv "$RUNNER_TEMP/moto"
+          "$RUNNER_TEMP/moto/bin/pip" install --quiet "moto[server]"
+          nohup "$RUNNER_TEMP/moto/bin/moto_server" -H 127.0.0.1 -p 9111 > moto.log 2>&1 &
           for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:3100/ > /dev/null; then
-              break
-            fi
+            if curl --silent http://127.0.0.1:9111/ > /dev/null; then break; fi
             sleep 1
           done
-          if ! curl --fail --silent http://127.0.0.1:3100/ > /dev/null; then
-            cat next-server.log
-            exit 1
-          fi
-          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-page-split-api.mjs || {
-            cat next-server.log
-            exit 1
-          }
-          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-search-api.mjs || {
-            cat next-server.log
-            exit 1
-          }
-          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-threads-api.mjs || {
-            cat next-server.log
-            exit 1
-          }
-          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-page-ranges-api.mjs || {
-            cat next-server.log
-            exit 1
-          }
-          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-sources-api.mjs || {
-            cat next-server.log
-            exit 1
-          }
-          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-reading-api.mjs || {
-            cat next-server.log
-            exit 1
-          }
-          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-meaning-api.mjs || {
-            cat next-server.log
-            exit 1
-          }
-          # Real browser: open a PDF, select text, save an annotation, reload.
-          SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/e2e-browser.mjs || {
-            cat next-server.log
-            exit 1
-          }
-          # Last, because it empties the (throwaway CI) database and restores it from a backup.
-          SCRIPTORIUM_ALLOW_WIPE=yes SCRIPTORIUM_BASE_URL=http://127.0.0.1:3100 node scripts/verify-backup-restore.mjs || {
-            cat next-server.log
-            exit 1
-          }
+
+      - name: Live checks with files in object storage
+        env:
+          SCRIPTORIUM_STORAGE_BACKEND: s3
+          SCRIPTORIUM_S3_BUCKET: scriptorium-ci
+          SCRIPTORIUM_S3_ENDPOINT: http://127.0.0.1:9111
+          SCRIPTORIUM_S3_ACCESS_KEY_ID: test
+          SCRIPTORIUM_S3_SECRET_ACCESS_KEY: test
+          SCRIPTORIUM_S3_CREATE_BUCKET: "true"
+          SCRIPTORIUM_STORAGE_DIR: ./storage-legacy
+        run: scripts/run-live-suite.sh

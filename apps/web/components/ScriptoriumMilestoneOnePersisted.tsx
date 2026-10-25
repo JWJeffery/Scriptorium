@@ -6,7 +6,7 @@ import { highlightColors } from "../lib/highlights";
 import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
 import { ScholarlyToolsPanel, type ImportedReadingNoteRecord } from "./ScholarlyToolsPanel";
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
-import { SavedDocumentsPanel, type SavedDocumentEntry } from "./SavedDocumentsPanel";
+import type { SavedDocumentEntry } from "../lib/saved-document-entry";
 import { SearchPanel, type SearchOpenRequest } from "./SearchPanel";
 import { AddToThread } from "./ThreadsPanel";
 import { TagInput, normalizeTags } from "./TagInput";
@@ -17,7 +17,7 @@ import { authorsToText } from "../lib/author-names";
 import { mergeServerRecords } from "../lib/annotation-sync";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
-import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, ANNOTATIONS_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, bytes, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
+import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, ANNOTATIONS_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, bytes, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
 
 export function ScriptoriumMilestoneOnePersisted() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
@@ -40,7 +40,6 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [bookPageGoto, setBookPageGoto] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | undefined>();
-  const [savedDocsOpen, setSavedDocsOpen] = useState(false);
   const [lookupOpen, setLookupOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -144,13 +143,46 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (lastPageDocumentId && lastPageNumber) rememberLastPage(lastPageDocumentId, lastPageNumber);
   }, [lastPageDocumentId, lastPageNumber]);
 
+  // The server keeps the reading position too, so every browser agrees (and the Library can show it).
+  useEffect(() => {
+    if (!lastPageDocumentId || !lastPageNumber) return;
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/v1/items/${encodeURIComponent(lastPageDocumentId)}/progress`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ page: lastPageNumber, ...(pageCount > 0 ? { pageCount } : {}) })
+      }).catch(() => undefined);
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [lastPageDocumentId, lastPageNumber, pageCount]);
+
+  // A link such as /?open=<book id> (from the Library) opens that book.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("open");
+    if (!wanted) return;
+    window.history.replaceState(null, "", "/");
+    if (readDocument()?.server?.documentId === wanted) return;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/core/library?documentId=${encodeURIComponent(wanted)}`);
+        const entry = ((await response.json()) as { documents?: SavedDocumentEntry[] }).documents?.[0];
+        if (!response.ok || !entry) throw new Error("That book could not be found on the server.");
+        await openSavedDocument(entry);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "The book could not be opened.");
+      }
+    })();
+    // Once, on first load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Keyboard shortcuts. Ignored while typing in a box or while a dialog is open.
   useEffect(() => {
     function onShortcut(event: KeyboardEvent) {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       const typing = Boolean(target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable));
-      if (typing || searchOpen || savedDocsOpen || lookupOpen || toolsOpen) return;
+      if (typing || searchOpen || lookupOpen || toolsOpen) return;
       const key = event.key;
       const zoom = (command: string) => window.dispatchEvent(new CustomEvent("scriptorium-zoom", { detail: command }));
       const handled = (action: () => void) => { event.preventDefault(); action(); };
@@ -180,7 +212,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     return () => window.removeEventListener("keydown", onShortcut);
     // goToPage closes over the latest page state each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentRecord, pageCount, helpOpen, searchOpen, savedDocsOpen, lookupOpen, toolsOpen]);
+  }, [documentRecord, pageCount, helpOpen, searchOpen, lookupOpen, toolsOpen]);
 
   // Draft protection: what has been typed or selected but not saved survives a reload.
   useEffect(() => {
@@ -405,6 +437,14 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (!kind) {
       setStatus("This workspace accepts PDF, TXT, Markdown, and DOCX files only.");
       return;
+    }
+
+    if (kind === "PDF") {
+      const duplicate = await findDuplicateFile(file);
+      if (duplicate && !window.confirm(`This exact file is already in your library as "${duplicate.title}".\n\nPress OK to add another copy anyway, or Cancel and use "Open saved" to open the existing one.`)) {
+        setStatus(`Not added: "${duplicate.title}" is already in your library. Use Open saved to open it.`);
+        return;
+      }
     }
 
     if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
@@ -736,7 +776,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           publisher: typeof csl.publisher === "string" ? csl.publisher : "",
           year: issued === undefined ? "" : String(issued)
         },
-        pageMap: { basePdfPageIndex, baseBookPage, currentPdfPageIndex: readLastPages()[entry.documentId] ?? entry.pdfPageIndex },
+        pageMap: { basePdfPageIndex, baseBookPage, currentPdfPageIndex: entry.lastPage ?? readLastPages()[entry.documentId] ?? entry.pdfPageIndex },
         server: { documentId: entry.documentId, versionId: entry.versionId, sourceId: entry.sourceId, pageMapId: entry.pageMapId, storageKey: entry.storageKey ?? undefined, snapshotKey: entry.snapshotKey ?? undefined, sourceChecksum: entry.sourceChecksum ?? undefined }
       };
 
@@ -746,6 +786,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       saveDocument(opened);
       localStorage.removeItem(TEXT_CONTENT_KEY);
       saveAnnotations(merged.records);
+      window.history.replaceState(null, "", "/");
       window.location.reload();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "The document could not be opened.");
@@ -1006,7 +1047,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           {bookmarkDocumentId ? <button className="compactAction" type="button" aria-pressed={bookmarks.some((bookmark) => bookmark.pdfPage === currentPage)} onClick={() => void toggleBookmark()} title="Bookmark this page (b)">{bookmarks.some((bookmark) => bookmark.pdfPage === currentPage) ? "★ Bookmarked" : "☆ Bookmark"}</button> : null}
           <button className="compactAction" type="button" onClick={() => setSearchOpen(true)} title="Search (Ctrl+K or /)">Search</button>
           <button className="compactAction" type="button" onClick={() => setHelpOpen(true)} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
-          <button className="compactAction" type="button" onClick={() => setSavedDocsOpen(true)}>Open saved</button>
+          <a className="compactAction" href="/library" title="Your library: every book, with filters and collections">Library</a>
           <button className="compactAction toolsToggle" type="button" onClick={() => setToolsOpen(true)}>Scholarly tools{pendingSplitOcr ? " · attention" : ""}</button>
           <button className="compactAction pinToggle" type="button" aria-pressed={inspectorPinned} onClick={toggleInspectorPin}>{inspectorPinned ? "Unpin inspector" : "Pin inspector"}</button>
           <button
@@ -1198,7 +1239,6 @@ export function ScriptoriumMilestoneOnePersisted() {
       ) : null}
       <SourceLookupDialog open={lookupOpen} onApply={applyLookedUpSource} onClose={() => setLookupOpen(false)} />
       <SearchPanel open={searchOpen} currentDocumentId={documentRecord?.server?.documentId} onOpenResult={(request) => void openSearchResult(request)} onClose={() => setSearchOpen(false)} />
-      <SavedDocumentsPanel open={savedDocsOpen} currentDocumentId={documentRecord?.server?.documentId} onOpenDocument={(entry) => { setSavedDocsOpen(false); void openSavedDocument(entry); }} onClose={() => setSavedDocsOpen(false)} />
 
       <div className={`toolsDrawer${toolsOpen ? " open" : ""}`} aria-hidden={!toolsOpen}>
         <div className="drawerHeader"><div><p className="eyebrow">Research utilities</p><strong>Scholarly tools</strong></div><button type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools">×</button></div>

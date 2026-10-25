@@ -13,7 +13,7 @@ const form = new FormData();
 form.set("file", new File([await textPdf([["Sources page"]])], "sources.pdf", { type: "application/pdf" }));
 form.set("title", "Sources fixture");
 form.set("author", "Ann Lee and Bob Ray");
-const uploaded = await (await fetch(`${baseUrl}/api/core/files`, { method: "POST", body: form })).json();
+const uploaded = await (await fetch(`${baseUrl}/api/core/files?allowDuplicate=true`, { method: "POST", body: form })).json();
 const sourceId = uploaded.source.id;
 const stored = (await (await fetch(`${baseUrl}/api/core/workspace?documentId=${uploaded.document.id}`)).json()).document.sources[0];
 assert.deepEqual(stored.cslJson.author, [{ family: "Lee", given: "Ann" }, { family: "Ray", given: "Bob" }], "typed authors are saved as structured names");

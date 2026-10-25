@@ -34,8 +34,8 @@ const zipPath = process.argv[2];
 if (!zipPath) { console.error("Usage: node scripts/restore-backup.mjs <backup.zip>"); process.exit(2); }
 
 const storageRoot = path.resolve(repoRoot, process.env.SCRIPTORIUM_STORAGE_DIR ?? "./storage");
-const TABLE_ORDER = ["Document", "DocumentVersion", "Source", "PageMap", "PageRange", "Bookmark", "TextSpan", "Annotation", "AnnotationTag", "Citation", "ResearchThread", "ResearchThreadTag", "ResearchThreadItem"];
-const DELEGATE = { Document: "document", DocumentVersion: "documentVersion", Source: "source", PageMap: "pageMap", PageRange: "pageRange", Bookmark: "bookmark", TextSpan: "textSpan", Annotation: "annotation", AnnotationTag: "annotationTag", Citation: "citation", ResearchThread: "researchThread", ResearchThreadTag: "researchThreadTag", ResearchThreadItem: "researchThreadItem" };
+const TABLE_ORDER = ["Document", "Collection", "SavedSearch", "DocumentTag", "ItemCollection", "DocumentVersion", "Source", "PageMap", "PageRange", "Bookmark", "TextSpan", "Annotation", "AnnotationTag", "Citation", "ResearchThread", "ResearchThreadTag", "ResearchThreadItem"];
+const DELEGATE = { Document: "document", Collection: "collection", SavedSearch: "savedSearch", DocumentTag: "documentTag", ItemCollection: "itemCollection", DocumentVersion: "documentVersion", Source: "source", PageMap: "pageMap", PageRange: "pageRange", Bookmark: "bookmark", TextSpan: "textSpan", Annotation: "annotation", AnnotationTag: "annotationTag", Citation: "citation", ResearchThread: "researchThread", ResearchThreadTag: "researchThreadTag", ResearchThreadItem: "researchThreadItem" };
 
 function openZip() {
   return new Promise((resolve, reject) => yauzl.open(zipPath, { lazyEntries: true, autoClose: false }, (error, zip) => (error ? reject(error) : resolve(zip))));
@@ -88,9 +88,42 @@ const prisma = new PrismaClient();
 const existing = await prisma.document.count();
 if (existing > 0) { console.error(`The database already contains ${existing} document(s). Restore only works into an empty database.`); await prisma.$disconnect(); process.exit(1); }
 
-// 3. Files.
+// 3. Files. Into the local folder, or into object storage when SCRIPTORIUM_STORAGE_BACKEND=s3.
 let filesWritten = 0;
+const useS3 = process.env.SCRIPTORIUM_STORAGE_BACKEND === "s3";
+let s3;
+if (useS3) {
+  const sdk = requireFromWeb("@aws-sdk/client-s3");
+  const endpoint = process.env.SCRIPTORIUM_S3_ENDPOINT?.trim() || undefined;
+  s3 = {
+    sdk,
+    bucket: process.env.SCRIPTORIUM_S3_BUCKET?.trim(),
+    client: new sdk.S3Client({
+      region: process.env.SCRIPTORIUM_S3_REGION?.trim() || "us-east-1",
+      ...(endpoint ? { endpoint } : {}),
+      forcePathStyle: process.env.SCRIPTORIUM_S3_FORCE_PATH_STYLE ? process.env.SCRIPTORIUM_S3_FORCE_PATH_STYLE === "true" : Boolean(endpoint),
+      ...(process.env.SCRIPTORIUM_S3_ACCESS_KEY_ID ? { credentials: { accessKeyId: process.env.SCRIPTORIUM_S3_ACCESS_KEY_ID, secretAccessKey: process.env.SCRIPTORIUM_S3_SECRET_ACCESS_KEY ?? "" } } : {}),
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED"
+    })
+  };
+  if (!s3.bucket) { console.error("SCRIPTORIUM_S3_BUCKET must be set when SCRIPTORIUM_STORAGE_BACKEND=s3."); process.exit(1); }
+  if (process.env.SCRIPTORIUM_S3_CREATE_BUCKET === "true") {
+    try { await s3.client.send(new s3.sdk.HeadBucketCommand({ Bucket: s3.bucket })); } catch { await s3.client.send(new s3.sdk.CreateBucketCommand({ Bucket: s3.bucket })); }
+  }
+}
 for (const file of manifest.files) {
+  if (useS3) {
+    if (file.key.split("/").includes("..") || file.key.startsWith("/")) { console.error(`Unsafe file path in backup: ${file.key}`); process.exit(1); }
+    const existingObject = await s3.client.send(new s3.sdk.GetObjectCommand({ Bucket: s3.bucket, Key: file.key })).then(async (r) => Buffer.from(await r.Body.transformToByteArray()), () => null);
+    if (existingObject) {
+      if (createHash("sha256").update(existingObject).digest("hex") === file.sha256) continue;
+      console.error(`${file.key} already exists in the bucket with different contents; refusing to overwrite.`); process.exit(1);
+    }
+    await s3.client.send(new s3.sdk.PutObjectCommand({ Bucket: s3.bucket, Key: file.key, Body: await readAll(zip, entries.get(`files/${file.key}`)) }));
+    filesWritten += 1;
+    continue;
+  }
   const target = path.resolve(storageRoot, file.key);
   if (!target.startsWith(storageRoot + path.sep)) { console.error(`Unsafe file path in backup: ${file.key}`); process.exit(1); }
   await mkdir(path.dirname(target), { recursive: true });

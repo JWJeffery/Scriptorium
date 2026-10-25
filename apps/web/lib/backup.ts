@@ -23,6 +23,10 @@ type Delegate = { findMany: (args: { take: number; skip?: number; cursor?: { id:
 // Parents before children, so a restore can insert in this order.
 const TABLES: Array<{ name: string; delegate: () => Delegate }> = [
   { name: "Document", delegate: () => prisma.document as unknown as Delegate },
+  { name: "Collection", delegate: () => prisma.collection as unknown as Delegate },
+  { name: "SavedSearch", delegate: () => prisma.savedSearch as unknown as Delegate },
+  { name: "DocumentTag", delegate: () => prisma.documentTag as unknown as Delegate },
+  { name: "ItemCollection", delegate: () => prisma.itemCollection as unknown as Delegate },
   { name: "DocumentVersion", delegate: () => prisma.documentVersion as unknown as Delegate },
   { name: "Source", delegate: () => prisma.source as unknown as Delegate },
   { name: "PageMap", delegate: () => prisma.pageMap as unknown as Delegate },

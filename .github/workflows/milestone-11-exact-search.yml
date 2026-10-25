@@ -17,7 +17,7 @@ jobs:
     name: Verify exact search
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: mysql://scriptorium:scriptorium@127.0.0.1:3306/scriptorium
+      DATABASE_URL: postgresql://scriptorium:scriptorium@127.0.0.1:5432/scriptorium
     steps:
       - name: Checkout
         uses: actions/checkout@v4

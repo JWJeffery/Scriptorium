@@ -19,7 +19,7 @@ form.set("file", new File([await textPdf([
   ["Councils define doctrine for bishops", "creed synod canon ecumenical assembly"]
 ])], "meaning.pdf", { type: "application/pdf" }));
 form.set("title", `Meaning fixture ${stamp}`);
-const uploaded = (await call("/api/core/files", { method: "POST", body: form })).body;
+const uploaded = (await call("/api/core/files?allowDuplicate=true", { method: "POST", body: form })).body;
 const documentId = uploaded.document.id;
 
 // Before indexing: honest fallback to shared words
@@ -70,7 +70,7 @@ assert.ok(withNote.annotations.length >= 1 && withNote.annotations[0].note.inclu
 const second = new FormData();
 second.set("file", new File([await textPdf([["Unindexed book about creed and synod"]])], "other.pdf", { type: "application/pdf" }));
 second.set("title", `Unindexed fixture ${stamp}`);
-await call("/api/core/files", { method: "POST", body: second });
+await call("/api/core/files?allowDuplicate=true", { method: "POST", body: second });
 const everything = (await call(`/api/search?mode=related&q=${encodeURIComponent("creed synod canon")}`)).body;
 assert.equal(everything.method, "meaning");
 assert.ok(everything.unindexed.some((title) => title.startsWith("Unindexed fixture")), "unindexed books are listed so results are not mistaken for complete");

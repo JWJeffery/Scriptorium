@@ -11,51 +11,21 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const jobsModuleUrl = pathToFileURL(join(repoRoot, "apps/web/lib/page-split-jobs.ts")).href;
 
-// A separate process proves that completed state is genuinely recoverable
-// from disk rather than accidentally surviving in the importing process's
-// module cache. It also lets the parent verify that beginJob removes an old
-// ready record before a re-run starts.
-if (process.argv[2] === "--read-job") {
-  const { getJob } = await import(jobsModuleUrl);
-  const state = await getJob(process.argv[3]);
-  process.stdout.write(JSON.stringify(state ?? null));
-  process.exit(0);
-}
-
 const scratchRoot = await mkdtemp(join(tmpdir(), "scriptorium-page-split-verifier-"));
 process.env.SCRIPTORIUM_STORAGE_DIR = join(scratchRoot, "storage");
 
 try {
-  const jobs = await import(jobsModuleUrl);
-  const versionId = "verification-version";
-  const readyState = {
-    status: "ready",
-    progress: null,
-    resultStorageKey: "documents/verification/split-two-page-spreads.pdf",
-    originalPageCount: 1,
-    newPageCount: 2,
-    splitOriginalPageNumbers: [1]
-  };
+  // What the split screens show is derived from the durable job record (see verify-jobs-api.mjs and
+  // verify-worker-recovery.mjs for the live behaviour). Here: every record state maps to the right answer.
+  const { splitStateOf } = await import(jobsModuleUrl);
+  const record = (state, extra = {}) => ({ id: "j", type: "page-split", subjectId: "v", state, progressDone: 0, progressTotal: 0, attempts: 1, error: null, result: null, queueJobId: null, ...extra });
 
-  await jobs.setFinishedJob(versionId, readyState);
-
-  const readInChild = () =>
-    spawnSync(process.execPath, ["--experimental-strip-types", fileURLToPath(import.meta.url), "--read-job", versionId], {
-      cwd: repoRoot,
-      env: process.env,
-      encoding: "utf8"
-    });
-
-  const recovered = readInChild();
-  assert.equal(recovered.status, 0, recovered.stderr);
-  assert.deepEqual(JSON.parse(recovered.stdout), readyState, "completed split state must survive a separate process");
-
-  await jobs.beginJob(versionId);
-  assert.equal((await jobs.getJob(versionId))?.status, "running", "the active process must see the new run");
-
-  const afterRestart = readInChild();
-  assert.equal(afterRestart.status, 0, afterRestart.stderr);
-  assert.equal(JSON.parse(afterRestart.stdout), null, "a re-run must not resurrect the previous ready result after reload");
+  assert.equal(splitStateOf(null), undefined, "no job means no split state");
+  assert.deepEqual(splitStateOf(record("QUEUED")), { status: "running", progress: null }, "a waiting job already shows as running");
+  assert.deepEqual(splitStateOf(record("RUNNING", { progressDone: 3, progressTotal: 10 })), { status: "running", progress: { completed: 3, total: 10 } });
+  assert.deepEqual(splitStateOf(record("FAILED", { error: "boom" })), { status: "failed", progress: null, error: "boom" });
+  const result = { resultStorageKey: "documents/x/split-two-page-spreads.pdf", originalPageCount: 1, newPageCount: 2, splitOriginalPageNumbers: [1] };
+  assert.deepEqual(splitStateOf(record("COMPLETE", { result })), { status: "ready", progress: null, ...result }, "a finished job carries where its result is");
 
   const requireFromWeb = createRequire(join(repoRoot, "apps/web/package.json"));
   const { createCanvas } = requireFromWeb("@napi-rs/canvas");
@@ -98,8 +68,7 @@ try {
   assert.ok(left.getWidth() > 200 && right.getWidth() > 200, "both physical crop pages must contain substantial content");
   assert.ok(Math.abs(left.getHeight() - right.getHeight()) < 0.01, "both crop pages must preserve the source height");
 
-  await jobs.clearJob(versionId);
-  console.log("Page-split workflow verifier passed (durable state, stale-state invalidation, isolated detection, and physical two-page output). ");
+  console.log("Page-split workflow verifier passed (job-state mapping, isolated detection, and physical two-page output).");
 } finally {
   await rm(scratchRoot, { recursive: true, force: true });
 }

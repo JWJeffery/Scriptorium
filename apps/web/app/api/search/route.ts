@@ -31,13 +31,14 @@ function boundedLimit(value: string | null) {
 // Latest version of each document only: older versions would repeat every hit.
 function pageQuery(whereExtra: Prisma.Sql, limit: number) {
   return Prisma.sql`
-    SELECT ts.id, ts.versionId, v.documentId, ts.text,
-           CAST(JSON_UNQUOTE(JSON_EXTRACT(ts.anchor, '$.pdfPageIndex')) AS SIGNED) AS pdfPageIndex
-    FROM TextSpan ts
-    JOIN DocumentVersion v ON v.id = ts.versionId
-    WHERE v.id = (SELECT v2.id FROM DocumentVersion v2 WHERE v2.documentId = v.documentId ORDER BY v2.createdAt DESC, v2.id DESC LIMIT 1)
+    SELECT ts.id, ts."versionId", v."documentId", ts.text,
+           (ts.anchor->>'pdfPageIndex')::int AS "pdfPageIndex"
+    FROM "TextSpan" ts
+    JOIN "DocumentVersion" v ON v.id = ts."versionId"
+    JOIN "Document" d ON d.id = v."documentId" AND d."deletedAt" IS NULL
+    WHERE v.id = (SELECT v2.id FROM "DocumentVersion" v2 WHERE v2."documentId" = v."documentId" ORDER BY v2."createdAt" DESC, v2.id DESC LIMIT 1)
     ${whereExtra}
-    ORDER BY v.documentId, pdfPageIndex, ts.id
+    ORDER BY v."documentId", "pdfPageIndex", ts.id
     LIMIT ${limit}`;
 }
 
@@ -52,7 +53,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Type at least two characters to search." }, { status: 400 });
   }
 
-  const scope = documentId ? Prisma.sql`AND v.documentId = ${documentId}` : Prisma.empty;
+  const scope = documentId ? Prisma.sql`AND v."documentId" = ${documentId}` : Prisma.empty;
 
   // Related passages: rank by meaning when this scope has a by-meaning index,
   // otherwise by shared words.
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
       pageRows.push({ id: `${span.id}@${hit.start}`, versionId: span.versionId, documentId: hit.documentId, text: span.text.slice(hit.start, hit.end), pdfPageIndex: hit.pdfPage });
     }
   } else if (mode === "exact") {
-    const likes = terms.map((term) => Prisma.sql`AND ts.text LIKE ${`%${escapeLike(term)}%`}`);
+    const likes = terms.map((term) => Prisma.sql`AND ts.text ILIKE ${`%${escapeLike(term)}%`}`);
     // Words broken across lines are rare enough that a LIKE on the raw column
     // is a safe pre-filter; exact phrase ranking happens on cleaned text below.
     pageRows = await prisma.$queryRaw<PageRow[]>(pageQuery(Prisma.sql`${scope} ${Prisma.join(likes, " ")}`, MAX_PAGE_CANDIDATES));
@@ -160,11 +161,11 @@ export async function GET(request: NextRequest) {
 
   // Notes, highlights, and tags.
   const termFilters = terms.map((term) => ({
-    OR: [{ selectedText: { contains: term } }, { note: { contains: term } }, { tags: { some: { value: { contains: term } } } }]
+    OR: [{ selectedText: { contains: term, mode: "insensitive" as const } }, { note: { contains: term, mode: "insensitive" as const } }, { tags: { some: { value: { contains: term, mode: "insensitive" as const } } } }]
   }));
   const meaningAnnotationIds = meaningHits.filter((hit) => hit.kind === "annotation").map((hit) => hit.refId);
   const annotationRows = await prisma.annotation.findMany({
-    where: mode === "exact" ? { AND: termFilters, ...(documentId ? { documentId } : {}) } : method === "meaning" ? { id: { in: meaningAnnotationIds } } : { ...(documentId ? { documentId } : {}) },
+    where: { AND: [mode === "exact" ? { AND: termFilters, ...(documentId ? { documentId } : {}) } : method === "meaning" ? { id: { in: meaningAnnotationIds } } : { ...(documentId ? { documentId } : {}) }, { document: { deletedAt: null } }] },
     include: { document: { select: { title: true } }, tags: true, citations: { select: { locatorValue: true }, take: 1 } },
     orderBy: { updatedAt: "desc" },
     take: mode === "exact" ? 200 : 1000
@@ -202,7 +203,7 @@ export async function GET(request: NextRequest) {
 
   const threadRows = mode === "exact"
     ? await prisma.researchThread.findMany({
-        where: { AND: terms.map((term) => ({ OR: [{ title: { contains: term } }, { description: { contains: term } }, { tags: { some: { value: { contains: term } } } }] })) },
+        where: { AND: terms.map((term) => ({ OR: [{ title: { contains: term, mode: "insensitive" as const } }, { description: { contains: term, mode: "insensitive" as const } }, { tags: { some: { value: { contains: term, mode: "insensitive" as const } } } }] })) },
         select: { id: true, title: true, _count: { select: { items: true } } },
         take: 20,
         orderBy: { updatedAt: "desc" }

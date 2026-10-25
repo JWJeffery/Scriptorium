@@ -18,7 +18,7 @@ const form = new FormData();
 form.set("file", new File([await textPdf([["Chapter one", "On the unity of the church."]])], "thread-fixture.pdf", { type: "application/pdf" }));
 form.set("title", "Thread fixture book");
 form.set("author", "Ada Lovelace");
-const uploaded = (await call("/api/core/files", { method: "POST", body: form })).body;
+const uploaded = (await call("/api/core/files?allowDuplicate=true", { method: "POST", body: form })).body;
 const annotation = (await call("/api/core/annotations", jsonInit("POST", {
   documentId: uploaded.document.id, versionId: uploaded.version.id, sourceId: uploaded.source.id, pageMapId: uploaded.pageMap.id,
   colorKey: "green", selectedText: "On the unity of the church.", note: "Key claim", tags: [],

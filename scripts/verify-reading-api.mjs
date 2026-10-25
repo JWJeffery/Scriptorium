@@ -16,7 +16,7 @@ const form = new FormData();
 form.set("file", new File([await textPdf([["One"], ["Two"], ["Three"], ["Four"]])], "reading.pdf", { type: "application/pdf" }));
 form.set("title", "Reading fixture");
 form.set("author", "Rae Reader");
-const uploaded = (await call("/api/core/files", { method: "POST", body: form })).body;
+const uploaded = (await call("/api/core/files?allowDuplicate=true", { method: "POST", body: form })).body;
 const documentId = uploaded.document.id;
 
 // --- bookmarks
