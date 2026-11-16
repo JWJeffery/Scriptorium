@@ -73,7 +73,7 @@ padlock (the certificate is fetched automatically; if it fails, the DNS record i
 Do this once, after you have finished the PostgreSQL move on your Codespace (`docs/POSTGRES_MIGRATION.md`).
 
 1. In the Codespace app: **Scholarly tools → Backup → Back up now**, then download the ZIP.
-2. Copy it to the server (from your own computer): `scp scriptorium-backup-*.zip root@<the IP>:/opt/scriptorium/`
+2. Copy it to the server (from your own computer): `scp -P 22022 scriptorium-backup-*.zip root@<the IP>:/opt/scriptorium/` (note the capital `-P` and port 22022)
 3. On the server:
    ```
    cd /opt/scriptorium
