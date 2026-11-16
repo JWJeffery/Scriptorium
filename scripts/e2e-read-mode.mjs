@@ -42,8 +42,22 @@ try {
   assert.ok(await page.locator(".ledgerTopbar").isVisible(), "top bar is visible before read mode");
   assert.equal(await page.locator(".readRail").count(), 0, "no tool rail before read mode");
 
-  // Enter read mode with the button.
-  await page.getByRole("button", { name: "Read mode" }).click();
+  // Scrolling past the bottom of a page opens the next one; scrolling up past the top goes back.
+  const pageNumberShown = () => page.evaluate(() => document.querySelector(".pdfPageControls strong")?.textContent);
+  await page.locator(".pdfFrameViewport").hover();
+  await page.mouse.wheel(0, 200);
+  await page.waitForTimeout(100);
+  await page.mouse.wheel(0, 200);
+  assert.ok(await until(page, () => document.querySelector(".pdfPageControls strong")?.textContent === "2"), `scrolling down turns to the next page (shows ${await pageNumberShown()})`);
+  await page.waitForTimeout(700);
+  await page.mouse.wheel(0, -200);
+  await page.waitForTimeout(100);
+  await page.mouse.wheel(0, -200);
+  assert.ok(await until(page, () => document.querySelector(".pdfPageControls strong")?.textContent === "1"), `scrolling up returns to the previous page (shows ${await pageNumberShown()})`);
+  await page.locator(".pdfTextRun", { hasText: "Faith" }).first().waitFor({ timeout: 10000 });
+
+  // Enter read mode with the full-screen button on the page toolbar.
+  await page.getByRole("button", { name: "Full-screen read mode" }).click();
   await page.locator(".readRail").waitFor({ timeout: 5000 });
   assert.ok(await page.locator(".ledgerWorkspace.readMode").count() === 1, "read mode class applied");
   assert.equal(await page.locator(".ledgerTopbar").isVisible(), false, "top bar is hidden in read mode");

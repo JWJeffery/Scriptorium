@@ -2416,3 +2416,22 @@ button:disabled { opacity: 0.5; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .readToast { animation-duration: 0.01s; animation-delay: 3s; }
 }
+
+/* The full-screen button at the end of the page toolbar. */
+.pdfZoomControls.pdfReadModeControl {
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.pdfZoomControls button.pdfReadModeButton {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pdfZoomControls button.pdfReadModeButton[aria-pressed="true"] {
+  border-color: #8a5a2b;
+  background: #f1e1c4;
+}

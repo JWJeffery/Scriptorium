@@ -78,6 +78,9 @@ type Props = {
   onClearSearch?: () => void;
   // Clicking a saved highlight (or its margin marker) on the page.
   onHighlightClick?: (id: string) => void;
+  // The full-screen read mode lives in the parent; this renders its button in the page toolbar.
+  readMode?: boolean;
+  onToggleReadMode?: () => void;
 };
 
 function isTextItem(item: unknown): item is TextItemLike {
@@ -281,7 +284,7 @@ function rectFromPoints(start: { x: number; y: number }, end: { x: number; y: nu
   };
 }
 
-export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageChange, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords, hasSelection, onClearSelection, searchTerms, onClearSearch, onHighlightClick }: Props) {
+export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageChange, highlights, onPageCountChange, onSelectionCapture, onStatusChange, onMetadataExtracted, authoritativePageText, authoritativeWords, hasSelection, onClearSelection, searchTerms, onClearSearch, onHighlightClick, readMode, onToggleReadMode }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -349,6 +352,58 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
     // fitWidth reads the latest sizes each render; re-subscribe when they change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageSize.width, containerWidth, fitScale]);
+
+  // Scrolling carries on from page to page: scroll past the bottom of a page and the next one opens
+  // at its top; scroll up past the top and the previous one opens at its bottom. A short extra pull
+  // is needed first so a stray flick at the edge does not turn the page.
+  const turnRef = useRef({ pageNumber, pageCount, onPageChange });
+  turnRef.current = { pageNumber, pageCount, onPageChange };
+  const pendingScrollRef = useRef<"top" | "bottom" | null>(null);
+
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return;
+    const PULL_NEEDED = 140;
+    const COOLDOWN_MS = 450;
+    let pull = 0;
+    let lastTurn = 0;
+    let resetTimer: number | undefined;
+    function onWheel(event: WheelEvent) {
+      // Pinch-zoom gestures and sideways scrolling are not page turns.
+      if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      const { pageNumber: current, pageCount: total, onPageChange: change } = turnRef.current;
+      if (!change) return;
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : 1);
+      const down = delta > 0;
+      const atEdge = down ? node!.scrollTop + node!.clientHeight >= node!.scrollHeight - 2 : node!.scrollTop <= 0;
+      const canTurn = down ? !total || current < total : current > 1;
+      if (!atEdge || !canTurn) { pull = 0; return; }
+      if (Date.now() - lastTurn < COOLDOWN_MS) { event.preventDefault(); return; }
+      if (Math.sign(pull) !== Math.sign(delta)) pull = 0;
+      pull += delta;
+      window.clearTimeout(resetTimer);
+      resetTimer = window.setTimeout(() => { pull = 0; }, 350);
+      if (Math.abs(pull) < PULL_NEEDED) return;
+      pull = 0;
+      lastTurn = Date.now();
+      pendingScrollRef.current = down ? "top" : "bottom";
+      event.preventDefault();
+      change(down ? current + 1 : current - 1);
+    }
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => { node.removeEventListener("wheel", onWheel); window.clearTimeout(resetTimer); };
+  }, []);
+
+  // Once a page has drawn, put the view where the reader expects: the top when moving forward (or
+  // jumping), the bottom when scrolling back into the previous page.
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return;
+    const where = pendingScrollRef.current ?? "top";
+    pendingScrollRef.current = null;
+    const frame = window.requestAnimationFrame(() => { node.scrollTop = where === "top" ? 0 : node.scrollHeight; });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pdfTextRuns]);
 
   // A click (not a drag) on a saved highlight opens it.
   const pressRef = useRef<{ x: number; y: number } | null>(null);
@@ -733,6 +788,24 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
             100%
           </button>
         </div>
+        {onToggleReadMode ? (
+          <div className="pdfZoomControls pdfReadModeControl">
+            <button
+              type="button"
+              className="pdfReadModeButton"
+              onClick={onToggleReadMode}
+              aria-pressed={Boolean(readMode)}
+              aria-label={readMode ? "Leave full-screen read mode" : "Full-screen read mode"}
+              title={readMode ? "Leave full-screen read mode (Esc or z)" : "Full-screen read mode (z)"}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {readMode
+                  ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+                  : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
+              </svg>
+            </button>
+          </div>
+        ) : null}
         {(searchTerms && searchTerms.length > 0) || hasSelection ? <div className="pdfToolbarExtras">
         {searchTerms && searchTerms.length > 0 ? (
           <button type="button" className="pdfClearSelection" onClick={onClearSearch} title="Remove the search highlight">
