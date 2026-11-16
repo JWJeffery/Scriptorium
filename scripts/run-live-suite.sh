@@ -29,6 +29,7 @@ done
 if [ "${SCRIPTORIUM_STORAGE_BACKEND:-}" = "s3" ]; then run node scripts/verify-object-storage.mjs; fi
 run node scripts/e2e-browser.mjs
 run node scripts/e2e-library.mjs
+run node scripts/e2e-read-mode.mjs
 # Last, because it empties the (throwaway) database and restores it from a backup.
 SCRIPTORIUM_ALLOW_WIPE=yes run node scripts/verify-backup-restore.mjs
 echo "== all live checks passed =="

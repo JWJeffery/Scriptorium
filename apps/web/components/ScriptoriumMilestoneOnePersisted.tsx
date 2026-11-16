@@ -16,6 +16,7 @@ import { labelForPage, pdfPageForLabel, type PageRangeSpec } from "../lib/page-l
 import { authorsToText } from "../lib/author-names";
 import { mergeServerRecords } from "../lib/annotation-sync";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
+import { ReadModeToolbar } from "./ReadModeToolbar";
 
 import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, ANNOTATIONS_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, bytes, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
 
@@ -48,6 +49,62 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [searchHighlight, setSearchHighlight] = useState<{ terms: string[]; pageNumber: number } | null>(null);
   const [compactLayout, setCompactLayout] = useState(false);
   const [canSignOut, setCanSignOut] = useState(false);
+  // Read mode: the page fills the screen, with a slim tool rail on the left. With the highlighter on,
+  // selecting text saves a highlight straight away in the chosen colour.
+  const [readMode, setReadMode] = useState(false);
+  const [highlighterOn, setHighlighterOn] = useState(false);
+  const [autoSavePending, setAutoSavePending] = useState(false);
+  const workspaceRef = useRef<HTMLElement | null>(null);
+  const readModeRef = useRef(false);
+  const highlighterOnRef = useRef(false);
+  readModeRef.current = readMode;
+  highlighterOnRef.current = readMode && highlighterOn;
+
+  const enterReadMode = useCallback(() => {
+    setReadMode(true);
+    const target = workspaceRef.current;
+    if (target && !document.fullscreenElement && typeof target.requestFullscreen === "function") {
+      // Real full screen where the browser allows it; the page still fills the window if it does not.
+      target.requestFullscreen().catch(() => undefined);
+    }
+  }, []);
+
+  const exitReadMode = useCallback(() => {
+    setReadMode(false);
+    setHighlighterOn(false);
+    setAutoSavePending(false);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      // Escape (or the browser's own control) left full screen: leave read mode with it.
+      if (!document.fullscreenElement && readModeRef.current) {
+        setReadMode(false);
+        setHighlighterOn(false);
+        setAutoSavePending(false);
+      }
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    function onEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && readModeRef.current && !document.fullscreenElement) setReadMode(false);
+    }
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, []);
+
+  useEffect(() => {
+    // The highlighter saves the moment a selection is captured.
+    if (!autoSavePending || !anchor || !selectedText.trim()) return;
+    setAutoSavePending(false);
+    void saveRecord();
+    // saveRecord reads the state of this render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSavePending, anchor, selectedText]);
 
   useEffect(() => {
     // If the login session runs out, send the reader to the sign-in page instead of showing errors.
@@ -190,6 +247,8 @@ export function ScriptoriumMilestoneOnePersisted() {
       if (key === "?") return handled(() => setHelpOpen((open) => !open));
       if (helpOpen && key === "Escape") return handled(() => setHelpOpen(false));
       if (!documentRecord) return;
+      if (key === "z") return handled(() => (readModeRef.current ? exitReadMode() : enterReadMode()));
+      if (key === "h" && readModeRef.current) return handled(() => setHighlighterOn((on) => !on));
       if (/^[0-9]$/.test(key)) {
         const index = key === "0" ? 9 : Number(key) - 1;
         return handled(() => { setSelectedColor(highlightColors[index].key); setStatus(`Highlight meaning: ${highlightColors[index].defaultMeaning}.`); });
@@ -417,6 +476,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
     setInspectorOpen(true);
+    if (highlighterOnRef.current) setAutoSavePending(true);
     setStatus("Captured selected text, context, and highlight rectangles from the PDF page. Preview highlight is shown until saved.");
   }, []);
 
@@ -425,6 +485,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
     setInspectorOpen(true);
+    if (highlighterOnRef.current) setAutoSavePending(true);
     setStatus(`Captured selected text, context, offsets, and line locator ${lineLocator(nextAnchor)}.`);
   }, []);
 
@@ -1033,7 +1094,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   }
 
   return (
-    <section className={`ledgerWorkspace${inspectorPinned ? " inspectorPinned" : ""}${inspectorOpen ? " inspectorOpen" : ""}`} aria-label="Scriptorium scholarly reading workspace">
+    <section ref={workspaceRef} className={`ledgerWorkspace${inspectorPinned ? " inspectorPinned" : ""}${inspectorOpen ? " inspectorOpen" : ""}${readMode ? " readMode" : ""}`} aria-label="Scriptorium scholarly reading workspace">
       <a className="skipLink" href="#ledger-reader">Skip to document</a>
       <header className="ledgerTopbar">
         <div className="ledgerBrand">
@@ -1047,6 +1108,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           {bookmarkDocumentId ? <button className="compactAction" type="button" aria-pressed={bookmarks.some((bookmark) => bookmark.pdfPage === currentPage)} onClick={() => void toggleBookmark()} title="Bookmark this page (b)">{bookmarks.some((bookmark) => bookmark.pdfPage === currentPage) ? "★ Bookmarked" : "☆ Bookmark"}</button> : null}
           <button className="compactAction" type="button" onClick={() => setSearchOpen(true)} title="Search (Ctrl+K or /)">Search</button>
           <button className="compactAction" type="button" onClick={() => setHelpOpen(true)} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
+          <button className="compactAction" type="button" onClick={enterReadMode} disabled={!documentRecord} title="Read mode: the page fills the screen (z)">Read mode</button>
           <a className="compactAction" href="/library" title="Your library: every book, with filters and collections">Library</a>
           <button className="compactAction toolsToggle" type="button" onClick={() => setToolsOpen(true)}>Scholarly tools{pendingSplitOcr ? " · attention" : ""}</button>
           <button className="compactAction pinToggle" type="button" aria-pressed={inspectorPinned} onClick={toggleInspectorPin}>{inspectorPinned ? "Unpin inspector" : "Pin inspector"}</button>
@@ -1212,6 +1274,21 @@ export function ScriptoriumMilestoneOnePersisted() {
 
       <p className="ledgerStatus" role="status" aria-live="polite">{status}</p>
 
+      {readMode ? (
+        <>
+          <ReadModeToolbar
+            colors={highlightColors}
+            selectedColor={selectedColor}
+            highlighterOn={highlighterOn}
+            onSelectColor={(key) => { setSelectedColor(key); setStatus(`Highlight meaning: ${(highlightColors.find((color) => color.key === key) ?? highlightColors[0]).defaultMeaning}.`); }}
+            onToggleHighlighter={() => setHighlighterOn((on) => !on)}
+            onSearch={() => setSearchOpen(true)}
+            onExit={exitReadMode}
+          />
+          <p key={status} className="readToast" aria-hidden="true">{status}</p>
+        </>
+      ) : null}
+
       {helpOpen ? (
         <>
           <button className="drawerScrim" type="button" onClick={() => setHelpOpen(false)} aria-label="Close shortcuts" />
@@ -1221,6 +1298,8 @@ export function ScriptoriumMilestoneOnePersisted() {
               <dl className="shortcutList">
                 <dt>← → or PageUp / PageDown</dt><dd>Previous / next page (also j and k)</dd>
                 <dt>Home / End</dt><dd>First / last page</dd>
+                <dt>z</dt><dd>Read mode: the page fills the screen (press again, or Esc, to leave)</dd>
+                <dt>h</dt><dd>In read mode: turn the highlighter on or off</dd>
                 <dt>1 – 9, 0</dt><dd>Choose the highlight meaning (colour)</dd>
                 <dt>n</dt><dd>Write a note for the selection</dd>
                 <dt>Ctrl / ⌘ + Enter</dt><dd>Save, while typing a note</dd>
