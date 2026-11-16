@@ -16,6 +16,12 @@ form.set("title", title);
 const upload = await fetch(`${base}/api/core/files?allowDuplicate=true`, { method: "POST", body: form });
 assert.ok(upload.ok, "fixture upload");
 
+// The Highlights panel starts closed; open it when a check needs to look inside.
+const openHighlights = async (page) => {
+  const button = page.getByRole("button", { name: /^Highlights/ });
+  if ((await button.getAttribute("aria-pressed")) !== "true") await button.click();
+};
+
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
@@ -44,6 +50,7 @@ try {
 
   await page.reload();
   await page.locator(".pdfTextRun", { hasText: "Faith" }).first().waitFor({ timeout: 20000 });
+  await openHighlights(page);
   await page.locator(".ledgerRecords", { hasText: "End-to-end note" }).waitFor({ timeout: 10000 });
 
   assert.deepEqual(errors, [], "no uncaught browser errors");

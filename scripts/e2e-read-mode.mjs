@@ -27,6 +27,12 @@ async function until(page, predicate, arg, timeout = 10000) {
   return false;
 }
 
+// The Highlights panel starts closed; open it when a check needs to look inside.
+const openHighlights = async (page) => {
+  const button = page.getByRole("button", { name: /^Highlights/ });
+  if ((await button.getAttribute("aria-pressed")) !== "true") await button.click();
+};
+
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
@@ -148,6 +154,7 @@ try {
   await page.getByRole("button", { name: "Exit read mode" }).click();
   await page.locator(".ledgerTopbar").waitFor({ state: "visible", timeout: 5000 });
   assert.equal(await page.locator(".readRail").count(), 0, "tool rail is gone after exit");
+  await openHighlights(page);
   await page.locator(".ledgerRecords", { hasText: "Faith" }).waitFor({ timeout: 10000 });
   assert.ok(await page.locator(".ledgerRecords .recordColor").first().evaluate((node) => getComputedStyle(node).backgroundColor !== ""), "highlight colour shows");
 
@@ -159,6 +166,7 @@ try {
 
   // The highlight is a real, reloadable record, and the ledger says only what matters.
   await page.reload();
+  await openHighlights(page);
   await page.locator(".ledgerRecords", { hasText: "Faith" }).waitFor({ timeout: 15000 });
   assert.ok(await page.locator(".ledgerRecords", { hasText: "A comment from read mode" }).count() === 1, "the comment added to a saved highlight was kept");
   assert.ok(await page.locator(".ledgerRecords", { hasText: "A pending comment" }).count() === 1, "the comment saved with a selection was kept");

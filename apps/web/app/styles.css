@@ -2746,3 +2746,138 @@ button:disabled { opacity: 0.5; cursor: default; }
   border-radius: 12px;
   background: transparent;
 }
+
+/* ---- Reading first: the page gets the room; Highlights and Details open on demand. ---- */
+.ledgerBody {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "reader";
+  min-height: calc(100vh - 64px);
+}
+
+.ledgerReader { grid-area: reader; grid-column: auto; }
+.ledgerPane { grid-area: left; }
+.inspectorPane { grid-area: right; grid-column: auto; }
+
+.ledgerWorkspace:not(.leftOpen) .ledgerPane { display: none; }
+
+.ledgerWorkspace.leftOpen .ledgerBody {
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-areas: "left reader";
+}
+
+.ledgerWorkspace.inspectorPinned .ledgerBody {
+  grid-template-columns: minmax(0, 1fr) 390px;
+  grid-template-areas: "reader right";
+}
+
+.ledgerWorkspace.leftOpen.inspectorPinned .ledgerBody {
+  grid-template-columns: 300px minmax(0, 1fr) 390px;
+  grid-template-areas: "left reader right";
+}
+
+.ledgerScrim { display: none; }
+
+@media (max-width: 1500px) {
+  .ledgerWorkspace.leftOpen .ledgerBody { grid-template-columns: 280px minmax(0, 1fr); }
+  .ledgerWorkspace.inspectorPinned .ledgerBody { grid-template-columns: minmax(0, 1fr) 360px; }
+  .ledgerWorkspace.leftOpen.inspectorPinned .ledgerBody { grid-template-columns: 280px minmax(0, 1fr) 360px; }
+}
+
+@media (max-width: 1279px) {
+  /* Details becomes a drawer: only Highlights can still sit beside the page. */
+  .ledgerWorkspace .ledgerBody,
+  .ledgerWorkspace.inspectorPinned .ledgerBody {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "reader";
+  }
+
+  .ledgerWorkspace.leftOpen .ledgerBody,
+  .ledgerWorkspace.leftOpen.inspectorPinned .ledgerBody {
+    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-areas: "left reader";
+  }
+}
+
+@media (max-width: 1023px) {
+  /* Highlights becomes a drawer too. */
+  .ledgerWorkspace .ledgerBody,
+  .ledgerWorkspace.inspectorPinned .ledgerBody,
+  .ledgerWorkspace.leftOpen .ledgerBody,
+  .ledgerWorkspace.leftOpen.inspectorPinned .ledgerBody {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "reader";
+  }
+
+  .ledgerWorkspace:not(.leftOpen) .ledgerPane { display: flex; }
+  .ledgerScrim { display: block; }
+}
+
+/* The page may use the room the status bar used to take. */
+.ledgerReader .pdfPanel { min-height: calc(100vh - 100px); }
+.ledgerReader .pdfReaderShell { height: calc(100vh - 100px); }
+
+/* Messages appear briefly instead of in a permanent bar; the bar stays for screen readers. */
+.ledgerStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  box-shadow: none;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.ledgerWorkspace:not(.readMode) .readToast { top: 76px; }
+
+/* Top bar buttons that open a panel. */
+.compactAction[aria-pressed="true"] {
+  border-color: var(--line-3);
+  background: var(--active);
+  font-weight: 700;
+}
+
+.countBadge {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  color: var(--on-accent);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.moreMenu .themeMenuButton { position: relative; }
+
+.moreMenuBadge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent-warm);
+}
+
+/* Top bar buttons: all alike. Highlights shows on every width; none is louder than the others while closed. */
+.compactAction.ledgerToggle { display: inline-flex; align-items: center; }
+
+.compactAction.inspectorToggle,
+.compactAction.toolsToggle {
+  border-color: var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.compactAction.inspectorToggle[aria-pressed="true"] {
+  border-color: var(--line-3);
+  background: var(--active);
+}
+
+/* "Clear selection" lives in the Details panel (and the read-mode card); not also over the page. */
+.pdfClearSelection[data-kind="selection"] { display: none; }

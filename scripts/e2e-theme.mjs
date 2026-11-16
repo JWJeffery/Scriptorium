@@ -52,6 +52,7 @@ try {
   await page.locator(".pdfTextRun").first().waitFor({ timeout: 20000 });
   const canvasFilter = () => page.evaluate(() => getComputedStyle(document.querySelector(".pdfCanvas")).filter);
   assert.ok((await canvasFilter()).includes("invert"), "the PDF page is inverted in the dark theme");
+  await page.getByRole("button", { name: /^Highlights/ }).click();
   const panelBackground = luminance(await page.evaluate(() => getComputedStyle(document.querySelector(".ledgerPane")).backgroundColor === "rgba(0, 0, 0, 0)" ? getComputedStyle(document.querySelector(".ledgerWorkspace")).backgroundColor : getComputedStyle(document.querySelector(".ledgerPane")).backgroundColor));
   assert.ok(panelBackground < 0.25, "the side panels are dark");
   // No form control is left bright white.
