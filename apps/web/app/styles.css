@@ -989,7 +989,7 @@ h2 {
 
 :root[data-theme="dark"]:not([data-page="light"]) .pdfHighlightBox {
   mix-blend-mode: normal;
-  opacity: 0.4;
+  opacity: 0.3;
 }
 
 body {

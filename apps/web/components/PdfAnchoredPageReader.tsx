@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import { snapRectsToOcrLines } from "../lib/highlight-geometry";
+import { mergeLineRects, snapRectsToOcrLines } from "../lib/highlight-geometry";
 import { matchWordIndexes } from "../lib/search-text";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
@@ -850,7 +850,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
           <canvas ref={canvasRef} className="pdfCanvas" />
           <div className="pdfHighlightLayer" aria-hidden="true">
             {highlights.filter((highlight) => highlight.anchor.pageNumber === pageNumber).flatMap((highlight) =>
-              (usingOcrLayer ? snapRectsToOcrLines(highlight.anchor.rects, authoritativeWords) : highlight.anchor.rects).map((rect, index) => (
+              (usingOcrLayer ? snapRectsToOcrLines(highlight.anchor.rects, authoritativeWords) : mergeLineRects(highlight.anchor.rects)).map((rect, index) => (
                 <span className="pdfHighlightBox" key={`${highlight.id}-${index}`} style={{ background: highlight.color, left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
               ))
             )}
