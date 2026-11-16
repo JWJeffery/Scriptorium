@@ -751,16 +751,20 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
             className={selectionMode === "highlight" ? "active" : undefined}
             onClick={() => setSelectionMode("highlight")}
             disabled={!usingOcrLayer}
+            aria-label="Highlight text"
+            title="Highlight text: select words by dragging across them"
           >
-            Highlight text
+            Text
           </button>
           <button
             type="button"
             className={selectionMode === "box" ? "active" : undefined}
             onClick={() => setSelectionMode("box")}
             disabled={!usingOcrLayer}
+            aria-label="Selection box"
+            title="Selection box: draw a rectangle around the words"
           >
-            Selection box
+            Box
           </button>
         </div>
         <div className="pdfZoomControls">
@@ -784,7 +788,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
           <button type="button" className="pdfZoomReset" onClick={fitWidth} title="Fit the page to the width of the reading area (f)">
             Fit width
           </button>
-          <button type="button" className="pdfZoomReset" onClick={() => setZoomLevel(1)} disabled={zoomLevel === 1}>
+          <button type="button" className="pdfZoomReset pdfZoomHundred" onClick={() => setZoomLevel(1)} disabled={zoomLevel === 1}>
             100%
           </button>
         </div>
@@ -825,6 +829,10 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
         ref={viewportRef}
         style={{ height: pageSize.height ? pageSize.height * finalScale : undefined }}
       >
+        <div
+          className="pdfScaledBox"
+          style={{ width: pageSize.width ? pageSize.width * finalScale : undefined, height: pageSize.height ? pageSize.height * finalScale : undefined }}
+        >
         <div
           className="pdfPageFrame"
           onMouseUp={useBoxSelection ? handleOcrMouseUp : captureSelection}
@@ -872,6 +880,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
               </span>
             ))}
           </div>
+        </div>
         </div>
       </div>
     </div>

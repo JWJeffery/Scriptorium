@@ -2435,3 +2435,52 @@ button:disabled { opacity: 0.5; cursor: default; }
   border-color: #8a5a2b;
   background: #f1e1c4;
 }
+
+/* Keep the page toolbar on one row: it floats over the page, so it must stay compact. */
+.ledgerReader .pdfToolbar {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.ledgerReader .pdfToolbar .pdfSelectionModeToggle button {
+  padding: 8px 11px;
+}
+
+.ledgerReader .pdfToolbar .pdfZoomControls {
+  gap: 5px;
+}
+
+.ledgerReader .pdfToolbar .pdfZoomControls button.pdfZoomReset {
+  padding: 0 11px;
+}
+
+.ledgerReader .pdfToolbar .pdfPageControls {
+  gap: 5px;
+  padding-right: 8px;
+}
+
+.pdfZoomControls.pdfReadModeControl {
+  padding-left: 6px;
+}
+
+@media (max-width: 1360px) {
+  /* Very narrow windows: the "100%" reset is the least useful control. */
+  .ledgerReader .pdfToolbar .pdfZoomHundred {
+    display: none;
+  }
+}
+
+/* The page is scaled for zoom from its top-left corner. This box takes the zoomed size so the page is
+   centred, and scrolls, by what the reader actually sees rather than by its unzoomed width. */
+.pdfScaledBox {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 auto;
+}
+
+.pdfScaledBox > .pdfPageFrame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+}

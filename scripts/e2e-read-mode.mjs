@@ -91,6 +91,31 @@ try {
   await page.keyboard.press("h");
   await page.locator(".readPalette").waitFor({ state: "detached", timeout: 5000 });
 
+  // Zoomed in past the window width, the page starts at the left edge (it is not pushed off to the
+  // right) and can be scrolled across to its right edge.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await page.waitForTimeout(300);
+  for (let step = 0; step < 8; step += 1) await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(300);
+  const geometry = () => page.evaluate(() => {
+    const viewportBox = document.querySelector(".pdfFrameViewport");
+    const v = viewportBox.getBoundingClientRect();
+    const f = document.querySelector(".pdfPageFrame").getBoundingClientRect();
+    return { left: Math.round(f.left - v.left), rightGap: Math.round(v.right - f.right), pageWider: f.width > v.width + 20, scrollable: viewportBox.scrollWidth > viewportBox.clientWidth + 20 };
+  });
+  const atStart = await geometry();
+  assert.ok(atStart.pageWider, "the zoomed page is wider than the window");
+  assert.ok(atStart.left >= -2 && atStart.left < 12, `zoomed page starts at the left edge, not pushed right (left offset ${atStart.left})`);
+  assert.ok(atStart.scrollable, "the zoomed page can be scrolled sideways");
+  await page.evaluate(() => { document.querySelector(".pdfFrameViewport").scrollLeft = 99999; });
+  await page.waitForTimeout(200);
+  const atEnd = await geometry();
+  assert.ok(atEnd.rightGap >= -2 && atEnd.rightGap < 12, `scrolled across, the page's right edge is reachable (gap ${atEnd.rightGap})`);
+  await page.getByRole("button", { name: "Zoom out" }).click({ clickCount: 1 });
+  await page.evaluate(() => { document.querySelector(".pdfFrameViewport").scrollLeft = 0; });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.waitForTimeout(300);
+
   // Leave read mode with the exit button: normal layout returns and the highlight is in the records.
   await page.getByRole("button", { name: "Exit read mode" }).click();
   await page.locator(".ledgerTopbar").waitFor({ state: "visible", timeout: 5000 });
