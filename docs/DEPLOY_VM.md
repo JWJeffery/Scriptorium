@@ -23,16 +23,18 @@ copy-and-paste commands, one at a time.
 
 ## 2. Prepare the server (once)
 
-Connect with `ssh root@<the IP>` (or the user Spaceship gave you), then run these one at a time:
+Spaceship's VPS listens for SSH on **port 22022**, not the usual 22. Connect with `ssh -p 22022 root@<the IP>`,
+then run these one at a time:
 
 ```
 apt-get update && apt-get -y upgrade
 curl -fsSL https://get.docker.com | sh
 apt-get -y install ufw git
-ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable
+ufw allow 22022/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable
 ```
 
-That installs Docker and opens only the SSH, web and secure-web doors.
+That installs Docker and opens only the SSH (22022), web and secure-web doors. Do not use `ufw allow OpenSSH` here:
+it opens port 22, and you would lock yourself out of 22022.
 
 ## 3. Get Scriptorium and set it up
 
