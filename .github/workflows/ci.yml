@@ -216,7 +216,8 @@ jobs:
 
   mysql-migration:
     name: PostgreSQL migration deploy
-    runs-on: ubuntu-latest
+    # Pinned: Playwright cannot yet install Chromium on the Ubuntu 26.04 that ubuntu-latest became.
+    runs-on: ubuntu-24.04
     env:
       DATABASE_URL: postgresql://scriptorium:scriptorium@127.0.0.1:5432/scriptorium
     services:
