@@ -21,7 +21,7 @@ const requiredComponentTerms = [
   "Save CSL source metadata",
   "validateSource",
   "persistSourceMetadata",
-  "Saved CSL-compatible source metadata to the database",
+  "Book information saved",
   "generatedCitation"
 ];
 
