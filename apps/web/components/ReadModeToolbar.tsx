@@ -2,6 +2,7 @@
 
 import type { HighlightColor, HighlightLegend } from "../lib/highlights";
 import { HighlightMeaning, swatchName } from "./HighlightMeaning";
+import { ThemeMenu } from "./ThemeMenu";
 
 // The small toolbar down the left edge of read mode. The highlighter button opens a floating palette
 // of the highlight meanings; while it is on, selecting text saves a highlight straight away.
@@ -70,6 +71,7 @@ export function ReadModeToolbar({
       <button type="button" className="readRailButton" onClick={onSearch} title="Search (Ctrl+K or /)" aria-label="Search">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" /><path d="M16 16l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
       </button>
+      <ThemeMenu placement="right" className="readRailTheme" />
     </nav>
   );
 }

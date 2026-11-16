@@ -19,6 +19,7 @@ import { mergeServerRecords } from "../lib/annotation-sync";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 import { ReadModeToolbar } from "./ReadModeToolbar";
 import { ReadNoteCard } from "./ReadNoteCard";
+import { ThemeMenu } from "./ThemeMenu";
 
 import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
 
@@ -1168,6 +1169,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           {bookmarkDocumentId ? <button className="compactAction" type="button" aria-pressed={bookmarks.some((bookmark) => bookmark.pdfPage === currentPage)} onClick={() => void toggleBookmark()} title="Bookmark this page (b)">{bookmarks.some((bookmark) => bookmark.pdfPage === currentPage) ? "★ Bookmarked" : "☆ Bookmark"}</button> : null}
           <button className="compactAction" type="button" onClick={() => setSearchOpen(true)} title="Search (Ctrl+K or /)">Search</button>
           <button className="compactAction" type="button" onClick={() => setHelpOpen(true)} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
+          <ThemeMenu />
           <a className="compactAction" href="/library" title="Your library: every book, with filters and collections">Library</a>
           <button className="compactAction toolsToggle" type="button" onClick={() => setToolsOpen(true)}>Scholarly tools{pendingSplitOcr ? " · attention" : ""}</button>
           <button className="compactAction pinToggle" type="button" aria-pressed={inspectorPinned} onClick={toggleInspectorPin}>{inspectorPinned ? "Unpin inspector" : "Pin inspector"}</button>

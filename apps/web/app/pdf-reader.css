@@ -8,7 +8,7 @@
 .pageStepper button {
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #fff;
+  background: var(--surface);
   color: var(--accent-strong);
   padding: 8px 10px;
 }
@@ -39,7 +39,7 @@
   padding: 9px 11px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fffdf8;
+  background: var(--panel);
   color: var(--accent-strong);
   line-height: 1.35;
 }
@@ -97,7 +97,7 @@
   padding: 8px 12px;
   border-radius: 999px;
   background: var(--accent-strong);
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: 0 8px 22px rgb(33 31 27 / 18%);
 }
 
@@ -134,7 +134,7 @@
 .pdfDragRect {
   position: absolute;
   display: block;
-  border: 1px dashed var(--accent-strong, #8a4b25);
+  border: 1px dashed var(--accent-strong, var(--accent-warm));
   background: rgb(138 75 37 / 12%);
   pointer-events: none;
 }
@@ -216,7 +216,7 @@
   border-radius: 50%;
   font-size: 12px;
   line-height: 20px;
-  color: #3b2412;
+  color: var(--ink-strong);
   cursor: pointer;
   pointer-events: auto;
   box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
