@@ -817,7 +817,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
           </button>
         ) : null}
         {hasSelection ? (
-          <button type="button" className="pdfClearSelection" onClick={onClearSelection}>
+          <button type="button" className="pdfClearSelection" data-kind="selection" onClick={onClearSelection}>
             Clear selection
           </button>
         ) : null}

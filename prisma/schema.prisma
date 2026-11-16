@@ -91,6 +91,9 @@ model Document {
   tags          DocumentTag[]
   collections   ItemCollection[]
 
+  // The names the reader gave this book's custom highlight colours, as JSON text ({"purple":"Heresy"}).
+  highlightLegend String? @db.Text
+
   @@index([title])
   @@index([workflowState])
   @@index([deletedAt])

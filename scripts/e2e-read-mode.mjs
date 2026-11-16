@@ -73,9 +73,10 @@ try {
   assert.equal(await page.locator(".readPalette").count(), 0, "palette closed until the highlighter is chosen");
   await page.getByRole("button", { name: "Highlighter", exact: true }).click();
   await page.locator(".readPalette").waitFor({ timeout: 5000 });
-  assert.equal(await page.locator(".readPaletteSwatch").count(), 10, "all ten highlight meanings are offered");
-  await page.getByRole("button", { name: "Primary claim" }).click();
-  assert.ok(await page.locator(".readPaletteSwatch.active").getAttribute("aria-label") === "Primary claim", "chosen meaning is marked");
+  const meanings = await page.locator(".readPaletteSwatch").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
+  assert.deepEqual(meanings, ["Thesis", "Secondary argument", "Supporting evidence", "Interesting point", "Other (purple)", "Other (teal)"], "the highlight meanings are the useful ones");
+  await page.getByRole("button", { name: "Supporting evidence" }).click();
+  assert.ok(await page.locator(".readPaletteSwatch.active").getAttribute("aria-label") === "Supporting evidence", "chosen meaning is marked");
 
   // With the highlighter on, a selection is saved by itself, with no form and no Save button.
   const word = page.locator(".pdfTextRun", { hasText: "Faith" }).first();
@@ -87,9 +88,36 @@ try {
   await page.mouse.up();
   assert.ok(await until(page, () => document.querySelector(".readToast")?.textContent?.toLowerCase().includes("saved")), "a saved confirmation appears");
 
+  // The highlight just saved can take a comment, from the same screen.
+  await page.locator(".readNoteCard").waitFor({ timeout: 5000 });
+  await page.locator(".readNoteInput").fill("A comment from read mode");
+  await page.getByRole("button", { name: "Save comment" }).click();
+  await page.locator(".readNoteCard").waitFor({ state: "detached", timeout: 5000 });
+
+  // One of the "Other" colours can be named for this book; the name sticks after a reload.
+  await page.getByRole("button", { name: "Other (purple)" }).click();
+  await page.locator(".readPalette").getByLabel("Name for this highlight colour").fill("Heresy");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(600);
+  assert.ok(await page.getByRole("button", { name: "Heresy", exact: true }).count() === 1, "the custom colour shows its new name");
+
   // Turn the highlighter off with its key; the palette goes away.
   await page.keyboard.press("h");
   await page.locator(".readPalette").waitFor({ state: "detached", timeout: 5000 });
+
+  // With the highlighter off, a selection waits for Save and has room for a comment: nothing is lost on leaving.
+  const again = page.locator(".pdfTextRun", { hasText: "Faith" }).first();
+  const againBox = await again.boundingBox();
+  assert.ok(againBox, "text layer is still positioned");
+  await page.mouse.move(againBox.x + 1, againBox.y + againBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(againBox.x + againBox.width - 1, againBox.y + againBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.locator(".readNoteCard").waitFor({ timeout: 5000 });
+  assert.ok((await page.locator(".readNoteCard").innerText()).includes("Save this highlight"), "an unsaved selection offers Save");
+  await page.locator(".readNoteInput").fill("A pending comment");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.locator(".readNoteCard").waitFor({ state: "detached", timeout: 5000 });
 
   // Zoomed in past the window width, the page starts at the left edge (it is not pushed off to the
   // right) and can be scrolled across to its right edge.
@@ -129,9 +157,20 @@ try {
   await page.keyboard.press("z");
   await page.locator(".readRail").waitFor({ state: "detached", timeout: 5000 });
 
-  // The highlight is a real, reloadable record.
+  // The highlight is a real, reloadable record, and the ledger says only what matters.
   await page.reload();
   await page.locator(".ledgerRecords", { hasText: "Faith" }).waitFor({ timeout: 15000 });
+  assert.ok(await page.locator(".ledgerRecords", { hasText: "A comment from read mode" }).count() === 1, "the comment added to a saved highlight was kept");
+  assert.ok(await page.locator(".ledgerRecords", { hasText: "A pending comment" }).count() === 1, "the comment saved with a selection was kept");
+  assert.ok(await page.locator(".ledgerRecords", { hasText: "Supporting evidence" }).count() >= 1, "the record shows its meaning");
+  const ledgerText = await page.locator(".ledgerPane").innerText();
+  for (const noise of ["Current snapshot", "saved in the database", "database-linked", "checksum", "current snapshot"]) {
+    assert.ok(!ledgerText.includes(noise), `the ledger does not show "${noise}"`);
+  }
+  await page.getByRole("button", { name: "Full-screen read mode" }).click();
+  await page.getByRole("button", { name: "Highlighter", exact: true }).click();
+  assert.ok(await page.getByRole("button", { name: "Heresy", exact: true }).count() === 1, "the custom name was kept for this book");
+  await page.getByRole("button", { name: "Exit read mode" }).click();
 
   assert.deepEqual(errors, [], "no uncaught browser errors");
   console.log("Read mode verified: full-window page, left tool rail, floating palette, highlight saved on select, exit and key toggles.");

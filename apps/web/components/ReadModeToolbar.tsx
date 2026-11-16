@@ -1,11 +1,14 @@
 "use client";
 
-import type { HighlightColor } from "../lib/highlights";
+import type { HighlightColor, HighlightLegend } from "../lib/highlights";
+import { HighlightMeaning, swatchName } from "./HighlightMeaning";
 
 // The small toolbar down the left edge of read mode. The highlighter button opens a floating palette
 // of the highlight meanings; while it is on, selecting text saves a highlight straight away.
 export function ReadModeToolbar({
   colors,
+  legend,
+  onRename,
   selectedColor,
   highlighterOn,
   onSelectColor,
@@ -14,6 +17,8 @@ export function ReadModeToolbar({
   onExit
 }: {
   colors: HighlightColor[];
+  legend: HighlightLegend;
+  onRename: (key: string, label: string) => void;
   selectedColor: string;
   highlighterOn: boolean;
   onSelectColor: (key: string) => void;
@@ -50,14 +55,14 @@ export function ReadModeToolbar({
                   key={color.key}
                   className={`readPaletteSwatch${color.key === selectedColor ? " active" : ""}`}
                   style={{ background: color.color }}
-                  aria-label={color.defaultMeaning}
+                  aria-label={swatchName(color.key, legend)}
                   aria-pressed={color.key === selectedColor}
-                  title={color.defaultMeaning}
+                  title={swatchName(color.key, legend)}
                   onClick={() => onSelectColor(color.key)}
                 />
               ))}
             </div>
-            <p className="readPaletteMeaning">{active.defaultMeaning}</p>
+            <HighlightMeaning className="readPaletteMeaning" colorKey={active.key} legend={legend} onRename={onRename} />
             <button type="button" className="readPaletteDone" onClick={onToggleHighlighter}>Done</button>
           </div>
         ) : null}

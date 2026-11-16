@@ -2484,3 +2484,100 @@ button:disabled { opacity: 0.5; cursor: default; }
   left: 0;
   margin: 0;
 }
+
+/* Naming one of the "Other" highlight colours for the book being read. */
+.meaningInput {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.readPalette .meaningInput {
+  font-size: 0.82rem;
+}
+
+/* The card for keeping a highlight with a comment, in read mode. */
+.readNoteCard {
+  position: fixed;
+  z-index: 60;
+  right: 18px;
+  bottom: 86px;
+  display: grid;
+  gap: 10px;
+  width: min(340px, calc(100vw - 110px));
+  padding: 14px;
+  border: 1px solid #d9cab4;
+  border-radius: 16px;
+  background: rgb(255 252 246 / 98%);
+  box-shadow: 0 14px 34px rgb(49 32 17 / 24%);
+}
+
+.readNoteTitle {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.readNoteExcerpt {
+  display: -webkit-box;
+  margin: 0;
+  padding: 6px 10px;
+  overflow: hidden;
+  border-left: 3px solid #d9cab4;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.readNoteSwatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.readNoteInput {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+.readNoteActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.readNoteActions button {
+  padding: 7px 16px;
+  border: 1px solid #cdb998;
+  border-radius: 999px;
+  background: #fff;
+  color: #3a2c1c;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.readNoteActions .readNotePrimary {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  color: #fff;
+}
+
+/* In read mode the comment card has its own Discard, so the floating "Clear selection" chip is not needed. */
+.ledgerWorkspace.readMode .pdfClearSelection[data-kind="selection"] {
+  display: none;
+}

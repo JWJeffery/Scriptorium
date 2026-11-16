@@ -2,7 +2,8 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { highlightColors } from "../lib/highlights";
+import { highlightColors, allHighlightColors, findHighlightColor, meaningFor, parseLegend, type HighlightLegend } from "../lib/highlights";
+import { HighlightMeaning, swatchName } from "./HighlightMeaning";
 import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
 import { ScholarlyToolsPanel, type ImportedReadingNoteRecord } from "./ScholarlyToolsPanel";
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
@@ -17,8 +18,9 @@ import { authorsToText } from "../lib/author-names";
 import { mergeServerRecords } from "../lib/annotation-sync";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 import { ReadModeToolbar } from "./ReadModeToolbar";
+import { ReadNoteCard } from "./ReadNoteCard";
 
-import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, ANNOTATIONS_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, bytes, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
+import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
 
 export function ScriptoriumMilestoneOnePersisted() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
@@ -51,14 +53,41 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [canSignOut, setCanSignOut] = useState(false);
   // Read mode: the page fills the screen, with a slim tool rail on the left. With the highlighter on,
   // selecting text saves a highlight straight away in the chosen colour.
+  const [legend, setLegend] = useState<HighlightLegend>({});
   const [readMode, setReadMode] = useState(false);
   const [highlighterOn, setHighlighterOn] = useState(false);
   const [autoSavePending, setAutoSavePending] = useState(false);
+  const [savedCardOpen, setSavedCardOpen] = useState(false);
+  const [cardNote, setCardNote] = useState("");
   const workspaceRef = useRef<HTMLElement | null>(null);
   const readModeRef = useRef(false);
   const highlighterOnRef = useRef(false);
   readModeRef.current = readMode;
   highlighterOnRef.current = readMode && highlighterOn;
+
+  // The names given to this book's custom highlight colours: kept with the book on the server.
+  const legendDocumentId = documentRecord?.server?.documentId;
+  useEffect(() => {
+    setLegend({});
+    if (!legendDocumentId) return;
+    let cancelled = false;
+    fetch(`/api/v1/items/${encodeURIComponent(legendDocumentId)}/legend`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { legend?: unknown } | null) => { if (!cancelled && body?.legend) setLegend(parseLegend(JSON.stringify(body.legend))); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [legendDocumentId]);
+
+  const renameColor = useCallback((key: string, label: string) => {
+    setLegend((current) => {
+      const next = { ...current };
+      if (label) next[key] = label; else delete next[key];
+      if (legendDocumentId) {
+        fetch(`/api/v1/items/${encodeURIComponent(legendDocumentId)}/legend`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ legend: next }) }).catch(() => undefined);
+      }
+      return next;
+    });
+  }, [legendDocumentId]);
 
   const enterReadMode = useCallback(() => {
     setReadMode(true);
@@ -70,6 +99,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   }, []);
 
   const exitReadMode = useCallback(() => {
+    setSavedCardOpen(false);
     setReadMode(false);
     setHighlighterOn(false);
     setAutoSavePending(false);
@@ -101,7 +131,11 @@ export function ScriptoriumMilestoneOnePersisted() {
     // The highlighter saves the moment a selection is captured.
     if (!autoSavePending || !anchor || !selectedText.trim()) return;
     setAutoSavePending(false);
+    const previous = savedCardOpen ? annotations.find((record) => record.id === recentAnnotationId) : undefined;
+    if (previous && cardNote.trim() && cardNote.trim() !== (previous.note ?? "")) void attachNote(previous.id, cardNote);
     void saveRecord();
+    setSavedCardOpen(true);
+    setCardNote("");
     // saveRecord reads the state of this render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSavePending, anchor, selectedText]);
@@ -251,7 +285,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       if (key === "h" && readModeRef.current) return handled(() => setHighlighterOn((on) => !on));
       if (/^[0-9]$/.test(key)) {
         const index = key === "0" ? 9 : Number(key) - 1;
-        return handled(() => { setSelectedColor(highlightColors[index].key); setStatus(`Highlight meaning: ${highlightColors[index].defaultMeaning}.`); });
+        return handled(() => { setSelectedColor(highlightColors[index].key); setStatus(`Highlight meaning: ${meaningFor(highlightColors[index].key, legend)}.`); });
       }
       if (key === "n") return handled(() => { setInspectorOpen(true); window.setTimeout(() => noteTextAreaRef.current?.focus(), 30); });
       if (key === "b" && documentRecord.kind === "PDF") return handled(() => { void toggleBookmark(); });
@@ -437,21 +471,21 @@ export function ScriptoriumMilestoneOnePersisted() {
   const generatedCitation = engineCitation?.text ?? fallbackCitation;
   const currentSnapshotRecords = useMemo(() => annotations.filter((record) => recordMatchesCurrentVersion(record, documentRecord)), [annotations, documentRecord]);
   const recentSavedRecord = useMemo(() => recentAnnotationId ? annotations.find((record) => record.id === recentAnnotationId) : undefined, [annotations, recentAnnotationId]);
-  const recentSavedColor = recentSavedRecord ? highlightColors.find((item) => item.key === recentSavedRecord.colorKey) ?? highlightColors[0] : undefined;
+  const recentSavedColor = recentSavedRecord ? findHighlightColor(recentSavedRecord.colorKey) : undefined;
   const visiblePdfHighlights = useMemo<PdfPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
     if (!record.anchor || isTextAnchor(record.anchor)) return [];
-    const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
+    const color = findHighlightColor(record.colorKey);
     return [{ id: record.id, color: color.color, anchor: record.anchor, note: record.note?.trim() || undefined }];
   }), [currentSnapshotRecords]);
   const previewPdfHighlight = useMemo<PdfPageHighlight[]>(() => {
     if (!documentRecord || documentRecord.kind !== "PDF" || !anchor || isTextAnchor(anchor) || !selectedText.trim()) return [];
-    const color = highlightColors.find((item) => item.key === selectedColor) ?? highlightColors[0];
+    const color = findHighlightColor(selectedColor);
     return [{ id: "active-selection-preview", color: color.color, anchor }];
   }, [anchor, documentRecord, selectedColor, selectedText]);
   const activePdfHighlights = useMemo(() => [...visiblePdfHighlights, ...previewPdfHighlight], [previewPdfHighlight, visiblePdfHighlights]);
   const visibleTextHighlights = useMemo<TextPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
     if (!record.anchor || !isTextAnchor(record.anchor)) return [];
-    const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
+    const color = findHighlightColor(record.colorKey);
     return [{ id: record.id, color: color.color, anchor: record.anchor }];
   }), [currentSnapshotRecords]);
 
@@ -779,6 +813,34 @@ export function ScriptoriumMilestoneOnePersisted() {
     setStatus(message);
   }
 
+  // Adds (or changes) the comment on an already saved highlight, from read mode.
+  async function attachNote(recordId: string, text: string) {
+    const record = annotations.find((item) => item.id === recordId);
+    if (!record) return;
+    const nextNote = text.trim();
+    let message = "Comment saved.";
+    if (record.serverAnnotationId) {
+      try {
+        const response = await fetch("/api/core/annotations", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ annotationId: record.serverAnnotationId, note: nextNote })
+        });
+        if (!response.ok) throw new Error("update failed");
+      } catch {
+        message = "Comment kept in this browser only; the database could not be updated.";
+      }
+    } else {
+      message = "Comment kept in this browser (this highlight is not in the database yet).";
+    }
+    setAnnotations((previous) => {
+      const next = previous.map((item) => (item.id === recordId ? { ...item, note: nextNote } : item));
+      saveAnnotations(next);
+      return next;
+    });
+    setStatus(message);
+  }
+
   async function deleteEditingRecord() {
     if (!editingRecord) return;
     if (!window.confirm("Delete this annotation and its citation? This cannot be undone.")) return;
@@ -917,7 +979,6 @@ export function ScriptoriumMilestoneOnePersisted() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentRecord?.id, annotations.length]);
 
-  function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setTags([]); setRecentAnnotationId(undefined); setStatus("Cleared this browser's copy. Records saved in the database are being reloaded."); window.setTimeout(() => { void syncFromServer(true); }, 50); }
 
   function previewReadingNote(candidate: ReadingNoteCandidate) {
     if (!documentRecord || documentRecord.kind !== "PDF" || !candidate.anchor) return;
@@ -960,7 +1021,6 @@ export function ScriptoriumMilestoneOnePersisted() {
   }
 
   const currentPage = documentRecord?.pageMap.currentPdfPageIndex ?? 1;
-  const formatLabel = documentRecord ? formatFor(documentRecord.kind) : "PDF";
 
   useEffect(() => {
     const versionId = documentRecord?.server?.versionId;
@@ -1057,7 +1117,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   }
 
   const unsavedCount = documentRecord?.server ? annotations.filter((record) => !record.serverAnnotationId && (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id)).length : 0;
-  const usedHighlightColors = highlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
+  const usedHighlightColors = allHighlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
   const filteredAnnotations = annotations.filter((record) => {
     if (tagFilter && !(record.tags ?? []).some((tag) => tag.toLowerCase() === tagFilter.toLowerCase())) return false;
     if (ledgerFilter === "all") return true;
@@ -1139,10 +1199,10 @@ export function ScriptoriumMilestoneOnePersisted() {
             <div><p className="eyebrow">Research memory</p><h2>Ledger</h2></div>
             <button className="paneClose" type="button" onClick={() => setLedgerOpen(false)} aria-label="Close saved records">×</button>
           </div>
-          <p className="paneCount">{annotations.length} saved · {currentSnapshotRecords.length} current snapshot</p>
+          {annotations.length > 0 ? <p className="paneCount">{annotations.length} highlight{annotations.length === 1 ? "" : "s"}</p> : null}
           <div className="ledgerFilters" aria-label="Filter saved records">
             <button type="button" className={ledgerFilter === "all" ? "active" : ""} onClick={() => setLedgerFilter("all")}>All</button>
-            {usedHighlightColors.map((color) => <button type="button" title={color.defaultMeaning} aria-label={`Filter by ${color.defaultMeaning}`} className={ledgerFilter === color.key ? "active" : ""} onClick={() => setLedgerFilter(color.key)} key={color.key}><span style={{ background: color.color }} /></button>)}
+            {usedHighlightColors.map((color) => <button type="button" title={meaningFor(color.key, legend)} aria-label={`Filter by ${swatchName(color.key, legend)}`} className={ledgerFilter === color.key ? "active" : ""} onClick={() => setLedgerFilter(color.key)} key={color.key}><span style={{ background: color.color }} /></button>)}
             {annotations.some((record) => !recordMatchesCurrentVersion(record, documentRecord)) ? <button type="button" className={ledgerFilter === "prior" ? "active" : ""} onClick={() => setLedgerFilter("prior")}>Prior</button> : null}
           </div>
           {knownTags.length > 0 ? (
@@ -1179,16 +1239,16 @@ export function ScriptoriumMilestoneOnePersisted() {
           ) : null}
           <div className="ledgerRecords">
             {filteredAnnotations.length === 0 ? <p className="emptyAnnotationState">No annotations in this view yet.</p> : filteredAnnotations.map((record) => {
-              const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
+              const color = findHighlightColor(record.colorKey);
               const current = recordMatchesCurrentVersion(record, documentRecord);
               const canOpen = current && record.anchor && !isTextAnchor(record.anchor);
               return <article className={`ledgerRecord${record.id === editingId ? " editing" : ""}`} key={record.id}>
-                <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
+                <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{meaningFor(color.key, legend)}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
                 {record.selectedText ? <blockquote>{record.selectedText}</blockquote> : null}
                 {record.note ? <p>{record.note}</p> : null}
                 {(record.tags ?? []).length ? <div className="recordTags">{(record.tags ?? []).map((tag) => <span key={tag}>#{tag}</span>)}</div> : null}
                 <div className="recordCitation">{record.citationText}</div>
-                <small className={record.serverAnnotationId ? undefined : "recordUnsaved"}>{current ? "Current snapshot" : "Prior snapshot"} · {record.serverAnnotationId ? "saved in the database" : "only in this browser (not in the database yet)"}</small>
+                {!current || !record.serverAnnotationId ? <small className="recordUnsaved">{[!current ? "From an earlier version of this file" : "", !record.serverAnnotationId ? "Not saved yet" : ""].filter(Boolean).join(" · ")}</small> : null}
                 <div className="recordActions">
                   <button className="recordOpen" type="button" onClick={() => startEditing(record)}>Open and edit</button>
                   {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
@@ -1198,17 +1258,14 @@ export function ScriptoriumMilestoneOnePersisted() {
             })}
           </div>
           <div className="ledgerFooter">
-            {documentRecord ? <div className="documentSummary"><strong>{documentRecord.title}</strong><span>{formatLabel} · {documentRecord.filename} · {bytes(documentRecord.size)} {documentRecord.server?.sourceChecksum ? `· checksum ${documentRecord.server.sourceChecksum.slice(0, 12)}` : documentRecord.server?.storageKey ? "· server file" : documentRecord.server ? "· database-linked" : "· local only"}</span></div> : null}
-            {documentRecord?.server?.documentId ? (
+                        {documentRecord?.server?.documentId ? (
               <details className="exportMenu">
-                <summary>Export this book’s annotations</summary>
+                <summary>Export highlights</summary>
                 <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=docx&style=${style === "chicago-note" || style === "turabian-note" ? style : "sbl-note"}`}>Word (footnotes + bibliography)</a>
                 <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=markdown&style=${style === "chicago-note" || style === "turabian-note" ? style : "sbl-note"}`}>Markdown</a>
                 <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=csv`}>Spreadsheet (CSV)</a>
               </details>
             ) : null}
-            {documentRecord?.server ? <button className="textAction" type="button" onClick={() => void syncFromServer(true)}>Refresh from the database</button> : null}
-            <button className="clearBrowserRecords" onClick={clearRecords} type="button" disabled={annotations.length === 0} title="Only clears this browser's copy. Records saved in the database are reloaded straight away.">Clear browser annotation list</button>
           </div>
         </aside>
 
@@ -1232,7 +1289,7 @@ export function ScriptoriumMilestoneOnePersisted() {
             {editingRecord ? <p className="anchorSummary">The passage and citation of a saved record are fixed. You can change the note and colour.</p> : (selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
             <label>Note<textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void (editingRecord ? saveEdit() : saveRecord()); } }} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} /></label>
             <TagInput value={tags} onChange={setTags} suggestions={knownTags} disabled={!documentRecord} />
-            <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${color.defaultMeaning}${selectedColor === color.key ? ", selected" : ""}`} title={color.defaultMeaning} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><strong>{highlightColors.find((color) => color.key === selectedColor)?.defaultMeaning}</strong></fieldset>
+            <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${swatchName(color.key, legend)}${selectedColor === color.key ? ", selected" : ""}`} title={swatchName(color.key, legend)} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><HighlightMeaning colorKey={selectedColor} legend={legend} onRename={renameColor} className="colorMeaning" /></fieldset>
             <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option><option value="turabian-note">Turabian note (Chicago form)</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
             <div className="generatedCitation"><span>Generated citation</span><p>{editingRecord ? editingRecord.citationText : generatedCitation}</p>{!editingRecord && engineCitation && engineCitation.missing.length > 0 ? <small className="citationMissing">This source has no {engineCitation.missing.join(", ").replace(/, ([^,]*)$/, " or $1")} recorded, so the citation is incomplete. Add it under Source metadata below.</small> : null}</div>
             {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
@@ -1277,14 +1334,44 @@ export function ScriptoriumMilestoneOnePersisted() {
         <>
           <ReadModeToolbar
             colors={highlightColors}
+            legend={legend}
+            onRename={renameColor}
             selectedColor={selectedColor}
             highlighterOn={highlighterOn}
-            onSelectColor={(key) => { setSelectedColor(key); setStatus(`Highlight meaning: ${(highlightColors.find((color) => color.key === key) ?? highlightColors[0]).defaultMeaning}.`); }}
+            onSelectColor={(key) => { setSelectedColor(key); setStatus(`Highlight meaning: ${meaningFor(key, legend)}.`); }}
             onToggleHighlighter={() => setHighlighterOn((on) => !on)}
             onSearch={() => setSearchOpen(true)}
             onExit={exitReadMode}
           />
-          <p key={status} className="readToast" aria-hidden="true">{status}</p>
+          {readMode && !highlighterOn && anchor && selectedText.trim() && !editingId ? (
+            <ReadNoteCard
+              mode="pending"
+              excerpt={selectedText.trim()}
+              colors={highlightColors}
+              legend={legend}
+              selectedColor={selectedColor}
+              onSelectColor={setSelectedColor}
+              note={note}
+              onNoteChange={setNote}
+              onPrimary={() => void saveRecord()}
+              onSecondary={clearSelection}
+            />
+          ) : savedCardOpen && recentSavedRecord ? (
+            <ReadNoteCard
+              mode="saved"
+              excerpt={recentSavedRecord.selectedText}
+              colors={highlightColors}
+              legend={legend}
+              selectedColor={recentSavedRecord.colorKey}
+              onSelectColor={() => undefined}
+              note={cardNote}
+              onNoteChange={setCardNote}
+              onPrimary={() => { void attachNote(recentSavedRecord.id, cardNote); setSavedCardOpen(false); }}
+              onSecondary={() => { if (cardNote.trim() && cardNote.trim() !== (recentSavedRecord.note ?? "")) void attachNote(recentSavedRecord.id, cardNote); setSavedCardOpen(false); }}
+            />
+          ) : null}
+          {/* Only things worth a reader's attention: not how the page was drawn or what was captured. */}
+          {/^(Captured|Rendered|PDF\.js loaded|Using this page|Recovered|Highlight meaning)/.test(status) ? null : <p key={status} className="readToast" aria-hidden="true">{status}</p>}
         </>
       ) : null}
 
