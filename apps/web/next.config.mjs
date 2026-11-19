@@ -32,6 +32,10 @@ const nextConfig = {
   // Scriptorium shows no remote or optimized images; switching the image
   // optimizer off removes that attack surface (and the sharp dependency's).
   images: { unoptimized: true },
+  // Every request passes through middleware (the sign-in check), and Next.js keeps only the first 10 MB
+  // of a request body that does. A book bigger than that arrived cut off and the upload failed (HTTP 500).
+  // Match the 75 MB limit the upload route itself enforces (and Caddy's 100 MB cap in front of it).
+  experimental: { middlewareClientMaxBodySize: "100mb" },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -266,6 +266,15 @@ export async function findDuplicateFile(file: File): Promise<{ id: string; title
   }
 }
 
+// Stores the browser's copy of a book on the server, onto the book record that already exists.
+export async function attachPdfToServer(documentId: string, blob: Blob, filename: string) {
+  const formData = new FormData();
+  formData.set("file", new File([blob], filename || "book.pdf", { type: "application/pdf" }));
+  const response = await fetch(`/api/v1/items/${encodeURIComponent(documentId)}/file`, { method: "POST", body: formData });
+  if (!response.ok) throw new Error("The server could not store the file.");
+  return (await response.json()) as { storageKey: string; sizeBytes: number };
+}
+
 export async function persistPdfFile(file: File, document: StoredDocument, locator: string) {
   const formData = new FormData();
   formData.set("file", file);

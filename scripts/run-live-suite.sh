@@ -26,6 +26,7 @@ echo "== live checks (storage: ${SCRIPTORIUM_STORAGE_BACKEND:-local disk}) =="
 for name in page-split search threads page-ranges sources reading meaning library jobs; do
   run node "scripts/verify-$name-api.mjs"
 done
+run node scripts/verify-large-upload.mjs
 if [ "${SCRIPTORIUM_STORAGE_BACKEND:-}" = "s3" ]; then run node scripts/verify-object-storage.mjs; fi
 run node scripts/e2e-browser.mjs
 run node scripts/e2e-library.mjs

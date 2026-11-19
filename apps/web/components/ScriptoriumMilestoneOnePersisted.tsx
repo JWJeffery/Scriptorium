@@ -22,7 +22,7 @@ import { ReadNoteCard } from "./ReadNoteCard";
 import { ThemeMenu } from "./ThemeMenu";
 import { MoreMenu } from "./MoreMenu";
 
-import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
+import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, attachPdfToServer, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
 
 export function ScriptoriumMilestoneOnePersisted() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
@@ -426,6 +426,8 @@ export function ScriptoriumMilestoneOnePersisted() {
       getPdf(storedDocument.id).then((blob) => {
         if (blob) {
           setPdfUrl(URL.createObjectURL(blob));
+          // A book that only ever lived in this browser: keep a copy on the server too, so it opens anywhere.
+          if (storedDocument.server?.documentId && !storedDocument.server.storageKey) void saveBrowserCopyToServer(storedDocument, blob);
           setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
           return;
         }
@@ -532,6 +534,20 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (highlighterOnRef.current) setAutoSavePending(true);
     setStatus(`Captured selected text, context, offsets, and line locator ${lineLocator(nextAnchor)}.`);
   }, []);
+
+  async function saveBrowserCopyToServer(stored: StoredDocument, blob: Blob) {
+    if (!stored.server?.documentId) return;
+    setStatus("This book was only saved in this browser. Saving a copy on your server…");
+    try {
+      const result = await attachPdfToServer(stored.server.documentId, blob, stored.filename);
+      const next: StoredDocument = { ...stored, server: { ...stored.server, storageKey: result.storageKey } };
+      saveDocument(next);
+      setDocumentRecord(next);
+      setStatus("A copy of this book is now saved on your server.");
+    } catch {
+      setStatus("This book could not be saved to the server yet. It still opens in this browser.");
+    }
+  }
 
   async function registerSource(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
