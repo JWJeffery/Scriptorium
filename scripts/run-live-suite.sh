@@ -27,6 +27,7 @@ for name in page-split search threads page-ranges sources reading meaning librar
   run node "scripts/verify-$name-api.mjs"
 done
 run node scripts/verify-large-upload.mjs
+run node scripts/e2e-attach-browser-book.mjs
 if [ "${SCRIPTORIUM_STORAGE_BACKEND:-}" = "s3" ]; then run node scripts/verify-object-storage.mjs; fi
 run node scripts/e2e-browser.mjs
 run node scripts/e2e-library.mjs

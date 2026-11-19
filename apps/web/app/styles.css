@@ -2881,3 +2881,22 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 /* "Clear selection" lives in the Details panel (and the read-mode card); not also over the page. */
 .pdfClearSelection[data-kind="selection"] { display: none; }
+
+/* Progress while a browser-only book is copied to the server: stays until it finishes. */
+.serverCopyNotice {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  z-index: 60;
+  margin: 0;
+  padding: 9px 16px;
+  max-width: min(92vw, 520px);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  font-size: 0.9rem;
+}
+.serverCopyNotice.failed { border-color: var(--danger); }

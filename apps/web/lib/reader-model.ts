@@ -267,12 +267,21 @@ export async function findDuplicateFile(file: File): Promise<{ id: string; title
 }
 
 // Stores the browser's copy of a book on the server, onto the book record that already exists.
-export async function attachPdfToServer(documentId: string, blob: Blob, filename: string) {
+export function attachPdfToServer(documentId: string, blob: Blob, filename: string, onProgress?: (fraction: number) => void) {
   const formData = new FormData();
   formData.set("file", new File([blob], filename || "book.pdf", { type: "application/pdf" }));
-  const response = await fetch(`/api/v1/items/${encodeURIComponent(documentId)}/file`, { method: "POST", body: formData });
-  if (!response.ok) throw new Error("The server could not store the file.");
-  return (await response.json()) as { storageKey: string; sizeBytes: number };
+  return new Promise<{ storageKey: string; sizeBytes: number }>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `/api/v1/items/${encodeURIComponent(documentId)}/file`);
+    request.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(event.loaded / event.total); };
+    request.onerror = () => reject(new Error("The connection dropped."));
+    request.onabort = () => reject(new Error("The upload was cancelled."));
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) { try { resolve(JSON.parse(request.responseText)); } catch { reject(new Error("Unexpected reply.")); } return; }
+      reject(new Error(request.status === 409 ? "already-stored" : "The server could not store the file."));
+    };
+    request.send(formData);
+  });
 }
 
 export async function persistPdfFile(file: File, document: StoredDocument, locator: string) {

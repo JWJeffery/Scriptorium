@@ -411,6 +411,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [style, setStyle] = useState<CitationStyle>("sbl-note");
   const [status, setStatus] = useState("Register a PDF, TXT, Markdown, or DOCX file to begin.");
   const [sourceSaveMessage, setSourceSaveMessage] = useState("");
+  const [serverCopy, setServerCopy] = useState<{ phase: "saving" | "done" | "failed"; percent: number } | null>(null);
   const [recentAnnotationId, setRecentAnnotationId] = useState<string | undefined>();
   const [authoritativePageText, setAuthoritativePageText] = useState<string | null>(null);
   const [authoritativeWords, setAuthoritativeWords] = useState<PdfAuthoritativeWord[] | null>(null);
@@ -426,9 +427,9 @@ export function ScriptoriumMilestoneOnePersisted() {
       getPdf(storedDocument.id).then((blob) => {
         if (blob) {
           setPdfUrl(URL.createObjectURL(blob));
+          setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
           // A book that only ever lived in this browser: keep a copy on the server too, so it opens anywhere.
           if (storedDocument.server?.documentId && !storedDocument.server.storageKey) void saveBrowserCopyToServer(storedDocument, blob);
-          setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
           return;
         }
         const storedServerUrl = serverPdfUrl(storedDocument);
@@ -537,15 +538,21 @@ export function ScriptoriumMilestoneOnePersisted() {
 
   async function saveBrowserCopyToServer(stored: StoredDocument, blob: Blob) {
     if (!stored.server?.documentId) return;
-    setStatus("This book was only saved in this browser. Saving a copy on your server…");
+    const leaveWarning = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", leaveWarning);
+    setServerCopy({ phase: "saving", percent: 0 });
     try {
-      const result = await attachPdfToServer(stored.server.documentId, blob, stored.filename);
+      const result = await attachPdfToServer(stored.server.documentId, blob, stored.filename, (fraction) => setServerCopy({ phase: "saving", percent: Math.round(fraction * 100) }));
       const next: StoredDocument = { ...stored, server: { ...stored.server, storageKey: result.storageKey } };
       saveDocument(next);
       setDocumentRecord(next);
-      setStatus("A copy of this book is now saved on your server.");
-    } catch {
-      setStatus("This book could not be saved to the server yet. It still opens in this browser.");
+      setServerCopy({ phase: "done", percent: 100 });
+      window.setTimeout(() => setServerCopy(null), 6000);
+    } catch (error) {
+      if (error instanceof Error && error.message === "already-stored") { setServerCopy(null); return; }
+      setServerCopy({ phase: "failed", percent: 0 });
+    } finally {
+      window.removeEventListener("beforeunload", leaveWarning);
     }
   }
 
@@ -1401,6 +1408,11 @@ export function ScriptoriumMilestoneOnePersisted() {
         </>
       ) : null}
       {/* Only what is worth a reader's attention: not how a page was drawn or what was captured. */}
+      {serverCopy ? (
+        <p className={`serverCopyNotice ${serverCopy.phase}`} role="status">
+          {serverCopy.phase === "saving" ? `Saving a copy of this book to your server… ${serverCopy.percent}%. Keep this page open.` : serverCopy.phase === "done" ? "A copy of this book is now saved on your server." : "This book could not be copied to your server yet. Reload this page to try again."}
+        </p>
+      ) : null}
       {/^(Captured|Rendered|PDF\.js loaded|Using this page|Recovered|Highlight meaning|Register a PDF)/.test(status) ? null : <p key={status} className="readToast" aria-hidden="true">{status}</p>}
 
       {helpOpen ? (
