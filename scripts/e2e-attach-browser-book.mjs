@@ -30,10 +30,15 @@ try {
   await page.waitForURL(`${base}/`);
   await page.locator(".ledgerTopbar").waitFor();
   // Put the file where the first version kept it, then reopen the book.
-  await page.evaluate(async ({ id, data }) => {
+  const putFile = async () => page.evaluate(async ({ id, data }) => {
     const db = await new Promise((resolve, reject) => { const r = indexedDB.open("scriptorium-file-store", 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains("pdf-blobs")) r.result.createObjectStore("pdf-blobs"); }; r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
     await new Promise((resolve, reject) => { const t = db.transaction("pdf-blobs", "readwrite"); t.objectStore("pdf-blobs").put(new Blob([new Uint8Array(data)], { type: "application/pdf" }), id); t.oncomplete = resolve; t.onerror = () => reject(t.error); });
   }, { id, data: [...bytes] });
+  // Opening a book from the library reloads the page once; wait for that to settle, retrying if it lands mid-step.
+  for (let attempt = 0; ; attempt += 1) {
+    try { await page.waitForLoadState("networkidle"); await putFile(); break; }
+    catch (error) { if (attempt >= 5 || !String(error).includes("context was destroyed")) throw error; }
+  }
   await page.reload();
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline && !(await stored())) await page.waitForTimeout(250);
