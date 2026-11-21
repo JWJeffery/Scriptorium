@@ -51,7 +51,7 @@ try {
   await page.locator("tbody tr").first().getByRole("link", { name: "Read", exact: true }).click();
   await page.locator(".pdfTextRun").first().waitFor({ timeout: 20000 });
   const canvasFilter = () => page.evaluate(() => getComputedStyle(document.querySelector(".pdfCanvas")).filter);
-  assert.ok((await canvasFilter()).includes("invert"), "the PDF page is inverted in the dark theme");
+  assert.ok((await canvasFilter()).includes("pdfDarkPage"), "the PDF page is drawn dark in the dark theme");
   await page.getByRole("button", { name: /^Highlights/ }).click();
   const panelBackground = luminance(await page.evaluate(() => getComputedStyle(document.querySelector(".ledgerPane")).backgroundColor === "rgba(0, 0, 0, 0)" ? getComputedStyle(document.querySelector(".ledgerWorkspace")).backgroundColor : getComputedStyle(document.querySelector(".ledgerPane")).backgroundColor));
   assert.ok(panelBackground < 0.25, "the side panels are dark");
@@ -64,9 +64,9 @@ try {
 
   await page.getByRole("button", { name: "Appearance" }).click();
   await page.getByLabel("Dark PDF pages").uncheck();
-  assert.ok(!(await canvasFilter()).includes("invert"), "the page stays light when 'Dark PDF pages' is off");
+  assert.ok(!(await canvasFilter()).includes("pdfDarkPage"), "the page stays light when 'Dark PDF pages' is off");
   await page.getByLabel("Dark PDF pages").check();
-  assert.ok((await canvasFilter()).includes("invert"), "the page goes dark again when it is turned back on");
+  assert.ok((await canvasFilter()).includes("pdfDarkPage"), "the page goes dark again when it is turned back on");
 
   // 4. Read mode carries the control too.
   await page.keyboard.press("Escape");
@@ -75,7 +75,7 @@ try {
   await page.locator(".readRail").getByRole("button", { name: "Appearance" }).click();
   await page.getByRole("menuitemradio", { name: "Light" }).click();
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "light", "read mode can switch the theme");
-  assert.ok(!(await canvasFilter()).includes("invert"), "the page is not inverted in the light theme");
+  assert.ok(!(await canvasFilter()).includes("pdfDarkPage"), "the page is not darkened in the light theme");
 
   assert.deepEqual(errors, [], "no uncaught browser errors");
   console.log("Theme verified: follows the computer, can be chosen and remembered, PDF pages go dark or stay light, no bright-white leftovers, read mode switch.");
