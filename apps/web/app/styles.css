@@ -2899,4 +2899,15 @@ button:disabled { opacity: 0.5; cursor: default; }
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
   font-size: 0.9rem;
 }
-.serverCopyNotice.failed { border-color: var(--danger); }
+.serverCopyNotice.failed, .serverCopyNotice.different { border-color: var(--danger); }
+
+.emptyPdfState span {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+.emptyPdfState .emptyPdfAttach {
+  justify-self: center;
+  margin-top: 12px;
+  cursor: pointer;
+}

@@ -1825,3 +1825,14 @@ pass; TypeScript, ESLint, and the production build pass. The available cloud bro
 reach this container's loopback preview, so final visual QA with the recovered real book must
 be performed in the Codespace after this branch is pulled; do not record visual alignment as
 confirmed until that happens.
+
+## Books in the library without their PDF, on a device with no copy (2026-11-21)
+
+The earlier fix (2f3022d, 98b2fba) copies a browser-only book to the server when that browser opens
+it. A device that never had the file (a phone) still showed "No PDF available" with no way out. Now:
+the reader shows "Choose PDF file" there, and the chosen file is attached to the existing book through
+`POST /api/v1/items/<id>/file` (highlights kept). That endpoint now refuses a file whose checksum differs
+from the original (`code: different_file`) unless `allowDifferent=true` (the reader asks first), and
+reads the PDF's text layer for search when the book has none. The browser copy is also looked up under
+the library id, and `POST /api/core/files` reads PDF text before its transaction, not inside it (a long
+book exceeded the 5-second transaction limit and failed the upload).
