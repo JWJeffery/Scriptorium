@@ -22,7 +22,7 @@ import { ReadNoteCard } from "./ReadNoteCard";
 import { ThemeMenu } from "./ThemeMenu";
 import { MoreMenu } from "./MoreMenu";
 
-import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, attachPdfToServer, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
+import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getBrowserPdf, persistDocument, persistPdfFile, attachPdfToServer, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
 
 export function ScriptoriumMilestoneOnePersisted() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
@@ -411,7 +411,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [style, setStyle] = useState<CitationStyle>("sbl-note");
   const [status, setStatus] = useState("Register a PDF, TXT, Markdown, or DOCX file to begin.");
   const [sourceSaveMessage, setSourceSaveMessage] = useState("");
-  const [serverCopy, setServerCopy] = useState<{ phase: "saving" | "done" | "failed"; percent: number } | null>(null);
+  const [serverCopy, setServerCopy] = useState<{ phase: "saving" | "done" | "failed" | "different"; percent: number } | null>(null);
   const [recentAnnotationId, setRecentAnnotationId] = useState<string | undefined>();
   const [authoritativePageText, setAuthoritativePageText] = useState<string | null>(null);
   const [authoritativeWords, setAuthoritativeWords] = useState<PdfAuthoritativeWord[] | null>(null);
@@ -424,7 +424,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setDocumentRecord(storedDocument);
 
     if (storedDocument.kind === "PDF") {
-      getPdf(storedDocument.id).then((blob) => {
+      getBrowserPdf(storedDocument).then((blob) => {
         if (blob) {
           setPdfUrl(URL.createObjectURL(blob));
           setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
@@ -438,7 +438,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           setStatus("Recovered PDF from server file storage.");
           return;
         }
-        setStatus("Recovered records, but no browser or server PDF was found.");
+        setStatus(storedDocument.server ? "This book's PDF isn't in your library yet. Choose the PDF file once and it will open on every device." : "Recovered records, but no browser or server PDF was found.");
       });
       return;
     }
@@ -536,23 +536,51 @@ export function ScriptoriumMilestoneOnePersisted() {
     setStatus(`Captured selected text, context, offsets, and line locator ${lineLocator(nextAnchor)}.`);
   }, []);
 
-  async function saveBrowserCopyToServer(stored: StoredDocument, blob: Blob) {
-    if (!stored.server?.documentId) return;
+  // Returns true once the file is stored on the server. interactive: the person chose this file
+  // themselves, so a file that differs from the original can be confirmed instead of refused.
+  async function saveBrowserCopyToServer(stored: StoredDocument, blob: Blob, interactive = false, allowDifferent = false): Promise<boolean> {
+    if (!stored.server?.documentId) return false;
     const leaveWarning = (event: BeforeUnloadEvent) => { event.preventDefault(); };
     window.addEventListener("beforeunload", leaveWarning);
     setServerCopy({ phase: "saving", percent: 0 });
     try {
-      const result = await attachPdfToServer(stored.server.documentId, blob, stored.filename, (fraction) => setServerCopy({ phase: "saving", percent: Math.round(fraction * 100) }));
+      const result = await attachPdfToServer(stored.server.documentId, blob, stored.filename, (fraction) => setServerCopy({ phase: "saving", percent: Math.round(fraction * 100) }), allowDifferent);
       const next: StoredDocument = { ...stored, server: { ...stored.server, storageKey: result.storageKey } };
       saveDocument(next);
       setDocumentRecord(next);
+      // Keep this browser's copy under the library id too, the id used when the book is reopened from the Library.
+      await putPdf(stored.server.documentId, blob).catch(() => undefined);
       setServerCopy({ phase: "done", percent: 100 });
       window.setTimeout(() => setServerCopy(null), 6000);
+      return true;
     } catch (error) {
-      if (error instanceof Error && error.message === "already-stored") { setServerCopy(null); return; }
+      const reason = error instanceof Error ? error.message : "";
+      if (reason === "already-stored") { setServerCopy(null); return true; }
+      if (reason === "different-file") {
+        if (interactive && window.confirm("This is not the same file that was first added for this book, so your highlights may not line up with its pages.\n\nPress OK to use it anyway, or Cancel to choose another file.")) {
+          window.removeEventListener("beforeunload", leaveWarning);
+          return saveBrowserCopyToServer(stored, blob, interactive, true);
+        }
+        setServerCopy({ phase: "different", percent: 0 });
+        return false;
+      }
       setServerCopy({ phase: "failed", percent: 0 });
+      return false;
     } finally {
       window.removeEventListener("beforeunload", leaveWarning);
+    }
+  }
+
+  // The book is in the library without its PDF and this device has no copy: the person chooses the file once.
+  async function chooseMissingPdf(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !documentRecord) return;
+    if (fileKind(file) !== "PDF") { setStatus("Please choose a PDF file."); return; }
+    if (await saveBrowserCopyToServer(documentRecord, file, true)) {
+      if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
+      setPdfUrl(URL.createObjectURL(file));
+      setStatus("PDF saved to your library. It will open on every device from now on.");
     }
   }
 
@@ -1308,7 +1336,9 @@ export function ScriptoriumMilestoneOnePersisted() {
         <main className="ledgerReader" id="ledger-reader" tabIndex={-1}>
           <section className="pdfPanel" aria-label="Document display">
             {isPdf(documentRecord) ? (
-              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} searchTerms={searchHighlight && searchHighlight.pageNumber === currentPage ? searchHighlight.terms : null} onClearSearch={() => setSearchHighlight(null)} onHighlightClick={openHighlight} readMode={readMode} onToggleReadMode={() => (readMode ? exitReadMode() : enterReadMode())} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
+              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} searchTerms={searchHighlight && searchHighlight.pageNumber === currentPage ? searchHighlight.terms : null} onClearSearch={() => setSearchHighlight(null)} onHighlightClick={openHighlight} readMode={readMode} onToggleReadMode={() => (readMode ? exitReadMode() : enterReadMode())} /> : (documentRecord?.kind === "PDF" && documentRecord.server && !documentRecord.server.storageKey
+                ? <div className="emptyPdfState"><strong>This book&apos;s PDF isn&apos;t in your library yet.</strong><span>Choose the PDF file once. It will be saved to your library and open on every device from then on. Your highlights and notes stay as they are.</span><label className="uploadButton emptyPdfAttach">{serverCopy?.phase === "saving" ? `Saving… ${serverCopy.percent}%` : "Choose PDF file"}<input type="file" accept="application/pdf,.pdf" onChange={chooseMissingPdf} disabled={serverCopy?.phase === "saving"} /></label></div>
+                : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF to begin.</span></div>)
             ) : isText(documentRecord) ? (
               textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
             ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}
@@ -1410,7 +1440,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       {/* Only what is worth a reader's attention: not how a page was drawn or what was captured. */}
       {serverCopy ? (
         <p className={`serverCopyNotice ${serverCopy.phase}`} role="status">
-          {serverCopy.phase === "saving" ? `Saving a copy of this book to your server… ${serverCopy.percent}%. Keep this page open.` : serverCopy.phase === "done" ? "A copy of this book is now saved on your server." : "This book could not be copied to your server yet. Reload this page to try again."}
+          {serverCopy.phase === "saving" ? `Saving a copy of this book to your server… ${serverCopy.percent}%. Keep this page open.` : serverCopy.phase === "done" ? "A copy of this book is now saved on your server." : serverCopy.phase === "different" ? "Not saved: that is a different file from the one first added for this book." : "This book could not be copied to your server yet. Reload this page to try again."}
         </p>
       ) : null}
       {/^(Captured|Rendered|PDF\.js loaded|Using this page|Recovered|Highlight meaning|Register a PDF)/.test(status) ? null : <p key={status} className="readToast" aria-hidden="true">{status}</p>}

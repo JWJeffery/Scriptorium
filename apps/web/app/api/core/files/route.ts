@@ -89,6 +89,24 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Read whatever text layer the PDF genuinely has (not OCR - see
+  // lib/tesseract-ocr-provider.ts for that). Before this, PDF ingestion never
+  // persisted any extracted text server-side, which meant scan detection
+  // always read 0 characters and flagged every PDF as likely scanned.
+  // This runs before the database transaction, not inside it: a long book
+  // can take longer to read than a transaction may stay open (5 seconds by
+  // default), and a timed-out transaction failed the whole upload - leaving
+  // the book in the library without its file.
+  let extraction: { pages: { pageIndex: number; text: string }[]; totalTextLength: number } = { pages: [], totalTextLength: 0 };
+  let extractionState = "server-pdfjs-extraction-failed";
+  try {
+    extraction = await extractPdfText(pdfBytes);
+    extractionState = extraction.totalTextLength > 0 ? "server-pdfjs-text-layer" : "server-pdfjs-no-text-layer";
+  } catch {
+    // Leave the defaults above. A failed extraction shouldn't fail the
+    // whole upload - the document/file are still valid without it.
+  }
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const document = await tx.document.create({
@@ -108,22 +126,6 @@ export async function POST(request: NextRequest) {
         where: { id: document.id },
         data: { storageKey: storedFile.storageKey }
       });
-
-      // Read whatever text layer the PDF genuinely has (not OCR - see
-      // lib/tesseract-ocr-provider.ts for that). Before this, PDF
-      // ingestion never persisted any extracted text server-side, which
-      // meant scan detection always read 0
-      // characters and flagged every PDF as likely scanned, real text
-      // layer or not.
-      let extraction: { pages: { pageIndex: number; text: string }[]; totalTextLength: number } = { pages: [], totalTextLength: 0 };
-      let extractionState = "server-pdfjs-extraction-failed";
-      try {
-        extraction = await extractPdfText(pdfBytes);
-        extractionState = extraction.totalTextLength > 0 ? "server-pdfjs-text-layer" : "server-pdfjs-no-text-layer";
-      } catch {
-        // Leave the defaults above. A failed extraction shouldn't fail the
-        // whole upload - the document/file are still valid without it.
-      }
 
       const version = await tx.documentVersion.create({
         data: {
@@ -174,7 +176,7 @@ export async function POST(request: NextRequest) {
         storedFile,
         extraction: { pageCount: extraction.pages.length, totalTextLength: extraction.totalTextLength }
       };
-    });
+    }, { timeout: 60_000 });
 
     return NextResponse.json(result, { status: 201 });
   } catch {

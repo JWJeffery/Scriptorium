@@ -9,5 +9,5 @@ export const POST = route<{ params: Promise<{ id: string }> }>(async (request, c
   const form = await request.formData();
   const file = form.get("file");
   if (!(file instanceof File) || file.type !== "application/pdf") throw new ApiError(400, "invalid", "A PDF file is required.");
-  return NextResponse.json(await attachPdfFile((await context.params).id, file), { status: 201 });
+  return NextResponse.json(await attachPdfFile((await context.params).id, file, form.get("allowDifferent") === "true"), { status: 201 });
 });

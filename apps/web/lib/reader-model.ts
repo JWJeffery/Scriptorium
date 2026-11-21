@@ -219,7 +219,7 @@ export function openDb(): Promise<IDBDatabase> {
   });
 }
 
-export async function putPdf(documentId: string, file: File) {
+export async function putPdf(documentId: string, file: Blob) {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(PDF_STORE, "readwrite");
@@ -267,9 +267,10 @@ export async function findDuplicateFile(file: File): Promise<{ id: string; title
 }
 
 // Stores the browser's copy of a book on the server, onto the book record that already exists.
-export function attachPdfToServer(documentId: string, blob: Blob, filename: string, onProgress?: (fraction: number) => void) {
+export function attachPdfToServer(documentId: string, blob: Blob, filename: string, onProgress?: (fraction: number) => void, allowDifferent = false) {
   const formData = new FormData();
   formData.set("file", new File([blob], filename || "book.pdf", { type: "application/pdf" }));
+  if (allowDifferent) formData.set("allowDifferent", "true");
   return new Promise<{ storageKey: string; sizeBytes: number }>((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("POST", `/api/v1/items/${encodeURIComponent(documentId)}/file`);
@@ -278,10 +279,23 @@ export function attachPdfToServer(documentId: string, blob: Blob, filename: stri
     request.onabort = () => reject(new Error("The upload was cancelled."));
     request.onload = () => {
       if (request.status >= 200 && request.status < 300) { try { resolve(JSON.parse(request.responseText)); } catch { reject(new Error("Unexpected reply.")); } return; }
-      reject(new Error(request.status === 409 ? "already-stored" : "The server could not store the file."));
+      let code = "";
+      try { code = (JSON.parse(request.responseText) as { code?: string }).code ?? ""; } catch { /* not JSON */ }
+      reject(new Error(code === "different_file" ? "different-file" : request.status === 409 ? "already-stored" : "The server could not store the file."));
     };
     request.send(formData);
   });
+}
+
+// The browser's own copy of a PDF, looked up under every id the book has had: a book is stored under a
+// temporary id when it is first added, but under its library id when it is reopened from the Library.
+export async function getBrowserPdf(document: StoredDocument) {
+  const ids = Array.from(new Set([document.id, document.server?.documentId].filter((id): id is string => Boolean(id))));
+  for (const id of ids) {
+    const blob = await getPdf(id).catch(() => null);
+    if (blob) return blob;
+  }
+  return null;
 }
 
 export async function persistPdfFile(file: File, document: StoredDocument, locator: string) {
