@@ -32,6 +32,13 @@ const nextConfig = {
   // Scriptorium shows no remote or optimized images; switching the image
   // optimizer off removes that attack surface (and the sharp dependency's).
   images: { unoptimized: true },
+  // middleware.ts runs on every request (sign-in check). When middleware is
+  // present, Next.js only passes the first 10 MB of a request body on to the
+  // route unless told otherwise - so any PDF bigger than 10 MB arrived cut
+  // off, its upload failed, and the book was saved without its file (it then
+  // showed "No PDF available" everywhere except the browser it was added
+  // from). Allow uploads up to the PDF size limit in lib/server-storage.ts.
+  experimental: { middlewareClientMaxBodySize: "210mb" },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

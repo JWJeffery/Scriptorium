@@ -2233,3 +2233,14 @@ button:disabled { opacity: 0.5; cursor: default; }
   .libMeta div { grid-template-columns: 1fr; gap: 0; }
   .libNav { padding: 10px 16px; gap: 10px; }
 }
+
+.emptyPdfState span {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+.emptyPdfState .emptyPdfAttach {
+  justify-self: center;
+  margin-top: 12px;
+  cursor: pointer;
+}

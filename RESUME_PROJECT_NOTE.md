@@ -1825,3 +1825,22 @@ pass; TypeScript, ESLint, and the production build pass. The available cloud bro
 reach this container's loopback preview, so final visual QA with the recovered real book must
 be performed in the Codespace after this branch is pulled; do not record visual alignment as
 confirmed until that happens.
+
+## PDFs saved without their file (fixed 2026-11-21)
+
+Symptom: a book showed "No PDF available" on any device other than the browser it was added
+from, so the PDF had to be added again. Causes, both now fixed:
+
+1. `apps/web/middleware.ts` runs on every request, and with middleware present Next.js 15 only
+   hands the first 10 MB of a request body to the route (`experimental.middlewareClientMaxBodySize`).
+   Every PDF over 10 MB arrived cut off, the upload failed, and the reader silently fell back to
+   saving the book's record without its file. `next.config.mjs` now allows 210 MB, and
+   `MAX_PDF_BYTES` in `lib/server-storage.ts` is 200 MB (keep the two in step).
+2. `POST /api/core/files` read the PDF's text inside the database transaction, which times out
+   after 5 seconds; long books failed the same way. Text is now read before the transaction.
+
+Repair for books already affected: `PUT /api/core/files/<documentId>` attaches a PDF to a library
+book that has no stored file (it keeps the book's id and highlights, refuses a different file than
+the original checksum unless `allowDifferent=true`, and never overwrites a file that is present).
+The reader uses it automatically when its browser still has the PDF, and otherwise shows a
+"Choose PDF file" button in place of "No PDF available".

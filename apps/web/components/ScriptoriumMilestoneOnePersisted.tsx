@@ -17,11 +17,12 @@ import { authorsToText } from "../lib/author-names";
 import { mergeServerRecords } from "../lib/annotation-sync";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
 
-import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, ANNOTATIONS_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, bytes, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
+import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, ANNOTATIONS_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, bytes, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getBrowserPdf, attachPdfFile, AttachPdfError, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
 
 export function ScriptoriumMilestoneOnePersisted() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [attachingPdf, setAttachingPdf] = useState(false);
   const [textContent, setTextContent] = useState("");
   const [pageCount, setPageCount] = useState(0);
   const [annotations, setAnnotations] = useState<SavedAnnotation[]>([]);
@@ -320,10 +321,16 @@ export function ScriptoriumMilestoneOnePersisted() {
     setDocumentRecord(storedDocument);
 
     if (storedDocument.kind === "PDF") {
-      getPdf(storedDocument.id).then((blob) => {
+      getBrowserPdf(storedDocument).then((blob) => {
         if (blob) {
           setPdfUrl(URL.createObjectURL(blob));
-          setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
+          if (storedDocument.server && !storedDocument.server.storageKey) {
+            // This browser has the PDF but the library does not: save it now,
+            // so the book opens on every device without adding it again.
+            void saveMissingPdf(storedDocument, blob, false);
+            return;
+          }
+          setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : "Recovered browser-local prototype records.");
           return;
         }
         const storedServerUrl = serverPdfUrl(storedDocument);
@@ -332,7 +339,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           setStatus("Recovered PDF from server file storage.");
           return;
         }
-        setStatus("Recovered records, but no browser or server PDF was found.");
+        setStatus(storedDocument.server ? "This book's PDF was never saved to your library. Choose the PDF file once and it will open on every device." : "Recovered records, but no browser or server PDF was found.");
       });
       return;
     }
@@ -359,9 +366,55 @@ export function ScriptoriumMilestoneOnePersisted() {
           }
         });
     }
+    // Once, on first load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => () => { if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
+
+  // Save the PDF itself to a book that is in the library without its file.
+  // The book keeps its id, notes and highlights. Returns true once saved.
+  async function saveMissingPdf(target: StoredDocument, file: Blob, interactive: boolean, allowDifferent = false): Promise<boolean> {
+    const server = target.server;
+    if (!server) return false;
+    setStatus("Saving this PDF to your library so it opens on every device…");
+    try {
+      const storageKey = await attachPdfFile(server.documentId, file, target.filename, allowDifferent);
+      const updated: StoredDocument = { ...target, server: { ...server, storageKey } };
+      saveDocument(updated);
+      setDocumentRecord((current) => current && current.id === target.id ? { ...current, server: { ...server, ...current.server, storageKey } } : current);
+      await putPdf(server.documentId, file).catch(() => undefined);
+      setStatus("PDF saved to your library. It will now open on every device without adding it again.");
+      return true;
+    } catch (error) {
+      if (error instanceof AttachPdfError && error.code === "different_file") {
+        if (interactive && window.confirm("This is not the same file that was first added for this book, so existing highlights may not line up with its pages.\n\nPress OK to use it anyway, or Cancel to choose another file.")) {
+          return saveMissingPdf(target, file, interactive, true);
+        }
+        setStatus("Not saved: that is a different file from the one first added for this book.");
+        return false;
+      }
+      const reason = error instanceof Error ? error.message : "The PDF could not be saved to the library.";
+      setStatus(interactive ? reason : `${reason} It is still readable in this browser; Scriptorium will try again next time it opens here.`);
+      return false;
+    }
+  }
+
+  async function chooseMissingPdf(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !documentRecord) return;
+    if (fileKind(file) !== "PDF") { setStatus("Please choose a PDF file."); return; }
+    setAttachingPdf(true);
+    try {
+      if (await saveMissingPdf(documentRecord, file, true)) {
+        if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
+        setPdfUrl(URL.createObjectURL(file));
+      }
+    } finally {
+      setAttachingPdf(false);
+    }
+  }
 
   const locator = useMemo(() => currentLocator(documentRecord, anchor, pageRanges?.ranges), [documentRecord, anchor, pageRanges]);
   const fallbackCitation = useMemo(() => documentRecord ? citation(documentRecord, locator, style) : "Register a document before generating a citation.", [documentRecord, locator, style]);
@@ -475,12 +528,15 @@ export function ScriptoriumMilestoneOnePersisted() {
       try {
         const server = await persistPdfFile(file, nextDocument, bookPage(nextDocument.pageMap));
         nextDocument = { ...nextDocument, server };
-        setStatus("PDF registered, uploaded, and database metadata persisted. Embedded metadata will prefill fields if available.");
+        // Also keep this browser's copy under the library id, which is the id used when the book is reopened from the Library.
+        await putPdf(server.documentId, file).catch(() => undefined);
+        setStatus("PDF added and saved to your library. It will open on every device.");
       } catch {
         try {
           const server = await persistDocument(nextDocument, bookPage(nextDocument.pageMap));
           nextDocument = { ...nextDocument, server };
-          setStatus("PDF registered locally and document metadata persisted. Server file storage is unavailable.");
+          await putPdf(server.documentId, file).catch(() => undefined);
+          setStatus("PDF added, but the file itself could not be uploaded to your library yet. It is readable in this browser, and Scriptorium will try the upload again next time you open it here.");
         } catch {
           setStatus("PDF registered locally. Database persistence is unavailable in this environment.");
         }
@@ -1154,7 +1210,9 @@ export function ScriptoriumMilestoneOnePersisted() {
         <main className="ledgerReader" id="ledger-reader" tabIndex={-1}>
           <section className="pdfPanel" aria-label="Document display">
             {isPdf(documentRecord) ? (
-              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} searchTerms={searchHighlight && searchHighlight.pageNumber === currentPage ? searchHighlight.terms : null} onClearSearch={() => setSearchHighlight(null)} onHighlightClick={openHighlight} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
+              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} searchTerms={searchHighlight && searchHighlight.pageNumber === currentPage ? searchHighlight.terms : null} onClearSearch={() => setSearchHighlight(null)} onHighlightClick={openHighlight} /> : (documentRecord?.kind === "PDF" && documentRecord.server && !documentRecord.server.storageKey
+                ? <div className="emptyPdfState"><strong>This book&apos;s PDF isn&apos;t in your library yet.</strong><span>Choose the PDF file once. It will be saved to your library and open on every device from then on. Your highlights and notes stay as they are.</span><label className="uploadButton emptyPdfAttach">{attachingPdf ? "Saving…" : "Choose PDF file"}<input type="file" accept="application/pdf,.pdf" onChange={chooseMissingPdf} disabled={attachingPdf} /></label></div>
+                : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF to begin.</span></div>)
             ) : isText(documentRecord) ? (
               textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
             ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}

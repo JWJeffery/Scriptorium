@@ -219,7 +219,7 @@ export function openDb(): Promise<IDBDatabase> {
   });
 }
 
-export async function putPdf(documentId: string, file: File) {
+export async function putPdf(documentId: string, file: Blob) {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(PDF_STORE, "readwrite");
@@ -282,6 +282,36 @@ export async function persistPdfFile(file: File, document: StoredDocument, locat
   if (!response.ok) throw new Error("PDF upload persistence failed.");
   const body = await response.json() as { document: { id: string; storageKey?: string | null }; version: { id: string }; source: { id: string }; pageMap: { id: string }; storedFile?: { storageKey: string } };
   return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id, storageKey: body.storedFile?.storageKey ?? body.document.storageKey ?? undefined } satisfies ServerIds;
+}
+
+// Attach the PDF itself to a book already in the library that has no file
+// stored on the server, so it opens on every device from then on.
+export class AttachPdfError extends Error {
+  constructor(message: string, readonly code?: string) { super(message); }
+}
+
+export async function attachPdfFile(documentId: string, file: Blob, filename: string, allowDifferent = false) {
+  const formData = new FormData();
+  formData.set("file", file instanceof File ? file : new File([file], filename || "document.pdf", { type: "application/pdf" }));
+  if (allowDifferent) formData.set("allowDifferent", "true");
+  const response = await fetch(`/api/core/files/${encodeURIComponent(documentId)}`, { method: "PUT", body: formData });
+  const body = await response.json().catch(() => ({})) as { error?: string; code?: string; document?: { storageKey?: string } };
+  if (!response.ok || !body.document?.storageKey) {
+    throw new AttachPdfError(body.error ?? (response.status === 413 ? "The PDF is too large to upload." : "The PDF could not be saved to the library."), body.code);
+  }
+  return body.document.storageKey;
+}
+
+// The browser's own copy of a PDF, looked up under every id the book has had:
+// a book is stored under a temporary id when it is first added, but under its
+// library id when it is reopened from the Library.
+export async function getBrowserPdf(document: StoredDocument) {
+  const ids = Array.from(new Set([document.id, document.server?.documentId].filter((id): id is string => Boolean(id))));
+  for (const id of ids) {
+    const blob = await getPdf(id).catch(() => null);
+    if (blob) return blob;
+  }
+  return null;
 }
 
 export async function persistTextLikeFile(file: File, document: StoredDocument, locator: string, existingServerDocumentId?: string) {
