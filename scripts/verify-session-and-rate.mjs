@@ -27,6 +27,13 @@ assert.equal(readCookie("a=1; scriptorium_session=abc.def; b=2", "scriptorium_se
 assert.equal(readCookie(null, "x"), undefined);
 assert.equal(safeNextPath("/reading?doc=1"), "/reading?doc=1");
 for (const bad of ["https://evil.example", "//evil.example", "/\\evil", "/login", "/api/backup", "", null, undefined]) assert.equal(safeNextPath(bad), "/", `refuses ${bad}`);
+// Browsers strip tabs/newlines and treat "\\" as "/": each of these would otherwise land on another site.
+for (const bad of ["/\t/evil.example", "/\n/evil.example", "/\r\n/evil.example", "/x\\..\\/evil", "/%0a", "/./\t/evil", "/\u0000"]) {
+  const result = safeNextPath(bad);
+  assert.equal(new URL(result, "https://scriptorium.example").origin, "https://scriptorium.example", `stays on this site: ${JSON.stringify(bad)} -> ${result}`);
+}
+for (const bad of ["/\t/evil.example", "/\\evil", "/a\\b"]) assert.equal(safeNextPath(bad), "/", `refuses ${JSON.stringify(bad)}`);
+assert.equal(safeNextPath("/library?q=a%20b#top"), "/library?q=a%20b#top", "an ordinary address is kept as is");
 assert.equal(await secretsMatch("same", "same"), true);
 assert.equal(await secretsMatch("same", "different"), false);
 

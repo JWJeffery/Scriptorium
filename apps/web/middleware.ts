@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, checkSessionToken, createSessionToken, readCookie, secretsMatch, sessionCookieOptions } from "./lib/session";
-import { clientKey, hit } from "./lib/rate-limit";
+import { blocked, clientKey, hit } from "./lib/rate-limit";
 
 // Application-level gate. The host (Spaceship/cPanel) may already protect the site
 // with a password, but that covers only the addresses the host rule covers. This
@@ -29,6 +29,10 @@ const HEAVY_GET_PREFIXES = ["/api/backup", "/api/threads/export", "/api/document
 const GENERAL_PER_MINUTE = 900;
 const WRITES_PER_MINUTE = 240;
 const HEAVY_PER_MINUTE = 20;
+// Wrong basic-auth passwords: as many as the sign-in form allows (app/api/auth/login/route.ts).
+const BASIC_FAILURES_ALLOWED = 8;
+const BASIC_GLOBAL_FAILURES_ALLOWED = 60;
+const BASIC_WINDOW_SECONDS = 15 * 60;
 
 function tooManyRequests(retryAfterSeconds: number, wantsHtml: boolean) {
   return new NextResponse(wantsHtml ? "Too many requests. Please wait a moment and try again." : JSON.stringify({ error: "Too many requests. Please wait a moment and try again." }), {
@@ -110,7 +114,17 @@ export async function middleware(request: NextRequest) {
   }
   // Scripts may use basic auth. (A browser may also send basic-auth credentials meant for
   // the hosting company's own password prompt; those simply do not match and are ignored.)
-  if (await hasValidBasic(request, user, password)) return NextResponse.next();
+  // Scripts may sign in with basic auth. Wrong guesses count toward their own lockout, like the sign-in form's:
+  // without it, basic auth was a way around the form's limit on password guessing.
+  if (/^basic /i.test(request.headers.get("authorization") ?? "")) {
+    const visitorKey = `basic-fail:${visitor}`;
+    const mine = blocked(visitorKey, BASIC_FAILURES_ALLOWED, BASIC_WINDOW_SECONDS);
+    const everyone = blocked("basic-fail:*", BASIC_GLOBAL_FAILURES_ALLOWED, BASIC_WINDOW_SECONDS);
+    if (!mine.allowed || !everyone.allowed) return tooManyRequests(Math.max(mine.retryAfterSeconds, everyone.retryAfterSeconds), wantsHtml);
+    if (await hasValidBasic(request, user, password)) return NextResponse.next();
+    hit(visitorKey, BASIC_FAILURES_ALLOWED, BASIC_WINDOW_SECONDS);
+    hit("basic-fail:*", BASIC_GLOBAL_FAILURES_ALLOWED, BASIC_WINDOW_SECONDS);
+  }
 
   if (wantsHtml) {
     const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");

@@ -64,6 +64,15 @@ const evil = await fetch(`${baseUrl}/api/auth/login`, {
   body: JSON.stringify({ username: user, password, next: "https://evil.example/" }),
 });
 assert.equal((await evil.json()).next, "/");
+// ...including the browser trick where a tab or backslash turns "/\t/evil.example" into "//evil.example".
+for (const next of ["/\t/evil.example", "/\\evil.example", "/\n/evil.example"]) {
+  const tricky = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: new URL(baseUrl).origin, ...ip() },
+    body: JSON.stringify({ username: user, password, next }),
+  });
+  assert.equal((await tricky.json()).next, "/", `redirect refused: ${JSON.stringify(next)}`);
+}
 
 // Logout clears the cookie.
 const out = await fetch(`${baseUrl}/api/auth/logout`, {
@@ -78,6 +87,14 @@ let last;
 for (let i = 0; i < 9; i++) last = await login("bad" + i, lockIp);
 assert.equal(last.status, 429);
 assert.ok(last.headers.get("retry-after"));
+
+// Basic auth has its own lockout: 8 wrong passwords from one address, then even the right one waits.
+const basicIp = ip();
+for (let i = 0; i < 8; i++) assert.equal((await fetch(probe, { headers: { ...basic(user, "guess" + i), ...basicIp } })).status, 401, "a wrong basic password is refused");
+const lockedBasic = await fetch(probe, { headers: { ...good, ...basicIp } });
+assert.equal(lockedBasic.status, 429, "after 8 wrong basic passwords that address must wait");
+assert.ok(lockedBasic.headers.get("retry-after"));
+assert.notEqual((await fetch(probe, { headers: { ...good, ...ip() } })).status, 429, "another address is unaffected");
 
 // Heavy-path rate limit.
 const heavyIp = ip();

@@ -85,6 +85,14 @@ export function sessionCookieOptions(secure: boolean) {
 
 /** Only follow a "go back to where I was" address if it stays on this site. */
 export function safeNextPath(value: string | null | undefined) {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\") || value.startsWith("/login") || value.startsWith("/api/")) return "/";
-  return value;
+  // Browsers drop tabs and newlines from addresses and treat "\" like "/", so "/<tab>/evil.example" or "/\evil"
+  // would become "//evil.example" (another site). Refuse any of those characters outright, then make sure the
+  // address really resolves to this site before following it.
+  if (!value || !value.startsWith("/") || /[\u0000-\u001f\u007f\\]/.test(value)) return "/";
+  let resolved: URL;
+  try { resolved = new URL(value, "https://scriptorium.invalid"); } catch { return "/"; }
+  if (resolved.origin !== "https://scriptorium.invalid") return "/";
+  const path = `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  if (path.startsWith("//") || path.startsWith("/login") || path.startsWith("/api/")) return "/";
+  return path;
 }
