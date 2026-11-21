@@ -4,6 +4,118 @@ Read this first in any new session before touching code. Update it at the end of
 session that changes the build state (new gates, fixes, pushes) — same discipline as
 The Universal Office's RESUME_PROJECT_NOTE.md.
 
+## HARDENING PLAN — November 2026 (in progress; read before anything else below)
+
+Source: a full review on 2026-11-21 (security, architecture, reliability; three independent reviewers,
+the serious claims re-checked by hand). Owner's constraints: **no new spending**; off-server backups go
+to **Google Drive** (the owner's existing account, 15 GB free tier). The owner is not a programmer: every
+step he must do himself is written as copy-paste commands, and nothing depends on a Claude session
+running on a schedule.
+
+### Current state of production (true as of this plan)
+- Server: a Spaceship VPS, Ubuntu 24.04, `root@104.207.80.207 -p 22022`, app in `/opt/scriptorium`,
+  Docker Compose stack `docker-compose.prod.yml` (postgres+pgvector, migrate, web, worker, caddy).
+  This VPS is NOT the Spaceship shared-hosting server (server55) that the Spaceship MCP reaches.
+- Deploy today: `cd /opt/scriptorium && ./deploy/backup.sh && git pull && docker compose -f
+  docker-compose.prod.yml --env-file .env.production up -d --build` (~4 min).
+- Production runs branch `claude/festive-maxwell-gr4qe0`; `main` is 28 commits behind and stale.
+  CI (`ci.yml`) only auto-runs for `main`; for the production branch it must be started by hand
+  (`gh api -X POST repos/JWJeffery/Scriptorium/actions/workflows/ci.yml/dispatches -f ref=<branch>`).
+
+### The eight workstreams, in order
+
+**1. Backups that survive losing the server (highest priority).**
+Problem: every backup is on the same disk as the data; 14 full-library ZIPs will fill the 23 GB disk;
+the nightly ZIP is held in the web server's memory; failures are silent; restore of the nightly
+format is never tested.
+Design:
+- Nightly backup = `pg_dump` (small, custom format) + the uploaded-files folder. The full-library ZIP
+  leaves the nightly job (the in-app "Download backup" button stays for manual use).
+- Off-server copy with **rclone to Google Drive**, run from the official `rclone/rclone` container
+  (nothing installed on the host). Files are synced incrementally (`rclone sync` with `--backup-dir`, so a
+  deleted or overwritten file is moved to a dated folder instead of lost). Database dumps are copied
+  and pruned on Drive (keep 30 days). Drive access uses `scope=drive.file` (rclone can only see what it
+  created). Config lives in `deploy/rclone/rclone.conf` (git-ignored, mode 600).
+- Local retention drops to 3 database dumps; in-app ZIP retention drops from 14 to 3.
+- One-time owner setup: `deploy/connect-google-drive.sh` asks for a token produced on his Mac by
+  `rclone authorize "drive"` (browser sign-in), writes the config, and test-uploads a file.
+- Every run writes `backup-status.json` into the app's data volume (time, result, what was copied).
+  The app shows a warning banner if the last good off-server backup is older than 36 hours or failed,
+  and `/api/health` reports it. This is the free "notification": the owner sees it in the app.
+- `deploy/install-cron.sh` installs the nightly job idempotently (`/etc/cron.d/scriptorium`).
+- `deploy/restore.sh` + a written runbook restore a fresh server from Drive; CI restores a real nightly
+  backup (pg_restore + files) into an empty stack to prove it works.
+- Optional second copy (owner's idea, re-shaped): the shared-hosting account he already pays for, over
+  SFTP via rclone. Off by default; documented.
+
+**2. One branch: production runs `main`.**
+Merge `claude/festive-maxwell-gr4qe0` into `main` (fast-forward-equivalent; main is a strict ancestor).
+All work targets `main`; CI runs automatically on every PR and push. The server switches once with
+`git fetch && git checkout main && git pull`. The old branch is kept, untouched, for history.
+
+**3. Errors you can see; edits that never silently revert.**
+- Every server-side `catch` logs the real error (`console.error`) with a request id; upload routes return
+  the real reason (too large, not a PDF, storage full) instead of a generic 500. Size is checked before
+  any heavy work.
+- Client shows the server's message instead of "could not reach the server" for 4xx/5xx.
+- Annotation edits made while the server fails are marked `pendingSync` and survive the next sync;
+  "Save unsaved" re-sends them. New highlights carry a client id used as an idempotency key, so a
+  retried save can never create a duplicate (DB: `Annotation.clientId` unique).
+
+**4. Background jobs that finish and never get stuck.**
+- OCR: time limit scales with page count; an abort signal actually stops the page loop on timeout or
+  shutdown; results are saved in batches so a restart resumes where it stopped instead of page 1.
+- Worker reconciliation at start-up and every few minutes: job records stuck `RUNNING`/`QUEUED` with no
+  live queue job are marked `FAILED` (retryable). Queue expiry raised to fit a long book.
+- Compose: worker `stop_grace_period` long enough to save a batch and exit cleanly; Postgres protected
+  from the out-of-memory killer, the worker sacrificed first (`oom_score_adj`), no hard memory caps
+  (the VPS size is not known to the code).
+- Backups and other heavy work use one database-wide lock, not a per-process flag.
+
+**5. Security fixes.**
+- Login redirect: reject control characters / anything that is not same-origin (`/\t/evil.com` was
+  accepted and became `//evil.com`).
+- Failed Basic-auth attempts count toward the same lockout as the login form (in the middleware).
+- "Sign out everywhere": documented as changing `SCRIPTORIUM_SESSION_SECRET` and restarting; logout
+  wording updated.
+
+**6. Server upkeep handled by one deploy script.**
+`deploy/update.sh`: backup → `git pull` → build → `up -d` → wait for health → prune old images and
+build cache. Docker log rotation in compose (`max-size`). `/api/health` checks the database, the job
+queue, and backup freshness; the compose health check uses it. Docs: enable unattended security
+upgrades; do not take the 26.04 release upgrade.
+
+**7. Faster search; browser storage that cannot overflow.**
+- `pg_trgm` GIN index on page text for exact search.
+- Meaning search on pgvector: a `vector(384)` column with an HNSW index, filled from the existing
+  bytes; search runs in the database instead of loading every vector into Node.
+- Browser keeps only the current book's highlights plus unsynced changes (the database is the source of
+  truth); writes are guarded against the ~5 MB storage limit; old browser PDF copies of books that are
+  safely on the server are pruned.
+
+**8. Tidy.**
+Rename `ScriptoriumMilestoneOnePersisted` → `ScriptoriumReader`; remove API routes the UI never calls
+and the keyword-grep "verifiers" that only kept them alive; archive obsolete docs; rewrite this note's
+top as a one-page current state (history moves to `docs/archive/`). styles.css consolidation is done
+gradually, one component at a time, never as a big-bang rewrite.
+
+### Rollout
+Each workstream lands as its own PR with real tests (unit, API against a production build, and
+Playwright in a browser), CI green, then merged to `main`. Production updates are batched so the owner
+runs as few deploys as possible; each deploy message says exactly what to run.
+
+### Status
+| # | Workstream | Status |
+|---|---|---|
+| 1 | Off-server backups to Google Drive | planned |
+| 2 | Production on `main` | planned |
+| 3 | Visible errors, no silent reverts | planned |
+| 4 | Jobs that finish and never stick | planned |
+| 5 | Security fixes | planned |
+| 6 | Deploy script, health, cleanup | planned |
+| 7 | Search speed, browser storage | planned |
+| 8 | Tidy | planned |
+
 ## What this project is
 
 A scholarly reading/annotation/citation app for doctoral theological/historical research
