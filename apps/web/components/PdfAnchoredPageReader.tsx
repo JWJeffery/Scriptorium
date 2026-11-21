@@ -847,6 +847,26 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
             transformOrigin: "top left"
           }}
         >
+          <svg className="pdfDarkPageFilterDefs" aria-hidden="true" focusable="false" width="0" height="0">
+            {/* Dark-theme page rendering (used by styles.css). A plain inversion leaves a scan's grey or
+                yellowed paper as a muddy mid-tone with dim text. Instead: take each pixel's brightness, treat
+                anything at least as light as paper (>= 0.72) as background and anything as dark as ink
+                (<= 0.22) as text, stretch the range in between, and paint it from the page colour #171310
+                to warm light text #ece4d6. Paper becomes one even dark tone and the type stays crisp. */}
+            <filter id="pdfDarkPage" colorInterpolationFilters="sRGB">
+              <feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0" />
+              <feComponentTransfer>
+                <feFuncR type="linear" slope="-2" intercept="1.44" />
+                <feFuncG type="linear" slope="-2" intercept="1.44" />
+                <feFuncB type="linear" slope="-2" intercept="1.44" />
+              </feComponentTransfer>
+              <feComponentTransfer>
+                <feFuncR type="linear" slope="0.8353" intercept="0.0902" />
+                <feFuncG type="linear" slope="0.8196" intercept="0.0745" />
+                <feFuncB type="linear" slope="0.7765" intercept="0.0627" />
+              </feComponentTransfer>
+            </filter>
+          </svg>
           <canvas ref={canvasRef} className="pdfCanvas" />
           <div className="pdfHighlightLayer" aria-hidden="true">
             {highlights.filter((highlight) => highlight.anchor.pageNumber === pageNumber).flatMap((highlight) =>
