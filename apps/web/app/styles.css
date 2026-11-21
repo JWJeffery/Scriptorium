@@ -977,10 +977,21 @@ h2 {
   --ledger-shadow: 0 16px 42px rgb(0 0 0 / 45%);
 }
 
-/* Scanned PDF pages are white images: in the dark theme they are inverted (and warmed a little) unless
-   the reader chose to keep pages light. Highlights switch from "multiply" (which vanishes on dark) to a plain tint. */
+/* Scanned PDF pages are light images: in the dark theme they are redrawn as light text on the dark page
+   colour unless the reader chose to keep pages light. The #pdfDarkPage filter (PdfAnchoredPageReader.tsx)
+   flattens the paper, whatever its scanned tint, to one dark tone and keeps the ink crisp; a plain invert
+   left grey or yellowed scans muddy and low in contrast. Highlights switch from "multiply" (which vanishes
+   on dark) to a plain tint. */
 :root[data-theme="dark"]:not([data-page="light"]) .pdfCanvas {
-  filter: invert(0.92) hue-rotate(180deg) sepia(0.12);
+  filter: url(#pdfDarkPage);
+}
+
+.pdfDarkPageFilterDefs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 :root[data-theme="dark"]:not([data-page="light"]) .pdfPageFrame {
