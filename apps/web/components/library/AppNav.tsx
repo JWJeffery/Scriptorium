@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { ThemeMenu } from "../ThemeMenu";
+
 // The strip across the top of the Library, Inbox, Jobs and item pages. (The reader has its own top bar.)
 const LINKS = [
   { key: "inbox", href: "/inbox", label: "Inbox" },
@@ -17,7 +19,7 @@ export function AppNav({ current, children }: { current: "inbox" | "library" | "
           <a key={link.key} href={link.href} aria-current={link.key === current ? "page" : undefined}>{link.label}</a>
         ))}
       </nav>
-      <div className="libNavExtra">{children}</div>
+      <div className="libNavExtra">{children}<ThemeMenu /></div>
     </header>
   );
 }

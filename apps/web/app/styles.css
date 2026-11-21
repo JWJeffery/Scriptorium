@@ -8,6 +8,26 @@
   --accent: #5d4631;
   --accent-strong: #392819;
   --soft: #f8f2e8;
+  --surface: #fff;
+  --panel-2: #fffaf1;
+  --ground-2: #e9dfcf;
+  --soft-2: #f4ead8;
+  --active: #f1e1c4;
+  --tint-red: #f4e2d8;
+  --tint-green: #e2ecdf;
+  --line-2: #d8cab4;
+  --line-3: #cdb998;
+  --ink-soft: #6b5a47;
+  --ink-strong: #3a2c1c;
+  --accent-warm: #8a4b25;
+  --ok: #3e472e;
+  --danger: #8f2d2d;
+  --muted-2: #aa9b87;
+  --on-accent: #fff;
+  --warn-bg: #fff3d6;
+  --warn-line: #e5c97a;
+  --warn-ink: #8a5a00;
+  --danger-line: #d9a49c;
 }
 
 * {
@@ -39,7 +59,7 @@ select {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px 12px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -172,7 +192,7 @@ h2 {
 .uploadButton,
 .primaryButton {
   background: var(--accent-strong);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .uploadButton input {
@@ -258,7 +278,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 6px 10px;
-  background: #fff;
+  background: var(--surface);
   color: var(--accent-strong);
 }
 
@@ -290,7 +310,7 @@ h2 {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   padding: 8px;
   text-align: left;
@@ -314,7 +334,7 @@ h2 {
 .pdfPanel {
   overflow: auto;
   min-height: 760px;
-  background: #eee5d7;
+  background: var(--soft-2);
 }
 
 .pdfFrameViewport {
@@ -348,7 +368,7 @@ h2 {
 
 .pdfSelectionModeToggle button {
   border: 0;
-  background: #fff;
+  background: var(--surface);
   color: var(--muted);
   padding: 8px 14px;
   font-size: 0.85rem;
@@ -365,7 +385,7 @@ h2 {
 
 .pdfSelectionModeToggle button.active {
   background: var(--accent-strong);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .pdfZoomControls {
@@ -379,7 +399,7 @@ h2 {
   min-height: 36px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   font-size: 1.1rem;
   line-height: 1;
@@ -412,7 +432,7 @@ h2 {
 .pdfClearSelection {
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #fff;
+  background: var(--surface);
   color: var(--accent-strong);
   padding: 8px 14px;
   font-size: 0.85rem;
@@ -423,7 +443,7 @@ h2 {
   width: 100%;
   min-height: 760px;
   border: 0;
-  background: #fff;
+  background: var(--surface);
 }
 
 .emptyPdfState {
@@ -443,7 +463,7 @@ h2 {
 .textReaderShell {
   min-height: 760px;
   padding: 54px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid #dedede;
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 3%);
   color: var(--ink);
@@ -525,7 +545,7 @@ h2 {
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .annotationRecord blockquote {
@@ -621,14 +641,14 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 8px 16px;
-  background: #fff;
+  background: var(--surface);
   color: var(--accent-strong);
 }
 
 .toolsTab.active {
   background: var(--accent-strong);
   border-color: var(--accent-strong);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .toolsFormLayout {
@@ -647,7 +667,7 @@ h2 {
   padding: 16px 18px;
   border: 1px solid #c88f42;
   border-radius: 16px;
-  background: #fff8e8;
+  background: var(--panel-2);
 }
 
 .toolsAttention div {
@@ -734,7 +754,7 @@ h2 {
   border: 1px solid var(--line);
   border-left: 4px solid #bdc9ac;
   border-radius: 14px;
-  background: rgb(255 253 249 / 88%);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
 }
 
 .readingNoteCandidate.review { border-left-color: #c88f42; }
@@ -777,7 +797,7 @@ h2 {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .toolsResultRow p {
@@ -795,8 +815,8 @@ h2 {
   padding: 10px 12px 10px 30px;
   border: 1px solid #d7b58f;
   border-radius: 12px;
-  background: #fff8ed;
-  color: #70421f;
+  background: var(--panel-2);
+  color: var(--accent-warm);
   line-height: 1.45;
 }
 
@@ -824,13 +844,13 @@ h2 {
 }
 
 .toolsBadgeStale {
-  background: #f4e2d8;
-  color: #8a4b25;
+  background: var(--tint-red);
+  color: var(--accent-warm);
 }
 
 .toolsBadgeFresh {
-  background: #e2ecdf;
-  color: #35643f;
+  background: var(--tint-green);
+  color: var(--ok);
 }
 
 .toolsProgressTrack {
@@ -917,6 +937,72 @@ h2 {
   --ledger-shadow: 0 16px 42px rgb(62 43 25 / 14%);
 }
 
+/* ---- Dark theme: the same tokens with dark values. data-theme is set on <html> (see lib/theme.ts). ---- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #16120f;
+  --panel: #201b16;
+  --ink: #efe6d8;
+  --muted: #a99d8b;
+  --line: #3a3128;
+  --accent: #d8b88c;
+  --accent-strong: #e6cda5;
+  --soft: #27211b;
+  --surface: #2a241d;
+  --panel-2: #241f19;
+  --ground-2: #100d0b;
+  --soft-2: #2f281f;
+  --active: #3d3224;
+  --tint-red: #3b2420;
+  --tint-green: #26301f;
+  --line-2: #443a2e;
+  --line-3: #5b4d3b;
+  --ink-soft: #c9bba4;
+  --ink-strong: #f3eadb;
+  --accent-warm: #e4a06d;
+  --ok: #b7c99a;
+  --danger: #ff9f93;
+  --muted-2: #7d725f;
+  --on-accent: #1a1511;
+  --warn-bg: #3a2f14;
+  --warn-line: #6a5522;
+  --warn-ink: #e9c46a;
+  --danger-line: #7a3d36;
+  --ledger-ground: #1b1713;
+  --ledger-sand: #2c251d;
+  --ledger-paper: #201b16;
+  --ledger-terracotta: #e4a06d;
+  --ledger-terracotta-dark: #f0bd92;
+  --ledger-sage: #a9b98c;
+  --ledger-shadow: 0 16px 42px rgb(0 0 0 / 45%);
+}
+
+/* Scanned PDF pages are light images: in the dark theme they are redrawn as light text on the dark page
+   colour unless the reader chose to keep pages light. The #pdfDarkPage filter (PdfAnchoredPageReader.tsx)
+   flattens the paper, whatever its scanned tint, to one dark tone and keeps the ink crisp; a plain invert
+   left grey or yellowed scans muddy and low in contrast. Highlights switch from "multiply" (which vanishes
+   on dark) to a plain tint. */
+:root[data-theme="dark"]:not([data-page="light"]) .pdfCanvas {
+  filter: url(#pdfDarkPage);
+}
+
+.pdfDarkPageFilterDefs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+:root[data-theme="dark"]:not([data-page="light"]) .pdfPageFrame {
+  background: #171310;
+}
+
+:root[data-theme="dark"]:not([data-page="light"]) .pdfHighlightBox {
+  mix-blend-mode: normal;
+  opacity: 0.3;
+}
+
 body {
   background: var(--ledger-ground);
 }
@@ -929,7 +1015,7 @@ body {
   padding: 10px 14px;
   border-radius: 999px;
   background: var(--accent-strong);
-  color: #fff;
+  color: var(--on-accent);
   transform: translateY(-150%);
 }
 
@@ -952,8 +1038,8 @@ body {
   justify-content: space-between;
   gap: 20px;
   padding: 10px 22px;
-  border-bottom: 1px solid #d8cab4;
-  background: rgb(243 236 223 / 94%);
+  border-bottom: 1px solid var(--line-2);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
   backdrop-filter: blur(18px);
 }
 
@@ -970,7 +1056,7 @@ body {
 }
 
 .ledgerBrand > span[aria-hidden="true"] {
-  color: #aa9b87;
+  color: var(--muted-2);
 }
 
 .activeDocumentTitle {
@@ -983,9 +1069,9 @@ body {
 
 .locatorChip,
 .compactAction {
-  border: 1px solid #d5c5ad;
+  border: 1px solid var(--line-2);
   border-radius: 999px;
-  background: #fffaf1;
+  background: var(--panel-2);
   color: var(--accent-strong);
   padding: 8px 12px;
   font-size: 0.82rem;
@@ -1001,13 +1087,13 @@ body {
 .toolsToggle {
   background: var(--ledger-sage);
   border-color: var(--ledger-sage);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .inspectorToggle {
   background: var(--ledger-terracotta);
   border-color: var(--ledger-terracotta);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .ledgerToggle {
@@ -1023,16 +1109,16 @@ body {
   gap: 18px;
   padding: 10px 20px;
   border-bottom: 1px solid #bac49e;
-  background: #e5ecd4;
-  color: #3e472e;
+  background: var(--tint-green);
+  color: var(--ok);
 }
 
 .ledgerAttention button {
   border: 1px solid #7e8a62;
   border-radius: 999px;
   padding: 6px 12px;
-  background: #f8fbef;
-  color: #3e472e;
+  background: var(--tint-green);
+  color: var(--ok);
 }
 
 .ledgerBody {
@@ -1048,7 +1134,7 @@ body {
 .ledgerPane,
 .inspectorPane {
   min-width: 0;
-  background: #f4e8d2;
+  background: var(--soft-2);
 }
 
 .ledgerPane {
@@ -1058,7 +1144,7 @@ body {
   max-height: calc(100vh - 64px);
   position: sticky;
   top: 64px;
-  border-right: 1px solid #d8cab4;
+  border-right: 1px solid var(--line-2);
   overflow: hidden;
 }
 
@@ -1084,9 +1170,9 @@ body {
   place-items: center;
   width: 36px;
   height: 36px;
-  border: 1px solid #d5c5ad;
+  border: 1px solid var(--line-2);
   border-radius: 999px;
-  background: #fffaf1;
+  background: var(--panel-2);
   color: var(--accent-strong);
   font-size: 1.35rem;
   line-height: 1;
@@ -1115,10 +1201,10 @@ body {
 .ledgerFilters button {
   min-width: 30px;
   min-height: 30px;
-  border: 1px solid #d5c5ad;
+  border: 1px solid var(--line-2);
   border-radius: 999px;
   padding: 5px 9px;
-  background: #fffaf1;
+  background: var(--panel-2);
   color: var(--muted);
   font-size: 0.76rem;
 }
@@ -1150,9 +1236,9 @@ body {
   display: grid;
   gap: 8px;
   padding: 12px;
-  border: 1px solid #ddceb7;
+  border: 1px solid var(--line-2);
   border-radius: 14px;
-  background: rgb(255 253 248 / 72%);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
 }
 
 .ledgerRecord .recordHeader {
@@ -1201,13 +1287,13 @@ body {
 
 .ledgerFooter {
   padding: 10px 14px 16px;
-  border-top: 1px solid #d8cab4;
+  border-top: 1px solid var(--line-2);
 }
 
 .ledgerFooter .documentSummary {
   margin: 0 0 10px;
   padding: 9px;
-  background: rgb(255 253 248 / 52%);
+  background: color-mix(in srgb, var(--panel) 52%, transparent);
   font-size: 0.75rem;
 }
 
@@ -1220,7 +1306,7 @@ body {
   grid-column: 2;
   min-width: 0;
   padding: 18px;
-  background: #e9dfcf;
+  background: var(--ground-2);
   outline: none;
 }
 
@@ -1228,8 +1314,8 @@ body {
   min-height: calc(100vh - 128px);
   overflow: hidden;
   border-radius: 18px;
-  border-color: #d6c6ae;
-  background: #e5d9c7;
+  border-color: var(--line-2);
+  background: var(--ground-2);
   box-shadow: var(--ledger-shadow);
 }
 
@@ -1256,9 +1342,9 @@ body {
   max-width: calc(100% - 34px);
   margin: 0;
   padding: 7px;
-  border: 1px solid #d9cab4;
+  border: 1px solid var(--line-2);
   border-radius: 999px;
-  background: rgb(255 252 246 / 94%);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
   box-shadow: 0 10px 26px rgb(49 32 17 / 18%);
   transform: translateX(-50%);
   backdrop-filter: blur(16px);
@@ -1291,7 +1377,7 @@ body {
   align-items: center;
   gap: 8px;
   padding-right: 10px;
-  border-right: 1px solid #ded1bf;
+  border-right: 1px solid var(--line-2);
   color: var(--muted);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
@@ -1304,7 +1390,7 @@ body {
   height: 34px;
   border: 1px solid var(--line);
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   font-size: 1.2rem;
 }
@@ -1331,7 +1417,7 @@ body {
   position: sticky;
   top: 64px;
   padding: 0 12px 20px;
-  border-left: 1px solid #d8cab4;
+  border-left: 1px solid var(--line-2);
   overflow-y: auto;
 }
 
@@ -1359,9 +1445,9 @@ body {
 .captureCard,
 .recentSavedRecord,
 .inspectorGroup {
-  border: 1px solid #ddceb7;
+  border: 1px solid var(--line-2);
   border-radius: 16px;
-  background: rgb(255 253 248 / 76%);
+  background: color-mix(in srgb, var(--panel) 76%, transparent);
 }
 
 .captureCard {
@@ -1380,7 +1466,18 @@ body {
   min-height: 76px;
 }
 
+.pendingActions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.pendingActions .discardRecordButton {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
 .saveRecordButton {
+  flex: 1 1 auto;
   width: 100%;
   border-color: var(--ledger-terracotta-dark);
   background: var(--ledger-terracotta-dark);
@@ -1471,8 +1568,8 @@ body {
   bottom: 0;
   margin: 0;
   padding: 10px 18px;
-  border-top: 1px solid #d6c6ae;
-  background: rgb(249 244 235 / 95%);
+  border-top: 1px solid var(--line-2);
+  background: color-mix(in srgb, var(--panel) 95%, transparent);
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.4;
@@ -1486,7 +1583,7 @@ body {
   inset: 0 0 0 auto;
   width: min(540px, 94vw);
   overflow-y: auto;
-  border-left: 1px solid #d8cab4;
+  border-left: 1px solid var(--line-2);
   background: var(--ledger-ground);
   box-shadow: -20px 0 52px rgb(49 32 17 / 22%);
   transform: translateX(105%);
@@ -1511,8 +1608,8 @@ body {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 18px;
-  border-bottom: 1px solid #d8cab4;
-  background: rgb(243 236 223 / 96%);
+  border-bottom: 1px solid var(--line-2);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
   backdrop-filter: blur(16px);
 }
 
@@ -1718,7 +1815,7 @@ body {
     bottom: 0;
     width: 100%;
     height: min(86vh, 780px);
-    border-top: 1px solid #d8cab4;
+    border-top: 1px solid var(--line-2);
     border-left: 0;
     border-radius: 22px 22px 0 0;
     transform: translateY(105%);
@@ -1767,7 +1864,7 @@ a:focus-visible {
 }
 
 .dangerAction {
-  color: #8f2d2d;
+  color: var(--danger);
 }
 
 .ledgerRecord.editing {
@@ -1808,7 +1905,7 @@ a:focus-visible {
   padding: 0.75rem 0.9rem;
   border: 1px solid rgb(103 52 19 / 16%);
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .savedDocRow.current {
@@ -1822,13 +1919,13 @@ a:focus-visible {
 }
 
 .savedDocRow span {
-  color: #6b5a47;
+  color: var(--ink-soft);
   font-size: 0.8rem;
   overflow-wrap: anywhere;
 }
 
 .savedDocRow .savedDocWarning {
-  color: #8f2d2d;
+  color: var(--danger);
 }
 
 .savedDocRow .savedDocCurrent {
@@ -1839,7 +1936,7 @@ a:focus-visible {
 
 .savedDocsNote {
   margin: 0;
-  color: #6b5a47;
+  color: var(--ink-soft);
 }
 
 /* Search dialog */
@@ -1872,7 +1969,7 @@ a:focus-visible {
   padding: 0.7rem 0.9rem;
   border: 1px solid rgb(103 52 19 / 30%);
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface);
   font-size: 1.05rem;
 }
 
@@ -1900,7 +1997,7 @@ a:focus-visible {
 
 .searchToggles [role="group"] button.active {
   background: var(--ledger-terracotta-dark);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .searchToggles [role="group"] button:disabled {
@@ -1927,7 +2024,7 @@ a:focus-visible {
 
 .searchBody h3 {
   margin: 0.7rem 0 0.2rem;
-  color: #6b5a47;
+  color: var(--ink-soft);
   font-size: 0.74rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1935,7 +2032,7 @@ a:focus-visible {
 
 .searchNote {
   margin: 0.6rem 0;
-  color: #6b5a47;
+  color: var(--ink-soft);
 }
 
 .searchHit {
@@ -1953,7 +2050,7 @@ a:focus-visible {
 .searchHit:hover,
 .searchHit:focus-visible {
   border-color: rgb(103 52 19 / 30%);
-  background: #fff;
+  background: var(--surface);
 }
 
 .searchHitHead {
@@ -1965,7 +2062,7 @@ a:focus-visible {
 }
 
 .searchHitHead span:not(.recordColor) {
-  color: #6b5a47;
+  color: var(--ink-soft);
 }
 
 .searchHitText {
@@ -1989,26 +2086,26 @@ a:focus-visible {
 .threadsSection { display: grid; gap: 0.7rem; }
 .threadsSection label { display: grid; gap: 0.2rem; font-size: 0.85rem; }
 .threadsSection input,
-.threadsSection textarea { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: #fff; font: inherit; }
+.threadsSection textarea { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: var(--surface); font: inherit; }
 .threadNew { display: flex; gap: 0.6rem; }
 .threadNew input { flex: 1; }
 .threadList { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
-.threadList button { display: grid; gap: 0.15rem; width: 100%; padding: 0.6rem 0.8rem; border: 1px solid rgb(103 52 19 / 20%); border-radius: 10px; background: #fff; text-align: left; cursor: pointer; }
-.threadList button span { color: #6b5a47; font-size: 0.8rem; }
+.threadList button { display: grid; gap: 0.15rem; width: 100%; padding: 0.6rem 0.8rem; border: 1px solid rgb(103 52 19 / 20%); border-radius: 10px; background: var(--surface); text-align: left; cursor: pointer; }
+.threadList button span { color: var(--ink-soft); font-size: 0.8rem; }
 .threadExport { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .threadExport a { text-decoration: none; }
 .threadItems { display: grid; gap: 0.7rem; margin: 0; padding: 0; list-style: none; }
-.threadItem { display: grid; gap: 0.4rem; padding: 0.75rem 0.85rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: #fff; }
+.threadItem { display: grid; gap: 0.4rem; padding: 0.75rem 0.85rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: var(--surface); }
 .threadItemHead { display: flex; flex-wrap: wrap; gap: 0.3rem 0.7rem; align-items: center; font-size: 0.85rem; }
 .threadItemButtons { margin-left: auto; display: inline-flex; gap: 0.3rem; }
 .threadItemButtons button { padding: 0.1rem 0.5rem; border: 1px solid rgb(103 52 19 / 25%); border-radius: 6px; background: transparent; cursor: pointer; font-size: 0.8rem; }
 .threadItemButtons button:disabled { opacity: 0.4; cursor: default; }
 .threadItem blockquote { margin: 0; padding-left: 0.7rem; border-left: 3px solid var(--ledger-sage); font-size: 0.92rem; }
 .threadOwnNote,
-.threadCitation { margin: 0; font-size: 0.82rem; color: #5b4a38; }
+.threadCitation { margin: 0; font-size: 0.82rem; color: var(--ink-soft); }
 .threadCitation { font-style: italic; }
-.threadEmpty { margin: 0; color: #6b5a47; }
-.threadMessage { margin: 0; color: #8f2d2d; }
+.threadEmpty { margin: 0; color: var(--ink-soft); }
+.threadMessage { margin: 0; color: var(--danger); }
 .threadAddNote { display: grid; gap: 0.4rem; }
 .addToThread { display: grid; gap: 0.3rem; margin-top: 0.3rem; }
 .addToThread select,
@@ -2017,23 +2114,23 @@ a:focus-visible {
 /* Tags */
 .tagInput { display: grid; gap: 0.3rem; }
 .tagInputLabel { font-size: 0.85rem; }
-.tagChips { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; padding: 0.35rem 0.5rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: #fff; }
+.tagChips { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; padding: 0.35rem 0.5rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: var(--surface); }
 .tagChips input { flex: 1; min-width: 7rem; border: 0; outline: 0; background: transparent; font: inherit; font-size: 0.9rem; }
-.tagChip { display: inline-flex; gap: 0.25rem; align-items: center; padding: 0.1rem 0.5rem; border-radius: 999px; background: rgb(102 115 75 / 16%); color: #3f4a2b; font-size: 0.82rem; }
+.tagChip { display: inline-flex; gap: 0.25rem; align-items: center; padding: 0.1rem 0.5rem; border-radius: 999px; background: rgb(102 115 75 / 16%); color: var(--ok); font-size: 0.82rem; }
 .tagChip button { border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; line-height: 1; }
 .tagSuggestions { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.tagSuggestions button { padding: 0.1rem 0.5rem; border: 1px dashed rgb(102 115 75 / 55%); border-radius: 999px; background: transparent; color: #3f4a2b; font-size: 0.78rem; cursor: pointer; }
+.tagSuggestions button { padding: 0.1rem 0.5rem; border: 1px dashed rgb(102 115 75 / 55%); border-radius: 999px; background: transparent; color: var(--ok); font-size: 0.78rem; cursor: pointer; }
 .recordTags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-.recordTags span { padding: 0 0.45rem; border-radius: 999px; background: rgb(102 115 75 / 16%); color: #3f4a2b; font-size: 0.76rem; }
-.ledgerTagFilter { width: 100%; margin-top: 0.4rem; padding: 0.3rem 0.5rem; border: 1px solid rgb(103 52 19 / 25%); border-radius: 8px; background: #fff; font: inherit; font-size: 0.82rem; }
+.recordTags span { padding: 0 0.45rem; border-radius: 999px; background: rgb(102 115 75 / 16%); color: var(--ok); font-size: 0.76rem; }
+.ledgerTagFilter { width: 100%; margin-top: 0.4rem; padding: 0.3rem 0.5rem; border: 1px solid rgb(103 52 19 / 25%); border-radius: 8px; background: var(--surface); font: inherit; font-size: 0.82rem; }
 
 /* Page numbering editor */
 .pageNumbering { display: grid; gap: 0.6rem; }
 .pageNumberingHelp,
-.pageNumberingPreview { margin: 0; font-size: 0.82rem; color: #5b4a38; }
-.pageNumberingProblem { margin: 0; font-size: 0.82rem; color: #8f2d2d; }
+.pageNumberingPreview { margin: 0; font-size: 0.82rem; color: var(--ink-soft); }
+.pageNumberingProblem { margin: 0; font-size: 0.82rem; color: var(--danger); }
 .pageNumberingActions { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: center; justify-content: space-between; }
-.rangeRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem 0.5rem; padding: 0.6rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: #fff; }
+.rangeRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem 0.5rem; padding: 0.6rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: var(--surface); }
 .rangeRow label { display: grid; gap: 0.15rem; font-size: 0.78rem; }
 .rangeRow input,
 .rangeRow select { width: 100%; padding: 0.3rem 0.45rem; border: 1px solid rgb(103 52 19 / 25%); border-radius: 6px; font: inherit; font-size: 0.88rem; }
@@ -2043,52 +2140,52 @@ a:focus-visible {
 
 /* Backup */
 .backupSection { display: grid; gap: 0.7rem; }
-.backupSection h3 { margin: 0.6rem 0 0; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: #6b5a47; }
+.backupSection h3 { margin: 0.6rem 0 0; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
 .backupStatus { margin: 0; padding: 0.4rem 0.7rem; border-radius: 8px; background: rgb(102 115 75 / 14%); }
 .backupStatus.stale { background: rgb(154 79 28 / 14%); }
 .backupActions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .backupActions a { text-decoration: none; }
 .backupList { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
-.backupList li { display: flex; gap: 0.8rem; align-items: center; justify-content: space-between; padding: 0.5rem 0.7rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 8px; background: #fff; }
+.backupList li { display: flex; gap: 0.8rem; align-items: center; justify-content: space-between; padding: 0.5rem 0.7rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 8px; background: var(--surface); }
 .backupList li > span:first-child { display: grid; min-width: 0; }
-.backupList small { color: #6b5a47; }
-.backupFine { margin: 0; font-size: 0.82rem; color: #5b4a38; }
+.backupList small { color: var(--ink-soft); }
+.backupFine { margin: 0; font-size: 0.82rem; color: var(--ink-soft); }
 .backupCode { margin: 0; padding: 0.6rem 0.8rem; border-radius: 8px; background: #2d241a; color: #f3ecdf; font-size: 0.8rem; overflow-x: auto; }
 
-.citationMissing { display: block; margin-top: 0.4rem; color: #8f2d2d; font-size: 0.8rem; }
-.threadFine { margin: 0; font-size: 0.8rem; color: #5b4a38; }
+.citationMissing { display: block; margin-top: 0.4rem; color: var(--danger); font-size: 0.8rem; }
+.threadFine { margin: 0; font-size: 0.8rem; color: var(--ink-soft); }
 
-.fieldHint { color: #6b5a47; font-size: 0.76rem; }
+.fieldHint { color: var(--ink-soft); font-size: 0.76rem; }
 
 /* Source lookup dialog */
 .lookupDialog { width: min(40rem, calc(100vw - 2rem)); }
 .lookupTabs { display: inline-flex; border: 1px solid rgb(103 52 19 / 28%); border-radius: 999px; overflow: hidden; width: fit-content; }
 .lookupTabs button { padding: 0.35rem 0.9rem; border: 0; background: transparent; font-size: 0.85rem; cursor: pointer; }
-.lookupTabs button.active { background: var(--ledger-terracotta-dark); color: #fff; }
+.lookupTabs button.active { background: var(--ledger-terracotta-dark); color: var(--on-accent); }
 .lookupForm { display: grid; gap: 0.6rem; }
 .lookupForm label { display: grid; gap: 0.25rem; font-size: 0.85rem; }
 .lookupForm input,
-.lookupForm textarea { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: #fff; font: inherit; }
-.lookupMessage { margin: 0; color: #8f2d2d; font-size: 0.88rem; }
-.lookupCandidate { display: flex; gap: 1rem; align-items: center; justify-content: space-between; padding: 0.75rem 0.9rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: #fff; }
+.lookupForm textarea { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid rgb(103 52 19 / 28%); border-radius: 8px; background: var(--surface); font: inherit; }
+.lookupMessage { margin: 0; color: var(--danger); font-size: 0.88rem; }
+.lookupCandidate { display: flex; gap: 1rem; align-items: center; justify-content: space-between; padding: 0.75rem 0.9rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 10px; background: var(--surface); }
 .lookupCandidate > div { display: grid; gap: 0.2rem; min-width: 0; }
 .lookupCandidate span,
-.lookupCandidate small { color: #6b5a47; font-size: 0.82rem; }
+.lookupCandidate small { color: var(--ink-soft); font-size: 0.82rem; }
 .lookupCandidate em { font-size: 0.84rem; }
 
 /* Shortcuts */
 .shortcutsDialog { width: min(36rem, calc(100vw - 2rem)); }
 .shortcutList { display: grid; grid-template-columns: max-content 1fr; gap: 0.45rem 1.2rem; margin: 0; }
 .shortcutList dt { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
-.shortcutList dd { margin: 0; color: #4a3b2b; }
+.shortcutList dd { margin: 0; color: var(--ink-soft); }
 
 /* Bookmarks and export */
-.ledgerBookmarks { margin: 0.4rem 0; padding: 0.4rem 0.6rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 8px; background: #fff; font-size: 0.85rem; }
+.ledgerBookmarks { margin: 0.4rem 0; padding: 0.4rem 0.6rem; border: 1px solid rgb(103 52 19 / 18%); border-radius: 8px; background: var(--surface); font-size: 0.85rem; }
 .ledgerBookmarks summary { cursor: pointer; font-weight: 600; }
 .ledgerBookmarks ul { display: grid; gap: 0.2rem; margin: 0.4rem 0 0; padding: 0; list-style: none; }
 .ledgerBookmarks li { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; }
 .ledgerBookmarks li button:first-child { flex: 1; padding: 0.15rem 0.3rem; border: 0; background: transparent; text-align: left; cursor: pointer; font: inherit; color: var(--ledger-terracotta-dark); text-decoration: underline; text-underline-offset: 3px; }
-.ledgerBookmarks small { color: #6b5a47; text-decoration: none; }
+.ledgerBookmarks small { color: var(--ink-soft); text-decoration: none; }
 .bookmarkRemove { border: 0; background: transparent; cursor: pointer; font-size: 1rem; line-height: 1; }
 .exportMenu { font-size: 0.82rem; }
 .exportMenu summary { cursor: pointer; color: var(--ledger-terracotta-dark); text-decoration: underline; text-underline-offset: 3px; }
@@ -2096,19 +2193,19 @@ a:focus-visible {
 
 /* Database sync */
 .syncNotice { display: grid; gap: 0.2rem; margin: 0.4rem 0; padding: 0.5rem 0.7rem; border-radius: 8px; background: rgb(154 79 28 / 14%); font-size: 0.82rem; }
-.recordUnsaved { color: #8f2d2d; }
+.recordUnsaved { color: var(--danger); }
 
-.searchMethod { margin: 0.3rem 0 0; padding: 0.4rem 0.6rem; border-radius: 8px; background: rgb(102 115 75 / 12%); font-size: 0.8rem; color: #3f4a2b; }
+.searchMethod { margin: 0.3rem 0 0; padding: 0.4rem 0.6rem; border-radius: 8px; background: rgb(102 115 75 / 12%); font-size: 0.8rem; color: var(--ok); }
 .meaningSection { display: grid; gap: 0.7rem; }
 
 /* Sign-in page */
 .loginPage { min-height: 100vh; display: grid; place-items: center; padding: 1rem; background: var(--ledger-ground, #f3ecdf); }
-.loginCard { width: min(24rem, 100%); display: grid; gap: 0.6rem; padding: 2rem 1.8rem; border: 1px solid rgb(103 52 19 / 22%); border-radius: 16px; background: var(--ledger-paper, #fffdf8); box-shadow: var(--ledger-shadow, 0 16px 42px rgb(62 43 25 / 14%)); }
+.loginCard { width: min(24rem, 100%); display: grid; gap: 0.6rem; padding: 2rem 1.8rem; border: 1px solid rgb(103 52 19 / 22%); border-radius: 16px; background: var(--ledger-paper, var(--panel)); box-shadow: var(--ledger-shadow, 0 16px 42px rgb(62 43 25 / 14%)); }
 .loginCard h1 { margin: 0 0 0.4rem; font-size: 2rem; }
 .loginForm { display: grid; gap: 0.8rem; }
 .loginForm label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
-.loginForm input { padding: 0.6rem 0.75rem; border: 1px solid rgb(103 52 19 / 30%); border-radius: 8px; background: #fff; font: inherit; }
-.loginMessage { margin: 0; color: #8f2d2d; font-size: 0.88rem; }
+.loginForm input { padding: 0.6rem 0.75rem; border: 1px solid rgb(103 52 19 / 30%); border-radius: 8px; background: var(--surface); font: inherit; }
+.loginMessage { margin: 0; color: var(--danger); font-size: 0.88rem; }
 
 /* ------------------------------------------------------------------ Library, item detail, jobs */
 .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -2119,7 +2216,7 @@ a:focus-visible {
 .libNav nav { display: flex; gap: 6px; }
 .libNav nav a, .libNavExtra a { padding: 8px 14px; border-radius: 999px; color: var(--accent); text-decoration: none; }
 .libNav nav a:hover, .libNavExtra a:hover { background: var(--soft); }
-.libNav nav a[aria-current="page"] { background: var(--accent-strong); color: #fff; }
+.libNav nav a[aria-current="page"] { background: var(--accent-strong); color: var(--on-accent); }
 .libNavExtra { margin-left: auto; }
 
 .libLayout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 24px; padding: 24px; max-width: 1500px; margin: 0 auto; }
@@ -2128,7 +2225,7 @@ a:focus-visible {
 .libSide ul { list-style: none; margin: 0; padding: 0; }
 .libSide li > button:not(.libTiny) { display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: 10px; color: var(--ink); }
 .libSide li > button:not(.libTiny):hover { background: var(--soft); }
-.libSide li > button[aria-current="true"] { background: var(--accent-strong); color: #fff; }
+.libSide li > button[aria-current="true"] { background: var(--accent-strong); color: var(--on-accent); }
 .libSide li > button span { color: inherit; opacity: 0.65; }
 .libRowWithTools { display: flex; align-items: center; }
 .libRowWithTools > button:first-child { flex: 1; min-width: 0; }
@@ -2138,13 +2235,13 @@ a:focus-visible {
 .libInline { display: flex; gap: 6px; margin-top: 8px; }
 .libInline input { padding: 7px 10px; }
 .libInline button, .libToolbar button, .libBatch button, .libBatch select, .libDialogActions button, .libMore button, .libButton, .libMessage button {
-  border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 8px 14px; text-decoration: none; display: inline-block; width: auto; line-height: 1.2;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 8px 14px; text-decoration: none; display: inline-block; width: auto; line-height: 1.2;
 }
-.libToolbar button[aria-pressed="true"] { background: var(--accent-strong); color: #fff; border-color: var(--accent-strong); }
-.libButton.primary, .libDialogActions button[type="submit"] { background: var(--accent-strong); color: #fff; border-color: var(--accent-strong); }
-.libDanger { color: #8c2a1f !important; border-color: #d9a49c !important; }
-.libWarn { background: #fff3d6 !important; border-color: #e5c97a !important; }
-.libBad { color: #8c2a1f; }
+.libToolbar button[aria-pressed="true"] { background: var(--accent-strong); color: var(--on-accent); border-color: var(--accent-strong); }
+.libButton.primary, .libDialogActions button[type="submit"] { background: var(--accent-strong); color: var(--on-accent); border-color: var(--accent-strong); }
+.libDanger { color: var(--danger) !important; border-color: var(--danger-line) !important; }
+.libWarn { background: var(--warn-bg) !important; border-color: var(--warn-line) !important; }
+.libBad { color: var(--danger); }
 .libFaint { color: var(--muted); }
 button:disabled { opacity: 0.5; cursor: default; }
 
@@ -2162,31 +2259,31 @@ button:disabled { opacity: 0.5; cursor: default; }
 .libTable th { text-align: left; font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 10px 12px; background: var(--soft); border-bottom: 1px solid var(--line); font-weight: 600; white-space: nowrap; }
 .libTable td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .libTable tbody tr:last-child td { border-bottom: 0; }
-.libTable tr[data-selected] { background: #fbf3df; }
+.libTable tr[data-selected] { background: var(--soft-2); }
 .libTable input[type="checkbox"] { width: 18px; height: 18px; }
 .libTable select { padding: 6px 8px; border-radius: 10px; min-width: 7.5rem; }
 .libTitleCell a { font-weight: 600; color: var(--accent-strong); }
 .libTitleCell small { display: block; color: var(--muted); }
 .libTags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .libChip { border: 1px solid var(--line); background: var(--soft); color: var(--accent); border-radius: 999px; padding: 2px 10px; font-size: 0.82rem; width: auto; }
-.libChip[aria-pressed="true"] { background: var(--accent-strong); color: #fff; }
-.libStar { border: 0; background: transparent; font-size: 1.15rem; color: #b8861b; padding: 2px 4px; }
+.libChip[aria-pressed="true"] { background: var(--accent-strong); color: var(--on-accent); }
+.libStar { border: 0; background: transparent; font-size: 1.15rem; color: var(--warn-ink); padding: 2px 4px; }
 .libProgress { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .libProgress progress, .libPanel progress { width: 90px; height: 8px; }
 .libPanel progress { width: 260px; }
 .libActions { text-align: right; white-space: nowrap; }
 .libMore { text-align: center; margin: 18px 0; }
 .libState { font-weight: 600; }
-.libState.running { color: #8a5a00; }
-.libState.complete { color: #2c6a38; }
-.libState.failed { color: #8c2a1f; }
+.libState.running { color: var(--warn-ink); }
+.libState.complete { color: var(--ok); }
+.libState.failed { color: var(--danger); }
 .libTable small { display: block; }
 
 .libDetail { max-width: 980px; margin: 0 auto; padding: 24px; }
 .libDetailHead { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
 .libDetailHead h1 { margin: 0 0 4px; font-size: 1.8rem; color: var(--accent-strong); }
 .libDetailActions { display: flex; gap: 10px; flex-wrap: wrap; }
-.libDetailActions button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; width: auto; }
+.libDetailActions button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 8px 14px; width: auto; }
 .libFacts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 22px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 16px 0; align-items: start; }
 .libFacts label, .libFactWide { display: grid; gap: 4px; color: var(--muted); font-size: 0.85rem; }
 .libFacts label.libCheck { display: flex; align-items: center; gap: 8px; font-size: 1rem; color: var(--ink); }
@@ -2232,4 +2329,607 @@ button:disabled { opacity: 0.5; cursor: default; }
   .libActions { text-align: left; }
   .libMeta div { grid-template-columns: 1fr; gap: 0; }
   .libNav { padding: 10px 16px; gap: 10px; }
+}
+
+/* ---- Read mode: the page fills the screen; a slim rail of tools sits on the left. ---- */
+.ledgerWorkspace.readMode {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ground-2);
+}
+
+.ledgerWorkspace.readMode .ledgerTopbar,
+.ledgerWorkspace.readMode .ledgerPane,
+.ledgerWorkspace.readMode .inspectorPane,
+.ledgerWorkspace.readMode .ledgerStatus,
+.ledgerWorkspace.readMode .ledgerAttention,
+.ledgerWorkspace.readMode .ledgerScrim,
+.ledgerWorkspace.readMode .inspectorScrim,
+.ledgerWorkspace.readMode .skipLink {
+  display: none !important;
+}
+
+.ledgerWorkspace.readMode .ledgerBody {
+  display: block;
+  height: 100vh;
+  min-height: 0;
+}
+
+.ledgerWorkspace.readMode .ledgerReader {
+  height: 100vh;
+  padding: 0;
+}
+
+.ledgerWorkspace.readMode .ledgerReader .pdfPanel {
+  height: 100vh;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.ledgerWorkspace.readMode .ledgerReader .pdfReaderShell {
+  height: 100vh;
+  min-height: 0;
+  padding: 0 0 0 64px;
+}
+
+.readRail {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  transform: translateY(-50%);
+  border: 1px solid var(--line-2);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel) 95%, transparent);
+  box-shadow: 0 10px 26px rgb(49 32 17 / 18%);
+}
+
+.readRailGroup {
+  position: relative;
+}
+
+.readRailButton {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-strong);
+  cursor: pointer;
+}
+
+.readRailButton:hover,
+.readRailButton:focus-visible {
+  border-color: var(--line-3);
+  background: var(--soft-2);
+}
+
+.readRailButton.active {
+  border-color: #8a5a2b;
+  background: var(--active);
+}
+
+.readRailSwatch {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgb(58 44 28 / 45%);
+  border-radius: 50%;
+}
+
+.readPalette {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 14px);
+  display: grid;
+  gap: 8px;
+  width: 230px;
+  padding: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 97%, transparent);
+  box-shadow: 0 10px 26px rgb(49 32 17 / 22%);
+}
+
+.readPaletteSwatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.readPaletteSwatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid rgb(58 44 28 / 25%);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.readPaletteSwatch.active {
+  border-color: var(--ink-strong);
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ink-strong);
+}
+
+.readPaletteMeaning {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.readPaletteDone {
+  justify-self: end;
+  padding: 4px 12px;
+  border: 1px solid var(--line-3);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-strong);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.readToast {
+  position: fixed;
+  z-index: 60;
+  top: 14px;
+  left: 50%;
+  max-width: min(640px, calc(100vw - 140px));
+  margin: 0;
+  padding: 7px 16px;
+  overflow: hidden;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgb(46 33 20 / 88%);
+  color: #fffaf0;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: readToastFade 3.4s ease forwards;
+}
+
+@keyframes readToastFade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .readToast { animation-duration: 0.01s; animation-delay: 3s; }
+}
+
+/* The full-screen button at the end of the page toolbar. */
+.pdfZoomControls.pdfReadModeControl {
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.pdfZoomControls button.pdfReadModeButton {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pdfZoomControls button.pdfReadModeButton[aria-pressed="true"] {
+  border-color: #8a5a2b;
+  background: var(--active);
+}
+
+/* Keep the page toolbar on one row: it floats over the page, so it must stay compact. */
+.ledgerReader .pdfToolbar {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.ledgerReader .pdfToolbar .pdfSelectionModeToggle button {
+  padding: 8px 11px;
+}
+
+.ledgerReader .pdfToolbar .pdfZoomControls {
+  gap: 5px;
+}
+
+.ledgerReader .pdfToolbar .pdfZoomControls button.pdfZoomReset {
+  padding: 0 11px;
+}
+
+.ledgerReader .pdfToolbar .pdfPageControls {
+  gap: 5px;
+  padding-right: 8px;
+}
+
+.pdfZoomControls.pdfReadModeControl {
+  padding-left: 6px;
+}
+
+@media (max-width: 1360px) {
+  /* Very narrow windows: the "100%" reset is the least useful control. */
+  .ledgerReader .pdfToolbar .pdfZoomHundred {
+    display: none;
+  }
+}
+
+/* The page is scaled for zoom from its top-left corner. This box takes the zoomed size so the page is
+   centred, and scrolls, by what the reader actually sees rather than by its unzoomed width. */
+.pdfScaledBox {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 auto;
+}
+
+.pdfScaledBox > .pdfPageFrame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+}
+
+/* Naming one of the "Other" highlight colours for the book being read. */
+.meaningInput {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.readPalette .meaningInput {
+  font-size: 0.82rem;
+}
+
+/* The card for keeping a highlight with a comment, in read mode. */
+.readNoteCard {
+  position: fixed;
+  z-index: 60;
+  right: 18px;
+  bottom: 86px;
+  display: grid;
+  gap: 10px;
+  width: min(340px, calc(100vw - 110px));
+  padding: 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel) 98%, transparent);
+  box-shadow: 0 14px 34px rgb(49 32 17 / 24%);
+}
+
+.readNoteTitle {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.readNoteExcerpt {
+  display: -webkit-box;
+  margin: 0;
+  padding: 6px 10px;
+  overflow: hidden;
+  border-left: 3px solid var(--line-2);
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.readNoteSwatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.readNoteInput {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+.readNoteActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.readNoteActions button {
+  padding: 7px 16px;
+  border: 1px solid var(--line-3);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-strong);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.readNoteActions .readNotePrimary {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  color: var(--on-accent);
+}
+
+/* In read mode the comment card has its own Discard, so the floating "Clear selection" chip is not needed. */
+.ledgerWorkspace.readMode .pdfClearSelection[data-kind="selection"] {
+  display: none;
+}
+
+/* ---- Appearance menu ---- */
+.themeMenu {
+  position: relative;
+  display: inline-flex;
+}
+
+.themeMenuButton {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-strong);
+}
+
+.themeMenuButton:hover,
+.themeMenuButton:focus-visible {
+  border-color: var(--line-3);
+  background: var(--soft-2);
+}
+
+.themeMenuPanel {
+  position: absolute;
+  z-index: 120;
+  display: grid;
+  gap: 2px;
+  min-width: 210px;
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 22%);
+}
+
+.themeMenuPanel.below {
+  top: calc(100% + 8px);
+  right: 0;
+}
+
+.themeMenuPanel.right {
+  top: 0;
+  left: calc(100% + 14px);
+}
+
+.themeMenuPanel button {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.themeMenuPanel button:hover,
+.themeMenuPanel button:focus-visible {
+  background: var(--soft-2);
+}
+
+.themeMenuPanel button.active {
+  background: var(--active);
+  font-weight: 700;
+}
+
+.themeMenuCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.themeMenuCheck input {
+  width: auto;
+}
+
+.readRailTheme .themeMenuButton {
+  width: 40px;
+  height: 40px;
+  border-color: transparent;
+  border-radius: 12px;
+  background: transparent;
+}
+
+/* ---- Reading first: the page gets the room; Highlights and Details open on demand. ---- */
+.ledgerBody {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "reader";
+  min-height: calc(100vh - 64px);
+}
+
+.ledgerReader { grid-area: reader; grid-column: auto; }
+.ledgerPane { grid-area: left; }
+.inspectorPane { grid-area: right; grid-column: auto; }
+
+.ledgerWorkspace:not(.leftOpen) .ledgerPane { display: none; }
+
+.ledgerWorkspace.leftOpen .ledgerBody {
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-areas: "left reader";
+}
+
+.ledgerWorkspace.inspectorPinned .ledgerBody {
+  grid-template-columns: minmax(0, 1fr) 390px;
+  grid-template-areas: "reader right";
+}
+
+.ledgerWorkspace.leftOpen.inspectorPinned .ledgerBody {
+  grid-template-columns: 300px minmax(0, 1fr) 390px;
+  grid-template-areas: "left reader right";
+}
+
+.ledgerScrim { display: none; }
+
+@media (max-width: 1500px) {
+  .ledgerWorkspace.leftOpen .ledgerBody { grid-template-columns: 280px minmax(0, 1fr); }
+  .ledgerWorkspace.inspectorPinned .ledgerBody { grid-template-columns: minmax(0, 1fr) 360px; }
+  .ledgerWorkspace.leftOpen.inspectorPinned .ledgerBody { grid-template-columns: 280px minmax(0, 1fr) 360px; }
+}
+
+@media (max-width: 1279px) {
+  /* Details becomes a drawer: only Highlights can still sit beside the page. */
+  .ledgerWorkspace .ledgerBody,
+  .ledgerWorkspace.inspectorPinned .ledgerBody {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "reader";
+  }
+
+  .ledgerWorkspace.leftOpen .ledgerBody,
+  .ledgerWorkspace.leftOpen.inspectorPinned .ledgerBody {
+    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-areas: "left reader";
+  }
+}
+
+@media (max-width: 1023px) {
+  /* Highlights becomes a drawer too. */
+  .ledgerWorkspace .ledgerBody,
+  .ledgerWorkspace.inspectorPinned .ledgerBody,
+  .ledgerWorkspace.leftOpen .ledgerBody,
+  .ledgerWorkspace.leftOpen.inspectorPinned .ledgerBody {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "reader";
+  }
+
+  .ledgerWorkspace:not(.leftOpen) .ledgerPane { display: flex; }
+  .ledgerScrim { display: block; }
+}
+
+/* The page may use the room the status bar used to take. */
+.ledgerReader .pdfPanel { min-height: calc(100vh - 100px); }
+.ledgerReader .pdfReaderShell { height: calc(100vh - 100px); }
+
+/* Messages appear briefly instead of in a permanent bar; the bar stays for screen readers. */
+.ledgerStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  box-shadow: none;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.ledgerWorkspace:not(.readMode) .readToast { top: 76px; }
+
+/* Top bar buttons that open a panel. */
+.compactAction[aria-pressed="true"] {
+  border-color: var(--line-3);
+  background: var(--active);
+  font-weight: 700;
+}
+
+.countBadge {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  color: var(--on-accent);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.moreMenu .themeMenuButton { position: relative; }
+
+.moreMenuBadge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent-warm);
+}
+
+/* Top bar buttons: all alike. Highlights shows on every width; none is louder than the others while closed. */
+.compactAction.ledgerToggle { display: inline-flex; align-items: center; }
+
+.compactAction.inspectorToggle,
+.compactAction.toolsToggle {
+  border-color: var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.compactAction.inspectorToggle[aria-pressed="true"] {
+  border-color: var(--line-3);
+  background: var(--active);
+}
+
+/* "Clear selection" lives in the Details panel (and the read-mode card); not also over the page. */
+.pdfClearSelection[data-kind="selection"] { display: none; }
+
+/* Progress while a browser-only book is copied to the server: stays until it finishes. */
+.serverCopyNotice {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  z-index: 60;
+  margin: 0;
+  padding: 9px 16px;
+  max-width: min(92vw, 520px);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  font-size: 0.9rem;
+}
+.serverCopyNotice.failed, .serverCopyNotice.different { border-color: var(--danger); }
+
+.emptyPdfState span {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+.emptyPdfState .emptyPdfAttach {
+  justify-self: center;
+  margin-top: 12px;
+  cursor: pointer;
 }

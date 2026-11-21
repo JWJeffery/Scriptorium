@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
-import { highlightColors } from "../../../../lib/highlights";
+import { allHighlightColors } from "../../../../lib/highlights";
 import type { MilestoneOneAnchorInput, MilestoneOneAnnotationInput } from "../../../../lib/milestone-one-types";
 
 export const runtime = "nodejs";
@@ -103,7 +103,7 @@ export async function PATCH(request: NextRequest) {
   const annotationId = typeof body.annotationId === "string" ? body.annotationId.trim() : "";
   if (!annotationId) return failure("annotationId is required.", 400);
   if (body.note !== undefined && typeof body.note !== "string") return failure("note must be text.", 400);
-  if (body.colorKey !== undefined && (typeof body.colorKey !== "string" || !highlightColors.some((color) => color.key === body.colorKey))) {
+  if (body.colorKey !== undefined && (typeof body.colorKey !== "string" || !allHighlightColors.some((color) => color.key === body.colorKey))) {
     return failure("colorKey is not a known highlight colour.", 400);
   }
 

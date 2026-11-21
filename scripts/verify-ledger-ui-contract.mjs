@@ -35,8 +35,7 @@ for (const required of [
   "inspectorPane",
   "toolsDrawer",
   "ledgerStatus",
-  "Clear browser annotation list",
-  "Prior snapshot",
+  "From an earlier version of this file",
   "ScholarlyToolsPanel active={toolsOpen}"
 ]) {
   assert.ok(workspace.includes(required), `Ledger workspace is missing ${required}.`);

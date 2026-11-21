@@ -9,18 +9,18 @@ Scriptorium supports ten highlight color slots. Each slot has:
 - a default meaning,
 - a user-editable meaning.
 
-Default scholarly meanings:
+Highlight meanings (shown when highlighting):
 
-1. Thesis-relevant
-2. Primary claim
-3. Methodological point
-4. Historical datum
-5. Primary source quotation
-6. Patristic / classical source
-7. Ecclesiology
-8. Objection / counterargument
-9. Citation needed
-10. Follow-up question
+1. Thesis
+2. Secondary argument
+3. Supporting evidence
+4. Interesting point
+5. Other (purple): named by the reader for each book
+6. Other (teal): named by the reader for each book
+
+The two "Other" colours have no fixed meaning. The reader names them for the book being read ("Heresy",
+"Liturgy", ...) and the names are kept with that book. Highlights saved with the four colours of the earlier set of
+ten (pink, red, gray, gold) keep their colour and their old meaning; those colours are simply no longer offered.
 
 ## Annotation fields
 

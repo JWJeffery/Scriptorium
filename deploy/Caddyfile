@@ -1,0 +1,16 @@
+# The public front door: Caddy gets and renews the HTTPS certificate by itself.
+# SCRIPTORIUM_DOMAIN is your address (for example app.example.org). Using ":80" serves plain HTTP only
+# (used by the automated tests; never use it on the internet).
+{$SCRIPTORIUM_DOMAIN} {
+	encode gzip zstd
+	# Uploads are PDFs of up to 75 MB; allow a little more.
+	request_body {
+		max_size 100MB
+	}
+	reverse_proxy web:3000 {
+		# A long OCR or backup request must not be cut off by the proxy.
+		transport http {
+			read_timeout 10m
+		}
+	}
+}

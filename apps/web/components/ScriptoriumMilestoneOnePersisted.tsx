@@ -2,7 +2,8 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { highlightColors } from "../lib/highlights";
+import { highlightColors, allHighlightColors, findHighlightColor, meaningFor, parseLegend, type HighlightLegend } from "../lib/highlights";
+import { HighlightMeaning, swatchName } from "./HighlightMeaning";
 import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
 import { ScholarlyToolsPanel, type ImportedReadingNoteRecord } from "./ScholarlyToolsPanel";
 import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
@@ -16,8 +17,12 @@ import { labelForPage, pdfPageForLabel, type PageRangeSpec } from "../lib/page-l
 import { authorsToText } from "../lib/author-names";
 import { mergeServerRecords } from "../lib/annotation-sync";
 import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
+import { ReadModeToolbar } from "./ReadModeToolbar";
+import { ReadNoteCard } from "./ReadNoteCard";
+import { ThemeMenu } from "./ThemeMenu";
+import { MoreMenu } from "./MoreMenu";
 
-import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, ANNOTATIONS_KEY, DRAFT_KEY, INSPECTOR_PIN_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, bytes, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getPdf, persistDocument, persistPdfFile, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
+import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getBrowserPdf, persistDocument, persistPdfFile, attachPdfToServer, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
 
 export function ScriptoriumMilestoneOnePersisted() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
@@ -31,8 +36,10 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [note, setNote] = useState("");
   const [toolsOpen, setToolsOpen] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
-  const [inspectorPinned, setInspectorPinned] = useState(true);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorPinned, setInspectorPinned] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const panelsRestoredRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingSplitOcr, setPendingSplitOcr] = useState(false);
   const [ledgerFilter, setLedgerFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("");
@@ -48,6 +55,94 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [searchHighlight, setSearchHighlight] = useState<{ terms: string[]; pageNumber: number } | null>(null);
   const [compactLayout, setCompactLayout] = useState(false);
   const [canSignOut, setCanSignOut] = useState(false);
+  // Read mode: the page fills the screen, with a slim tool rail on the left. With the highlighter on,
+  // selecting text saves a highlight straight away in the chosen colour.
+  const [legend, setLegend] = useState<HighlightLegend>({});
+  const [readMode, setReadMode] = useState(false);
+  const [highlighterOn, setHighlighterOn] = useState(false);
+  const [autoSavePending, setAutoSavePending] = useState(false);
+  const [savedCardOpen, setSavedCardOpen] = useState(false);
+  const [cardNote, setCardNote] = useState("");
+  const workspaceRef = useRef<HTMLElement | null>(null);
+  const readModeRef = useRef(false);
+  const highlighterOnRef = useRef(false);
+  readModeRef.current = readMode;
+  highlighterOnRef.current = readMode && highlighterOn;
+
+  // The names given to this book's custom highlight colours: kept with the book on the server.
+  const legendDocumentId = documentRecord?.server?.documentId;
+  useEffect(() => {
+    setLegend({});
+    if (!legendDocumentId) return;
+    let cancelled = false;
+    fetch(`/api/v1/items/${encodeURIComponent(legendDocumentId)}/legend`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { legend?: unknown } | null) => { if (!cancelled && body?.legend) setLegend(parseLegend(JSON.stringify(body.legend))); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [legendDocumentId]);
+
+  const renameColor = useCallback((key: string, label: string) => {
+    setLegend((current) => {
+      const next = { ...current };
+      if (label) next[key] = label; else delete next[key];
+      if (legendDocumentId) {
+        fetch(`/api/v1/items/${encodeURIComponent(legendDocumentId)}/legend`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ legend: next }) }).catch(() => undefined);
+      }
+      return next;
+    });
+  }, [legendDocumentId]);
+
+  const enterReadMode = useCallback(() => {
+    setReadMode(true);
+    const target = workspaceRef.current;
+    if (target && !document.fullscreenElement && typeof target.requestFullscreen === "function") {
+      // Real full screen where the browser allows it; the page still fills the window if it does not.
+      target.requestFullscreen().catch(() => undefined);
+    }
+  }, []);
+
+  const exitReadMode = useCallback(() => {
+    setSavedCardOpen(false);
+    setReadMode(false);
+    setHighlighterOn(false);
+    setAutoSavePending(false);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      // Escape (or the browser's own control) left full screen: leave read mode with it.
+      if (!document.fullscreenElement && readModeRef.current) {
+        setReadMode(false);
+        setHighlighterOn(false);
+        setAutoSavePending(false);
+      }
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    function onEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && readModeRef.current && !document.fullscreenElement) setReadMode(false);
+    }
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, []);
+
+  useEffect(() => {
+    // The highlighter saves the moment a selection is captured.
+    if (!autoSavePending || !anchor || !selectedText.trim()) return;
+    setAutoSavePending(false);
+    const previous = savedCardOpen ? annotations.find((record) => record.id === recentAnnotationId) : undefined;
+    if (previous && cardNote.trim() && cardNote.trim() !== (previous.note ?? "")) void attachNote(previous.id, cardNote);
+    void saveRecord();
+    setSavedCardOpen(true);
+    setCardNote("");
+    // saveRecord reads the state of this render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSavePending, anchor, selectedText]);
 
   useEffect(() => {
     // If the login session runs out, send the reader to the sign-in page instead of showing errors.
@@ -73,13 +168,18 @@ export function ScriptoriumMilestoneOnePersisted() {
     window.location.assign("/login");
   }
 
+  // The side panels start closed. On a wide window, which of them a reader leaves open is remembered.
   useEffect(() => {
-    const savedPin = localStorage.getItem(INSPECTOR_PIN_KEY);
     const compactQuery = window.matchMedia("(max-width: 1279px)");
-    const wide = !compactQuery.matches;
-    setInspectorPinned(savedPin === null ? wide : savedPin === "true");
-    setInspectorOpen(wide);
     setCompactLayout(compactQuery.matches);
+    if (!compactQuery.matches) {
+      try {
+        const saved = JSON.parse(localStorage.getItem("scriptorium-panels-v2") ?? "null") as { left?: boolean; right?: boolean } | null;
+        if (saved?.left) setLedgerOpen(true);
+        if (saved?.right) { setInspectorPinned(true); setInspectorOpen(true); }
+      } catch { /* no saved choice */ }
+    }
+    panelsRestoredRef.current = true;
     setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY)));
     const handleLayoutChange = (event: MediaQueryListEvent) => setCompactLayout(event.matches);
     compactQuery.addEventListener("change", handleLayoutChange);
@@ -87,8 +187,9 @@ export function ScriptoriumMilestoneOnePersisted() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(INSPECTOR_PIN_KEY, String(inspectorPinned));
-  }, [inspectorPinned]);
+    if (!panelsRestoredRef.current || compactLayout) return;
+    try { localStorage.setItem("scriptorium-panels-v2", JSON.stringify({ left: ledgerOpen, right: inspectorPinned })); } catch { /* storage blocked */ }
+  }, [ledgerOpen, inspectorPinned, compactLayout]);
 
   // Ctrl/Cmd+K, or "/" when not typing in a field, opens Search.
   useEffect(() => {
@@ -133,7 +234,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         setBookmarks((current) => [...current, body.bookmark as { id: string; pdfPage: number; label: string }].sort((a, b) => a.pdfPage - b.pdfPage));
         setStatus(`Bookmarked PDF page ${page}.`);
       }
-    } catch { setStatus("The bookmark could not be saved. Is the database running?"); }
+    } catch { setStatus("The bookmark could not be saved. Try again in a moment."); }
   }
 
   // Remember where each book was left.
@@ -190,13 +291,15 @@ export function ScriptoriumMilestoneOnePersisted() {
       if (key === "?") return handled(() => setHelpOpen((open) => !open));
       if (helpOpen && key === "Escape") return handled(() => setHelpOpen(false));
       if (!documentRecord) return;
+      if (key === "z") return handled(() => (readModeRef.current ? exitReadMode() : enterReadMode()));
+      if (key === "h" && readModeRef.current) return handled(() => setHighlighterOn((on) => !on));
       if (/^[0-9]$/.test(key)) {
         const index = key === "0" ? 9 : Number(key) - 1;
-        return handled(() => { setSelectedColor(highlightColors[index].key); setStatus(`Highlight meaning: ${highlightColors[index].defaultMeaning}.`); });
+        return handled(() => { setSelectedColor(highlightColors[index].key); setStatus(`Highlight meaning: ${meaningFor(highlightColors[index].key, legend)}.`); });
       }
-      if (key === "n") return handled(() => { setInspectorOpen(true); window.setTimeout(() => noteTextAreaRef.current?.focus(), 30); });
+      if (key === "n") return handled(() => { setInspectorOpen(true); setInspectorPinned(true); window.setTimeout(() => noteTextAreaRef.current?.focus(), 30); });
       if (key === "b" && documentRecord.kind === "PDF") return handled(() => { void toggleBookmark(); });
-      if (key === "g") return handled(() => { setInspectorOpen(true); window.setTimeout(() => (document.getElementById("go-to-book-page") as HTMLInputElement | null)?.focus(), 30); });
+      if (key === "g") return handled(() => { setInspectorOpen(true); setInspectorPinned(true); window.setTimeout(() => (document.getElementById("go-to-book-page") as HTMLInputElement | null)?.focus(), 30); });
       if (documentRecord.kind !== "PDF") return;
       const page = documentRecord.pageMap.currentPdfPageIndex;
       if (key === "ArrowLeft" || key === "PageUp" || key === "k") return handled(() => goToPage(page - 1));
@@ -227,7 +330,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           setNote(draft.note ?? "");
           setTags(draft.tags ?? []);
           if (draft.colorKey) setSelectedColor(draft.colorKey);
-          setInspectorOpen(true);
+          setInspectorOpen(true); setInspectorPinned(true);
           setStatus("Restored the unsaved selection and note you were working on. Save it, or use Clear selection to discard it.");
         }
       }
@@ -280,6 +383,12 @@ export function ScriptoriumMilestoneOnePersisted() {
     setSelectedText("");
     setAnchor(undefined);
   }
+  // Throw away an unsaved highlight: the selection and whatever note or tags were typed for it.
+  function discardPending() {
+    clearSelection();
+    setNote("");
+    setTags([]);
+  }
   // field-sizing: content (CSS-only auto-grow) turned out to be unreliable
   // across Chrome versions still in real use - stabilized late enough that
   // it can't be counted on yet. This does the same job with plain JS,
@@ -308,6 +417,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [style, setStyle] = useState<CitationStyle>("sbl-note");
   const [status, setStatus] = useState("Register a PDF, TXT, Markdown, or DOCX file to begin.");
   const [sourceSaveMessage, setSourceSaveMessage] = useState("");
+  const [serverCopy, setServerCopy] = useState<{ phase: "saving" | "done" | "failed" | "different"; percent: number } | null>(null);
   const [recentAnnotationId, setRecentAnnotationId] = useState<string | undefined>();
   const [authoritativePageText, setAuthoritativePageText] = useState<string | null>(null);
   const [authoritativeWords, setAuthoritativeWords] = useState<PdfAuthoritativeWord[] | null>(null);
@@ -320,10 +430,12 @@ export function ScriptoriumMilestoneOnePersisted() {
     setDocumentRecord(storedDocument);
 
     if (storedDocument.kind === "PDF") {
-      getPdf(storedDocument.id).then((blob) => {
+      getBrowserPdf(storedDocument).then((blob) => {
         if (blob) {
           setPdfUrl(URL.createObjectURL(blob));
           setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
+          // A book that only ever lived in this browser: keep a copy on the server too, so it opens anywhere.
+          if (storedDocument.server?.documentId && !storedDocument.server.storageKey) void saveBrowserCopyToServer(storedDocument, blob);
           return;
         }
         const storedServerUrl = serverPdfUrl(storedDocument);
@@ -332,7 +444,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           setStatus("Recovered PDF from server file storage.");
           return;
         }
-        setStatus("Recovered records, but no browser or server PDF was found.");
+        setStatus(storedDocument.server ? "This book's PDF isn't in your library yet. Choose the PDF file once and it will open on every device." : "Recovered records, but no browser or server PDF was found.");
       });
       return;
     }
@@ -378,21 +490,21 @@ export function ScriptoriumMilestoneOnePersisted() {
   const generatedCitation = engineCitation?.text ?? fallbackCitation;
   const currentSnapshotRecords = useMemo(() => annotations.filter((record) => recordMatchesCurrentVersion(record, documentRecord)), [annotations, documentRecord]);
   const recentSavedRecord = useMemo(() => recentAnnotationId ? annotations.find((record) => record.id === recentAnnotationId) : undefined, [annotations, recentAnnotationId]);
-  const recentSavedColor = recentSavedRecord ? highlightColors.find((item) => item.key === recentSavedRecord.colorKey) ?? highlightColors[0] : undefined;
+  const recentSavedColor = recentSavedRecord ? findHighlightColor(recentSavedRecord.colorKey) : undefined;
   const visiblePdfHighlights = useMemo<PdfPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
     if (!record.anchor || isTextAnchor(record.anchor)) return [];
-    const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
+    const color = findHighlightColor(record.colorKey);
     return [{ id: record.id, color: color.color, anchor: record.anchor, note: record.note?.trim() || undefined }];
   }), [currentSnapshotRecords]);
   const previewPdfHighlight = useMemo<PdfPageHighlight[]>(() => {
     if (!documentRecord || documentRecord.kind !== "PDF" || !anchor || isTextAnchor(anchor) || !selectedText.trim()) return [];
-    const color = highlightColors.find((item) => item.key === selectedColor) ?? highlightColors[0];
+    const color = findHighlightColor(selectedColor);
     return [{ id: "active-selection-preview", color: color.color, anchor }];
   }, [anchor, documentRecord, selectedColor, selectedText]);
   const activePdfHighlights = useMemo(() => [...visiblePdfHighlights, ...previewPdfHighlight], [previewPdfHighlight, visiblePdfHighlights]);
   const visibleTextHighlights = useMemo<TextPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
     if (!record.anchor || !isTextAnchor(record.anchor)) return [];
-    const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
+    const color = findHighlightColor(record.colorKey);
     return [{ id: record.id, color: color.color, anchor: record.anchor }];
   }), [currentSnapshotRecords]);
 
@@ -416,7 +528,8 @@ export function ScriptoriumMilestoneOnePersisted() {
     setEditingId(undefined);
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
-    setInspectorOpen(true);
+    if (!readModeRef.current) { setInspectorOpen(true); setInspectorPinned(true); }
+    if (highlighterOnRef.current) setAutoSavePending(true);
     setStatus("Captured selected text, context, and highlight rectangles from the PDF page. Preview highlight is shown until saved.");
   }, []);
 
@@ -424,9 +537,58 @@ export function ScriptoriumMilestoneOnePersisted() {
     setEditingId(undefined);
     setAnchor(nextAnchor);
     setSelectedText(nextAnchor.selectedText);
-    setInspectorOpen(true);
+    if (!readModeRef.current) { setInspectorOpen(true); setInspectorPinned(true); }
+    if (highlighterOnRef.current) setAutoSavePending(true);
     setStatus(`Captured selected text, context, offsets, and line locator ${lineLocator(nextAnchor)}.`);
   }, []);
+
+  // Returns true once the file is stored on the server. interactive: the person chose this file
+  // themselves, so a file that differs from the original can be confirmed instead of refused.
+  async function saveBrowserCopyToServer(stored: StoredDocument, blob: Blob, interactive = false, allowDifferent = false): Promise<boolean> {
+    if (!stored.server?.documentId) return false;
+    const leaveWarning = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", leaveWarning);
+    setServerCopy({ phase: "saving", percent: 0 });
+    try {
+      const result = await attachPdfToServer(stored.server.documentId, blob, stored.filename, (fraction) => setServerCopy({ phase: "saving", percent: Math.round(fraction * 100) }), allowDifferent);
+      const next: StoredDocument = { ...stored, server: { ...stored.server, storageKey: result.storageKey } };
+      saveDocument(next);
+      setDocumentRecord(next);
+      // Keep this browser's copy under the library id too, the id used when the book is reopened from the Library.
+      await putPdf(stored.server.documentId, blob).catch(() => undefined);
+      setServerCopy({ phase: "done", percent: 100 });
+      window.setTimeout(() => setServerCopy(null), 6000);
+      return true;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "";
+      if (reason === "already-stored") { setServerCopy(null); return true; }
+      if (reason === "different-file") {
+        if (interactive && window.confirm("This is not the same file that was first added for this book, so your highlights may not line up with its pages.\n\nPress OK to use it anyway, or Cancel to choose another file.")) {
+          window.removeEventListener("beforeunload", leaveWarning);
+          return saveBrowserCopyToServer(stored, blob, interactive, true);
+        }
+        setServerCopy({ phase: "different", percent: 0 });
+        return false;
+      }
+      setServerCopy({ phase: "failed", percent: 0 });
+      return false;
+    } finally {
+      window.removeEventListener("beforeunload", leaveWarning);
+    }
+  }
+
+  // The book is in the library without its PDF and this device has no copy: the person chooses the file once.
+  async function chooseMissingPdf(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !documentRecord) return;
+    if (fileKind(file) !== "PDF") { setStatus("Please choose a PDF file."); return; }
+    if (await saveBrowserCopyToServer(documentRecord, file, true)) {
+      if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
+      setPdfUrl(URL.createObjectURL(file));
+      setStatus("PDF saved to your library. It will open on every device from now on.");
+    }
+  }
 
   async function registerSource(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -475,14 +637,14 @@ export function ScriptoriumMilestoneOnePersisted() {
       try {
         const server = await persistPdfFile(file, nextDocument, bookPage(nextDocument.pageMap));
         nextDocument = { ...nextDocument, server };
-        setStatus("PDF registered, uploaded, and database metadata persisted. Embedded metadata will prefill fields if available.");
+        setStatus("Book added.");
       } catch {
         try {
           const server = await persistDocument(nextDocument, bookPage(nextDocument.pageMap));
           nextDocument = { ...nextDocument, server };
-          setStatus("PDF registered locally and document metadata persisted. Server file storage is unavailable.");
+          setStatus("Book added, but its file could not be stored on the server.");
         } catch {
-          setStatus("PDF registered locally. Database persistence is unavailable in this environment.");
+          setStatus("Book opened here only; it could not be saved to the server.");
         }
       }
       setPdfUrl(URL.createObjectURL(file));
@@ -553,20 +715,20 @@ export function ScriptoriumMilestoneOnePersisted() {
       await persistSourceMetadata(nextDocument);
       updateDocument(nextDocument);
       setSourceSaveMessage("CSL source metadata saved to database.");
-      setStatus("Saved CSL-compatible source metadata to the database.");
+      setStatus("Book information saved.");
     } catch {
       updateDocument(nextDocument);
       setSourceSaveMessage("Source metadata saved locally; database source persistence is unavailable for this record.");
-      setStatus("Saved source metadata locally. Database source persistence is unavailable for this record.");
+      setStatus("Book information saved in this browser only; the server could not be reached.");
     }
   }
 
   async function saveRecord() {
-    if (!documentRecord) { setStatus("Register a document before saving an annotation."); return; }
+    if (!documentRecord) { setStatus("Add a book before saving a highlight."); return; }
     const normalizedSelectedText = selectedText.trim();
     const normalizedNote = note.trim();
     if (!normalizedSelectedText && !normalizedNote) { setStatus("Capture a passage or enter a page note before saving."); return; }
-    if (isText(documentRecord) && !isTextAnchor(anchor)) { setStatus("Select text directly in the text reader so the annotation has a stable line/offset anchor."); return; }
+    if (isText(documentRecord) && !isTextAnchor(anchor)) { setStatus("Select the text directly on the page to highlight it."); return; }
 
     const normalizedAnchor = anchor ? { ...anchor, selectedText: normalizedSelectedText } as SelectionAnchor : undefined;
     let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: normalizedNote, pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor, pageRanges?.ranges), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor, pageRanges?.ranges), style), anchor: normalizedAnchor, createdAt: new Date().toISOString(), tags: normalizeTags(tags) };
@@ -577,9 +739,9 @@ export function ScriptoriumMilestoneOnePersisted() {
     try {
       const serverRecord = await persistAnnotation(documentRecord, record);
       record = { ...record, serverAnnotationId: serverRecord.annotation.id, serverCitationId: serverRecord.citation.id };
-      setStatus("Saved annotation locally and in the database. The latest saved record is shown in the annotation panel.");
+      setStatus("Highlight saved.");
     } catch {
-      setStatus("Saved annotation locally. The latest saved record is shown in the annotation panel; database persistence is unavailable for this record.");
+      setStatus("Highlight saved in this browser only; the server could not be reached.");
     }
 
     setAnnotations((previous) => {
@@ -604,10 +766,10 @@ export function ScriptoriumMilestoneOnePersisted() {
     setNote(record.note);
     setTags(record.tags ?? []);
     setSelectedColor(record.colorKey);
-    setInspectorOpen(true);
+    setInspectorOpen(true); setInspectorPinned(true);
     setLedgerOpen(false);
     if (recordMatchesCurrentVersion(record, documentRecord) && record.anchor && !isTextAnchor(record.anchor)) goToPage(record.anchor.pageNumber);
-    setStatus("Editing a saved record. You can change its note and highlight colour, or delete it.");
+    setStatus("Editing this highlight. You can change its note and colour, or delete it.");
   }
 
   // Bring this browser's copy of the open book's annotations in line with the database.
@@ -622,7 +784,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     const server = await fetchServerRecords(serverDocumentId, documentRecord.pageMap.currentPdfPageIndex);
     if (!server) {
       setSyncInfo((current) => ({ ...current, unreachable: true }));
-      if (announce) setStatus("Could not reach the database. Showing the copy saved in this browser.");
+      if (announce) setStatus("Could not reach the server. Showing the copy saved in this browser.");
       return;
     }
     const scope = { versionIds: server.versionIds, localDocumentIds: new Set([documentRecord.id, serverDocumentId]) };
@@ -688,10 +850,10 @@ export function ScriptoriumMilestoneOnePersisted() {
   async function saveEdit() {
     if (!editingRecord) return;
     const nextNote = note.trim();
-    if (!nextNote && !editingRecord.selectedText.trim()) { setStatus("A page note cannot be left empty. Delete the record instead."); return; }
+    if (!nextNote && !editingRecord.selectedText.trim()) { setStatus("A page note cannot be left empty. Delete the highlight instead."); return; }
     const nextTags = normalizeTags(tags);
     const updated: SavedAnnotation = { ...editingRecord, note: nextNote, colorKey: selectedColor, tags: nextTags };
-    let message = "Updated the record locally and in the database.";
+    let message = "Highlight updated.";
     if (editingRecord.serverAnnotationId) {
       try {
         const response = await fetch("/api/core/annotations", {
@@ -701,10 +863,10 @@ export function ScriptoriumMilestoneOnePersisted() {
         });
         if (!response.ok) throw new Error("update failed");
       } catch {
-        message = "Updated the record in this browser only; the database could not be updated.";
+        message = "Highlight updated in this browser only; the server could not be reached.";
       }
     } else {
-      message = "Updated the record in this browser (it was never saved to the database).";
+      message = "Highlight updated in this browser only.";
     }
     setAnnotations((previous) => {
       const next = previous.map((record) => (record.id === updated.id ? updated : record));
@@ -718,17 +880,45 @@ export function ScriptoriumMilestoneOnePersisted() {
     setStatus(message);
   }
 
+  // Adds (or changes) the comment on an already saved highlight, from read mode.
+  async function attachNote(recordId: string, text: string) {
+    const record = annotations.find((item) => item.id === recordId);
+    if (!record) return;
+    const nextNote = text.trim();
+    let message = "Comment saved.";
+    if (record.serverAnnotationId) {
+      try {
+        const response = await fetch("/api/core/annotations", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ annotationId: record.serverAnnotationId, note: nextNote })
+        });
+        if (!response.ok) throw new Error("update failed");
+      } catch {
+        message = "Comment kept in this browser only; the server could not be reached.";
+      }
+    } else {
+      message = "Comment kept in this browser only.";
+    }
+    setAnnotations((previous) => {
+      const next = previous.map((item) => (item.id === recordId ? { ...item, note: nextNote } : item));
+      saveAnnotations(next);
+      return next;
+    });
+    setStatus(message);
+  }
+
   async function deleteEditingRecord() {
     if (!editingRecord) return;
     if (!window.confirm("Delete this annotation and its citation? This cannot be undone.")) return;
-    const message = "Deleted the record and its citation.";
+    const message = "Highlight deleted.";
     if (editingRecord.serverAnnotationId) {
       try {
         const response = await fetch(`/api/core/annotations?annotationId=${encodeURIComponent(editingRecord.serverAnnotationId)}`, { method: "DELETE" });
         // 404 means the database no longer has it, which is what we wanted.
         if (!response.ok && response.status !== 404) throw new Error("delete failed");
       } catch {
-        setStatus("The database could not delete this record, so it was kept. Try again.");
+        setStatus("The server could not delete this highlight, so it was kept. Try again.");
         return;
       }
     }
@@ -856,7 +1046,6 @@ export function ScriptoriumMilestoneOnePersisted() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentRecord?.id, annotations.length]);
 
-  function clearRecords() { localStorage.setItem(ANNOTATIONS_KEY, "[]"); setAnnotations([]); setSelectedText(""); setAnchor(undefined); setNote(""); setTags([]); setRecentAnnotationId(undefined); setStatus("Cleared this browser's copy. Records saved in the database are being reloaded."); window.setTimeout(() => { void syncFromServer(true); }, 50); }
 
   function previewReadingNote(candidate: ReadingNoteCandidate) {
     if (!documentRecord || documentRecord.kind !== "PDF" || !candidate.anchor) return;
@@ -865,7 +1054,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setSelectedText(candidate.selectedText);
     setNote(candidate.note);
     setToolsOpen(false);
-    setInspectorOpen(true);
+    setInspectorOpen(true); setInspectorPinned(true);
     setStatus(`Previewing the proposed highlight for book page ${candidate.pageLabel}. Review it in the inspector before importing.`);
   }
 
@@ -899,7 +1088,6 @@ export function ScriptoriumMilestoneOnePersisted() {
   }
 
   const currentPage = documentRecord?.pageMap.currentPdfPageIndex ?? 1;
-  const formatLabel = documentRecord ? formatFor(documentRecord.kind) : "PDF";
 
   useEffect(() => {
     const versionId = documentRecord?.server?.versionId;
@@ -969,7 +1157,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       const formatted = await formatViaEngine(documentRecord, item.label, item.record.citationStyle, false);
       updates.push({ ...item, citationText: formatted?.text ?? citation(documentRecord, item.label, item.record.citationStyle) });
     }
-    if (updates.length === 0) { setStatus("Every saved record already matches the page numbering."); return; }
+    if (updates.length === 0) { setStatus("Every highlight already matches the page numbers."); return; }
     let failed = 0;
     for (const update of updates) {
       if (!update.record.serverAnnotationId) continue;
@@ -996,7 +1184,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   }
 
   const unsavedCount = documentRecord?.server ? annotations.filter((record) => !record.serverAnnotationId && (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id)).length : 0;
-  const usedHighlightColors = highlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
+  const usedHighlightColors = allHighlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
   const filteredAnnotations = annotations.filter((record) => {
     if (tagFilter && !(record.tags ?? []).some((tag) => tag.toLowerCase() === tagFilter.toLowerCase())) return false;
     if (ledgerFilter === "all") return true;
@@ -1004,16 +1192,12 @@ export function ScriptoriumMilestoneOnePersisted() {
     return record.colorKey === ledgerFilter;
   });
 
-  function toggleInspectorPin() {
-    setInspectorPinned((pinned) => {
-      const next = !pinned;
-      if (next) setInspectorOpen(true);
-      return next;
-    });
-  }
+  const detailsOpen = compactLayout ? inspectorOpen : inspectorPinned;
+  function hideDetails() { setInspectorOpen(false); setInspectorPinned(false); }
+  function toggleDetails() { if (detailsOpen) hideDetails(); else openAnnotationInspector(); }
 
   function openAnnotationInspector() {
-    setInspectorOpen(true);
+    setInspectorOpen(true); setInspectorPinned(true);
     window.requestAnimationFrame(() => {
       const field = selectedTextAreaRef.current;
       if (!field || field.disabled) return;
@@ -1033,35 +1217,42 @@ export function ScriptoriumMilestoneOnePersisted() {
   }
 
   return (
-    <section className={`ledgerWorkspace${inspectorPinned ? " inspectorPinned" : ""}${inspectorOpen ? " inspectorOpen" : ""}`} aria-label="Scriptorium scholarly reading workspace">
+    <section ref={workspaceRef} className={`ledgerWorkspace${ledgerOpen ? " leftOpen" : ""}${inspectorPinned ? " inspectorPinned" : ""}${inspectorOpen ? " inspectorOpen" : ""}${readMode ? " readMode" : ""}`} aria-label="Scriptorium scholarly reading workspace">
       <a className="skipLink" href="#ledger-reader">Skip to document</a>
       <header className="ledgerTopbar">
         <div className="ledgerBrand">
           <strong>Scriptorium</strong>
           <span aria-hidden="true">/</span>
-          <span className="activeDocumentTitle">{documentRecord?.title ?? "No source registered"}</span>
-          <span className="locatorChip">{isText(documentRecord) ? `Line ${locator}` : documentRecord ? (locator ? `Book p. ${locator}` : `PDF p. ${currentPage} · no number`) : "No locator"}</span>
+          <span className="activeDocumentTitle">{documentRecord?.title ?? "No book open"}</span>
+          {documentRecord ? <span className="locatorChip">{isText(documentRecord) ? `Line ${locator}` : (locator ? `Page ${locator}` : `PDF page ${currentPage}`)}</span> : null}
         </div>
         <div className="ledgerActions">
-          <button className="compactAction ledgerToggle" type="button" onClick={() => setLedgerOpen(true)}>Records · {annotations.length}</button>
-          {bookmarkDocumentId ? <button className="compactAction" type="button" aria-pressed={bookmarks.some((bookmark) => bookmark.pdfPage === currentPage)} onClick={() => void toggleBookmark()} title="Bookmark this page (b)">{bookmarks.some((bookmark) => bookmark.pdfPage === currentPage) ? "★ Bookmarked" : "☆ Bookmark"}</button> : null}
           <button className="compactAction" type="button" onClick={() => setSearchOpen(true)} title="Search (Ctrl+K or /)">Search</button>
-          <button className="compactAction" type="button" onClick={() => setHelpOpen(true)} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
-          <a className="compactAction" href="/library" title="Your library: every book, with filters and collections">Library</a>
-          <button className="compactAction toolsToggle" type="button" onClick={() => setToolsOpen(true)}>Scholarly tools{pendingSplitOcr ? " · attention" : ""}</button>
-          <button className="compactAction pinToggle" type="button" aria-pressed={inspectorPinned} onClick={toggleInspectorPin}>{inspectorPinned ? "Unpin inspector" : "Pin inspector"}</button>
+          <button className="compactAction ledgerToggle" type="button" aria-pressed={ledgerOpen} onClick={() => setLedgerOpen((open) => !open)} title="Your highlights in this book">Highlights{annotations.length > 0 ? <span className="countBadge">{annotations.length}</span> : null}</button>
           <button
             className="compactAction inspectorToggle"
             type="button"
             aria-controls="annotation-inspector"
-            aria-expanded={inspectorPinned || inspectorOpen}
-            title={inspectorPinned ? "Focus annotation form" : "Open annotation form"}
-            onClick={openAnnotationInspector}
+            aria-expanded={detailsOpen}
+            aria-pressed={detailsOpen}
+            title="Note, citation and book information"
+            onClick={toggleDetails}
           >
-            Annotate
+            Details
           </button>
-          {canSignOut ? <button className="compactAction" type="button" onClick={() => void signOut()}>Sign out</button> : null}
-          <label className="uploadButton">Register source<input type="file" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} /></label>
+          <a className="compactAction" href="/library" title="Your library: every book, with filters and collections">Library</a>
+          <ThemeMenu />
+          <MoreMenu
+            badge={pendingSplitOcr}
+            items={[
+              { key: "add", label: "Add a book…", onSelect: () => fileInputRef.current?.click() },
+              { key: "bookmark", label: bookmarks.some((bookmark) => bookmark.pdfPage === currentPage) ? "Remove bookmark from this page" : "Bookmark this page", onSelect: () => void toggleBookmark(), hidden: !bookmarkDocumentId },
+              { key: "tools", label: pendingSplitOcr ? "Tools (needs attention)" : "Tools", onSelect: () => setToolsOpen(true) },
+              { key: "help", label: "Keyboard shortcuts", onSelect: () => setHelpOpen(true) },
+              { key: "signout", label: "Sign out", onSelect: () => void signOut(), hidden: !canSignOut }
+            ]}
+          />
+          <input ref={fileInputRef} className="srOnly" type="file" tabIndex={-1} aria-label="Add a book" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} />
         </div>
       </header>
 
@@ -1073,15 +1264,15 @@ export function ScriptoriumMilestoneOnePersisted() {
       ) : null}
 
       <div className="ledgerBody">
-        <aside className={`ledgerPane${ledgerOpen ? " open" : ""}`} aria-label="Saved scholarly records">
+        <aside className={`ledgerPane${ledgerOpen ? " open" : ""}`} aria-label="Highlights">
           <div className="paneHeader">
-            <div><p className="eyebrow">Research memory</p><h2>Ledger</h2></div>
+            <div><h2>Highlights</h2></div>
             <button className="paneClose" type="button" onClick={() => setLedgerOpen(false)} aria-label="Close saved records">×</button>
           </div>
-          <p className="paneCount">{annotations.length} saved · {currentSnapshotRecords.length} current snapshot</p>
+          {annotations.length > 0 ? <p className="paneCount">{annotations.length} highlight{annotations.length === 1 ? "" : "s"}</p> : null}
           <div className="ledgerFilters" aria-label="Filter saved records">
             <button type="button" className={ledgerFilter === "all" ? "active" : ""} onClick={() => setLedgerFilter("all")}>All</button>
-            {usedHighlightColors.map((color) => <button type="button" title={color.defaultMeaning} aria-label={`Filter by ${color.defaultMeaning}`} className={ledgerFilter === color.key ? "active" : ""} onClick={() => setLedgerFilter(color.key)} key={color.key}><span style={{ background: color.color }} /></button>)}
+            {usedHighlightColors.map((color) => <button type="button" title={meaningFor(color.key, legend)} aria-label={`Filter by ${swatchName(color.key, legend)}`} className={ledgerFilter === color.key ? "active" : ""} onClick={() => setLedgerFilter(color.key)} key={color.key}><span style={{ background: color.color }} /></button>)}
             {annotations.some((record) => !recordMatchesCurrentVersion(record, documentRecord)) ? <button type="button" className={ledgerFilter === "prior" ? "active" : ""} onClick={() => setLedgerFilter("prior")}>Prior</button> : null}
           </div>
           {knownTags.length > 0 ? (
@@ -1117,19 +1308,19 @@ export function ScriptoriumMilestoneOnePersisted() {
             </div>
           ) : null}
           <div className="ledgerRecords">
-            {filteredAnnotations.length === 0 ? <p className="emptyAnnotationState">No annotations in this view yet.</p> : filteredAnnotations.map((record) => {
-              const color = highlightColors.find((item) => item.key === record.colorKey) ?? highlightColors[0];
+            {filteredAnnotations.length === 0 ? <p className="emptyAnnotationState">No highlights yet. Select text on the page to make one.</p> : filteredAnnotations.map((record) => {
+              const color = findHighlightColor(record.colorKey);
               const current = recordMatchesCurrentVersion(record, documentRecord);
               const canOpen = current && record.anchor && !isTextAnchor(record.anchor);
               return <article className={`ledgerRecord${record.id === editingId ? " editing" : ""}`} key={record.id}>
-                <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
+                <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{meaningFor(color.key, legend)}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
                 {record.selectedText ? <blockquote>{record.selectedText}</blockquote> : null}
                 {record.note ? <p>{record.note}</p> : null}
                 {(record.tags ?? []).length ? <div className="recordTags">{(record.tags ?? []).map((tag) => <span key={tag}>#{tag}</span>)}</div> : null}
                 <div className="recordCitation">{record.citationText}</div>
-                <small className={record.serverAnnotationId ? undefined : "recordUnsaved"}>{current ? "Current snapshot" : "Prior snapshot"} · {record.serverAnnotationId ? "saved in the database" : "only in this browser (not in the database yet)"}</small>
+                {!current || !record.serverAnnotationId ? <small className="recordUnsaved">{[!current ? "From an earlier version of this file" : "", !record.serverAnnotationId ? "Not saved yet" : ""].filter(Boolean).join(" · ")}</small> : null}
                 <div className="recordActions">
-                  <button className="recordOpen" type="button" onClick={() => startEditing(record)}>Open and edit</button>
+                  <button className="recordOpen" type="button" onClick={() => startEditing(record)}>Edit</button>
                   {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
                   {record.serverAnnotationId ? <AddToThread annotationId={record.serverAnnotationId} onResult={setStatus} /> : null}
                 </div>
@@ -1137,24 +1328,23 @@ export function ScriptoriumMilestoneOnePersisted() {
             })}
           </div>
           <div className="ledgerFooter">
-            {documentRecord ? <div className="documentSummary"><strong>{documentRecord.title}</strong><span>{formatLabel} · {documentRecord.filename} · {bytes(documentRecord.size)} {documentRecord.server?.sourceChecksum ? `· checksum ${documentRecord.server.sourceChecksum.slice(0, 12)}` : documentRecord.server?.storageKey ? "· server file" : documentRecord.server ? "· database-linked" : "· local only"}</span></div> : null}
-            {documentRecord?.server?.documentId ? (
+                        {documentRecord?.server?.documentId ? (
               <details className="exportMenu">
-                <summary>Export this book’s annotations</summary>
+                <summary>Export highlights</summary>
                 <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=docx&style=${style === "chicago-note" || style === "turabian-note" ? style : "sbl-note"}`}>Word (footnotes + bibliography)</a>
                 <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=markdown&style=${style === "chicago-note" || style === "turabian-note" ? style : "sbl-note"}`}>Markdown</a>
                 <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=csv`}>Spreadsheet (CSV)</a>
               </details>
             ) : null}
-            {documentRecord?.server ? <button className="textAction" type="button" onClick={() => void syncFromServer(true)}>Refresh from the database</button> : null}
-            <button className="clearBrowserRecords" onClick={clearRecords} type="button" disabled={annotations.length === 0} title="Only clears this browser's copy. Records saved in the database are reloaded straight away.">Clear browser annotation list</button>
           </div>
         </aside>
 
         <main className="ledgerReader" id="ledger-reader" tabIndex={-1}>
           <section className="pdfPanel" aria-label="Document display">
             {isPdf(documentRecord) ? (
-              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} searchTerms={searchHighlight && searchHighlight.pageNumber === currentPage ? searchHighlight.terms : null} onClearSearch={() => setSearchHighlight(null)} onHighlightClick={openHighlight} /> : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF or recover its server file.</span></div>
+              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} searchTerms={searchHighlight && searchHighlight.pageNumber === currentPage ? searchHighlight.terms : null} onClearSearch={() => setSearchHighlight(null)} onHighlightClick={openHighlight} readMode={readMode} onToggleReadMode={() => (readMode ? exitReadMode() : enterReadMode())} /> : (documentRecord?.kind === "PDF" && documentRecord.server && !documentRecord.server.storageKey
+                ? <div className="emptyPdfState"><strong>This book&apos;s PDF isn&apos;t in your library yet.</strong><span>Choose the PDF file once. It will be saved to your library and open on every device from then on. Your highlights and notes stay as they are.</span><label className="uploadButton emptyPdfAttach">{serverCopy?.phase === "saving" ? `Saving… ${serverCopy.percent}%` : "Choose PDF file"}<input type="file" accept="application/pdf,.pdf" onChange={chooseMissingPdf} disabled={serverCopy?.phase === "saving"} /></label></div>
+                : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF to begin.</span></div>)
             ) : isText(documentRecord) ? (
               textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
             ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}
@@ -1163,7 +1353,7 @@ export function ScriptoriumMilestoneOnePersisted() {
 
         <aside id="annotation-inspector" className="inspectorPane" aria-label="Annotation inspector" aria-hidden={(!inspectorPinned || compactLayout) && !inspectorOpen}>
           <div className="paneHeader">
-            <div><p className="eyebrow">Current selection</p><h2>{editingRecord ? "Edit record" : "New record"}</h2></div>
+            <div><h2>{editingRecord ? "Edit highlight" : "Details"}</h2></div>
             <button className="paneClose inspectorClose" type="button" onClick={() => setInspectorOpen(false)} aria-label="Close annotation inspector">×</button>
           </div>
           <div className="captureCard">
@@ -1171,21 +1361,23 @@ export function ScriptoriumMilestoneOnePersisted() {
             {editingRecord ? <p className="anchorSummary">The passage and citation of a saved record are fixed. You can change the note and colour.</p> : (selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
             <label>Note<textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void (editingRecord ? saveEdit() : saveRecord()); } }} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} /></label>
             <TagInput value={tags} onChange={setTags} suggestions={knownTags} disabled={!documentRecord} />
-            <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${color.defaultMeaning}${selectedColor === color.key ? ", selected" : ""}`} title={color.defaultMeaning} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><strong>{highlightColors.find((color) => color.key === selectedColor)?.defaultMeaning}</strong></fieldset>
+            <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${swatchName(color.key, legend)}${selectedColor === color.key ? ", selected" : ""}`} title={swatchName(color.key, legend)} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><HighlightMeaning colorKey={selectedColor} legend={legend} onRename={renameColor} className="colorMeaning" /></fieldset>
             <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option><option value="turabian-note">Turabian note (Chicago form)</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
-            <div className="generatedCitation"><span>Generated citation</span><p>{editingRecord ? editingRecord.citationText : generatedCitation}</p>{!editingRecord && engineCitation && engineCitation.missing.length > 0 ? <small className="citationMissing">This source has no {engineCitation.missing.join(", ").replace(/, ([^,]*)$/, " or $1")} recorded, so the citation is incomplete. Add it under Source metadata below.</small> : null}</div>
-            {anchor ? <p className="anchorSummary">Anchor captured: {isTextAnchor(anchor) ? `line ${lineLocator(anchor)}, offsets ${anchor.startOffset}-${anchor.endOffset}` : `${anchor.rects.length} rectangle${anchor.rects.length === 1 ? "" : "s"} on PDF page ${anchor.pageNumber}`}.</p> : null}
+            <div className="generatedCitation"><span>Citation</span><p>{editingRecord ? editingRecord.citationText : generatedCitation}</p>{!editingRecord && engineCitation && engineCitation.missing.length > 0 ? <small className="citationMissing">This source has no {engineCitation.missing.join(", ").replace(/, ([^,]*)$/, " or $1")} recorded, so the citation is incomplete. Add it under Book information below.</small> : null}</div>
             {editingRecord ? <>
               <button className="primaryButton saveRecordButton" onClick={saveEdit} type="button">Save changes</button>
               <div className="editActions">
                 <button className="textAction" type="button" onClick={cancelEditing}>Cancel</button>
                 <button className="textAction dangerAction" type="button" onClick={deleteEditingRecord}>Delete this record</button>
               </div>
-            </> : <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save annotation + citation" : "Save page note + citation"}</button>}
+            </> : <div className="pendingActions">
+              {(selectedText.trim() || anchor || note.trim() || tags.length > 0) ? <button className="secondaryButton discardRecordButton" onClick={discardPending} type="button">Discard</button> : null}
+              <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save highlight" : "Save page note"}</button>
+            </div>}
           </div>
           {recentSavedRecord && recentSavedColor ? <div className="recentSavedRecord"><div><span className="recordColor" style={{ background: recentSavedColor.color }} /><strong>Latest saved record</strong></div>{recentSavedRecord.selectedText ? <blockquote>{recentSavedRecord.selectedText}</blockquote> : null}{recentSavedRecord.note ? <p>{recentSavedRecord.note}</p> : null}<small>{isText(documentRecord) ? "line" : "book page"} {recentSavedRecord.bookPageLabel} · {recentSavedRecord.serverAnnotationId ? "database" : "local"}</small></div> : null}
-          <details className="inspectorGroup" open>
-            <summary>Source metadata {sourceSaveMessage.startsWith("Unsaved") ? <span className="unsavedDot" aria-label="Unsaved changes" /> : null}</summary>
+          <details className="inspectorGroup">
+            <summary>Book information {sourceSaveMessage.startsWith("Unsaved") ? <span className="unsavedDot" aria-label="Unsaved changes" /> : null}</summary>
             <div className="inspectorGroupContent">
               <label>Title<input value={documentRecord?.source.title ?? ""} onChange={(event) => updateSource("title", event.target.value)} disabled={!documentRecord} /></label>
               <label>Author / editor<input value={documentRecord?.source.author ?? ""} onChange={(event) => updateSource("author", event.target.value)} disabled={!documentRecord} /><small className="fieldHint">Several authors: separate with “and”. An organisation: put it in {"{braces}"}.</small></label>
@@ -1196,8 +1388,8 @@ export function ScriptoriumMilestoneOnePersisted() {
               {sourceSaveMessage ? <p className="inlineSaveNotice">{sourceSaveMessage}</p> : null}
             </div>
           </details>
-          <details className="inspectorGroup" open>
-            <summary>{isPdf(documentRecord) ? "Page mapping" : "Text locator"}</summary>
+          <details className="inspectorGroup">
+            <summary>{isPdf(documentRecord) ? "Page numbers" : "Text locator"}</summary>
             <div className="inspectorGroupContent">
               {isPdf(documentRecord) ? <>
                 <div className="twoColumnInputs"><label>PDF page<input type="number" min="1" max={pageCount || undefined} value={currentPage} onChange={(event) => goToPage(Number(event.target.value))} disabled={!documentRecord} /></label><label>Book page<input value={locator} readOnly /></label></div>
@@ -1212,6 +1404,56 @@ export function ScriptoriumMilestoneOnePersisted() {
 
       <p className="ledgerStatus" role="status" aria-live="polite">{status}</p>
 
+      {readMode ? (
+        <>
+          <ReadModeToolbar
+            colors={highlightColors}
+            legend={legend}
+            onRename={renameColor}
+            selectedColor={selectedColor}
+            highlighterOn={highlighterOn}
+            onSelectColor={(key) => { setSelectedColor(key); setStatus(`Highlight meaning: ${meaningFor(key, legend)}.`); }}
+            onToggleHighlighter={() => setHighlighterOn((on) => !on)}
+            onSearch={() => setSearchOpen(true)}
+            onExit={exitReadMode}
+          />
+          {readMode && !highlighterOn && anchor && selectedText.trim() && !editingId ? (
+            <ReadNoteCard
+              mode="pending"
+              excerpt={selectedText.trim()}
+              colors={highlightColors}
+              legend={legend}
+              selectedColor={selectedColor}
+              onSelectColor={setSelectedColor}
+              note={note}
+              onNoteChange={setNote}
+              onPrimary={() => void saveRecord()}
+              onSecondary={discardPending}
+            />
+          ) : savedCardOpen && recentSavedRecord ? (
+            <ReadNoteCard
+              mode="saved"
+              excerpt={recentSavedRecord.selectedText}
+              colors={highlightColors}
+              legend={legend}
+              selectedColor={recentSavedRecord.colorKey}
+              onSelectColor={() => undefined}
+              note={cardNote}
+              onNoteChange={setCardNote}
+              onPrimary={() => { void attachNote(recentSavedRecord.id, cardNote); setSavedCardOpen(false); }}
+              onSecondary={() => { if (cardNote.trim() && cardNote.trim() !== (recentSavedRecord.note ?? "")) void attachNote(recentSavedRecord.id, cardNote); setSavedCardOpen(false); }}
+            />
+          ) : null}
+        </>
+      ) : null}
+      {/* Only what is worth a reader's attention: not how a page was drawn or what was captured. */}
+      {serverCopy ? (
+        <p className={`serverCopyNotice ${serverCopy.phase}`} role="status">
+          {serverCopy.phase === "saving" ? `Saving a copy of this book to your server… ${serverCopy.percent}%. Keep this page open.` : serverCopy.phase === "done" ? "A copy of this book is now saved on your server." : serverCopy.phase === "different" ? "Not saved: that is a different file from the one first added for this book." : "This book could not be copied to your server yet. Reload this page to try again."}
+        </p>
+      ) : null}
+      {/^(Captured|Rendered|PDF\.js loaded|Using this page|Recovered|Highlight meaning|Register a PDF)/.test(status) ? null : <p key={status} className="readToast" aria-hidden="true">{status}</p>}
+
       {helpOpen ? (
         <>
           <button className="drawerScrim" type="button" onClick={() => setHelpOpen(false)} aria-label="Close shortcuts" />
@@ -1221,6 +1463,8 @@ export function ScriptoriumMilestoneOnePersisted() {
               <dl className="shortcutList">
                 <dt>← → or PageUp / PageDown</dt><dd>Previous / next page (also j and k)</dd>
                 <dt>Home / End</dt><dd>First / last page</dd>
+                <dt>z</dt><dd>Read mode: the page fills the screen (press again, or Esc, to leave)</dd>
+                <dt>h</dt><dd>In read mode: turn the highlighter on or off</dd>
                 <dt>1 – 9, 0</dt><dd>Choose the highlight meaning (colour)</dd>
                 <dt>n</dt><dd>Write a note for the selection</dd>
                 <dt>Ctrl / ⌘ + Enter</dt><dd>Save, while typing a note</dd>

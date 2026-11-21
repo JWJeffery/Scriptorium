@@ -22,3 +22,5 @@ migration-report-*.json
 
 files-report-*.json
 storage-legacy/
+
+!.env.production.example

@@ -102,3 +102,40 @@ export function snapRectsToOcrLines(rects: GeometryRect[], words: GeometryWord[]
   }
   return result.sort((a, b) => a.top - b.top || a.left - b.left);
 }
+
+/**
+ * Merges the pieces of a highlight that sit on one line into a single bar, so a highlight reads as one
+ * clean stripe per line instead of a row of separate boxes with seams between them. Pieces further apart
+ * than about a word or two (another column) stay separate. Each bar is painted slightly inside the line
+ * so stripes on neighbouring lines never touch.
+ */
+export function mergeLineRects(rects: GeometryRect[]): GeometryRect[] {
+  const lines: GeometryRect[] = rects.filter((rect) => rect.width > 0 && rect.height > 0).map((rect) => ({ ...rect }));
+  const joinable = (a: GeometryRect, b: GeometryRect) => {
+    const tall = Math.max(a.height, b.height);
+    const sameLine = Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < tall * 0.5;
+    const gap = Math.max(b.left - (a.left + a.width), a.left - (b.left + b.width));
+    return sameLine && gap <= tall * 1.5;
+  };
+  // Joining can bring two earlier bars within reach of each other, so repeat until nothing changes.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < lines.length && !changed; i += 1) {
+      for (let j = i + 1; j < lines.length; j += 1) {
+        if (!joinable(lines[i], lines[j])) continue;
+        const left = Math.min(lines[i].left, lines[j].left);
+        const top = Math.min(lines[i].top, lines[j].top);
+        const right = Math.max(lines[i].left + lines[i].width, lines[j].left + lines[j].width);
+        const bottom = Math.max(lines[i].top + lines[i].height, lines[j].top + lines[j].height);
+        lines[i] = { left, top, width: right - left, height: bottom - top };
+        lines.splice(j, 1);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return lines
+    .sort((a, b) => a.top - b.top || a.left - b.left)
+    .map((line) => ({ left: line.left, top: line.top + line.height * 0.1, width: line.width, height: line.height * 0.8 }));
+}

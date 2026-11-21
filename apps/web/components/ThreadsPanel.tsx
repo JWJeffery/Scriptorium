@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { highlightColors } from "../lib/highlights";
+import { findHighlightColor } from "../lib/highlights";
 
 type ThreadSummary = { id: string; title: string; description: string; tags: string[]; itemCount: number };
 type ItemContext =
@@ -100,7 +100,7 @@ export function ThreadsSection({ active = true, onOpenAnnotation }: { active?: b
         <ol className="threadItems">
           {detail.items.map((item, index) => {
             const context = item.context;
-            const color = context?.itemType === "ANNOTATION" ? highlightColors.find((entry) => entry.key === context.colorKey) ?? highlightColors[0] : null;
+            const color = context?.itemType === "ANNOTATION" ? findHighlightColor(context.colorKey) : null;
             return (
               <li key={item.id} className="threadItem">
                 <div className="threadItemHead">

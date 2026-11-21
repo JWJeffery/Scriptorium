@@ -1,6 +1,6 @@
 // Executes the real module: highlights are clipped to the text, one bar per line.
 import assert from "node:assert/strict";
-import { snapRectsToOcrLines } from "../apps/web/lib/highlight-geometry.ts";
+import { mergeLineRects, snapRectsToOcrLines } from "../apps/web/lib/highlight-geometry.ts";
 
 // Two lines of OCR words, 20px tall, 30px apart; text spans x=100..410.
 const words = [];
@@ -37,3 +37,20 @@ assert.equal(capped.length, 1);
 assert.ok(capped[0].left + capped[0].width < 100 + 3 * 80 + 5 * 12 * 1.7 + 1, "an over-wide word is capped to a plausible width");
 
 console.log("Highlight geometry verified: clipped to text, one bar per line, idempotent.");
+
+// Seams between the fragments of a line are closed; separate columns and separate lines stay apart.
+const fragments = [
+  { left: 100, top: 100, width: 60, height: 20 },
+  { left: 164, top: 101, width: 70, height: 19 }, // small gap after the first word
+  { left: 238, top: 100, width: 50, height: 20 },
+  { left: 100, top: 130, width: 80, height: 20 }, // the next line
+  { left: 600, top: 100, width: 60, height: 20 } // far to the right: another column
+];
+const merged = mergeLineRects(fragments);
+assert.equal(merged.length, 3, "one bar for the line, one for the next line, one for the far column");
+const firstLine = merged.find((rect) => rect.top < 110 && rect.left < 200);
+assert.equal(firstLine.left, 100, "the bar starts at the first fragment");
+assert.equal(firstLine.left + firstLine.width, 288, "and runs to the end of the last fragment");
+assert.ok(firstLine.height < 20 && firstLine.top > 100, "the bar is painted slightly inside the line");
+assert.equal(mergeLineRects([]).length, 0, "nothing in, nothing out");
+console.log("Line merging verified: fragments on a line join, columns and lines stay apart.");

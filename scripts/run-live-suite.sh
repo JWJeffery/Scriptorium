@@ -26,9 +26,15 @@ echo "== live checks (storage: ${SCRIPTORIUM_STORAGE_BACKEND:-local disk}) =="
 for name in page-split search threads page-ranges sources reading meaning library jobs; do
   run node "scripts/verify-$name-api.mjs"
 done
+run node scripts/verify-large-upload.mjs
+run node scripts/e2e-attach-browser-book.mjs
+run node scripts/e2e-discard.mjs
 if [ "${SCRIPTORIUM_STORAGE_BACKEND:-}" = "s3" ]; then run node scripts/verify-object-storage.mjs; fi
 run node scripts/e2e-browser.mjs
 run node scripts/e2e-library.mjs
+run node scripts/e2e-read-mode.mjs
+run node scripts/e2e-theme.mjs
+run node scripts/e2e-layout.mjs
 # Last, because it empties the (throwaway) database and restores it from a backup.
 SCRIPTORIUM_ALLOW_WIPE=yes run node scripts/verify-backup-restore.mjs
 echo "== all live checks passed =="

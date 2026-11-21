@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { highlightColors } from "../lib/highlights";
+import { findHighlightColor } from "../lib/highlights";
 import { parseQuery } from "../lib/search-text";
 
 type Snippet = { before: string; match: string; after: string };
@@ -116,7 +116,7 @@ export function SearchPanel({ open, currentDocumentId, onOpenResult, onClose }: 
             <section>
               <h3>Notes and highlights · {results.counts.annotations}</h3>
               {results.annotations.map((hit) => {
-                const color = highlightColors.find((item) => item.key === hit.colorKey) ?? highlightColors[0];
+                const color = findHighlightColor(hit.colorKey);
                 return (
                   <button type="button" className="searchHit" key={hit.annotationId} onClick={() => onOpenResult({ kind: "annotation", hit, terms })}>
                     <span className="searchHitHead"><span className="recordColor" style={{ background: color.color }} /><strong>{color.defaultMeaning}</strong>{hit.bookPage ? <span>book p. {hit.bookPage}</span> : null}{scope === "all" || !useDocumentScope ? <span>{hit.documentTitle}</span> : null}</span>

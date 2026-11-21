@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppNav } from "./AppNav";
 import { Dialog } from "./Dialog";
 import { TagInput } from "../TagInput";
-import { highlightColors } from "../../lib/highlights";
+import { allHighlightColors as highlightColors } from "../../lib/highlights";
 import {
   ApiProblem, JOB_LABEL, STATE_LABEL, api, dateLabel, readerLink, sizeLabel,
   type CollectionSummary, type DeleteImpact, type ItemDetail, type ItemState, type JobSummary

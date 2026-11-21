@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+**/node_modules
+**/.next
+.env
+.env.*
+!.env.example
+storage
+storage-legacy
+scriptorium-backups
+*.log
+*.pdf
+migration-report-*.json
+files-report-*.json
+docs
+coverage
