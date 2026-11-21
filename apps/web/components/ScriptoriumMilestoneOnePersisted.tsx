@@ -383,6 +383,12 @@ export function ScriptoriumMilestoneOnePersisted() {
     setSelectedText("");
     setAnchor(undefined);
   }
+  // Throw away an unsaved highlight: the selection and whatever note or tags were typed for it.
+  function discardPending() {
+    clearSelection();
+    setNote("");
+    setTags([]);
+  }
   // field-sizing: content (CSS-only auto-grow) turned out to be unreliable
   // across Chrome versions still in real use - stabilized late enough that
   // it can't be counted on yet. This does the same job with plain JS,
@@ -1364,7 +1370,10 @@ export function ScriptoriumMilestoneOnePersisted() {
                 <button className="textAction" type="button" onClick={cancelEditing}>Cancel</button>
                 <button className="textAction dangerAction" type="button" onClick={deleteEditingRecord}>Delete this record</button>
               </div>
-            </> : <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save highlight" : "Save page note"}</button>}
+            </> : <div className="pendingActions">
+              {(selectedText.trim() || anchor || note.trim() || tags.length > 0) ? <button className="secondaryButton discardRecordButton" onClick={discardPending} type="button">Discard</button> : null}
+              <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save highlight" : "Save page note"}</button>
+            </div>}
           </div>
           {recentSavedRecord && recentSavedColor ? <div className="recentSavedRecord"><div><span className="recordColor" style={{ background: recentSavedColor.color }} /><strong>Latest saved record</strong></div>{recentSavedRecord.selectedText ? <blockquote>{recentSavedRecord.selectedText}</blockquote> : null}{recentSavedRecord.note ? <p>{recentSavedRecord.note}</p> : null}<small>{isText(documentRecord) ? "line" : "book page"} {recentSavedRecord.bookPageLabel} · {recentSavedRecord.serverAnnotationId ? "database" : "local"}</small></div> : null}
           <details className="inspectorGroup">
@@ -1419,7 +1428,7 @@ export function ScriptoriumMilestoneOnePersisted() {
               note={note}
               onNoteChange={setNote}
               onPrimary={() => void saveRecord()}
-              onSecondary={clearSelection}
+              onSecondary={discardPending}
             />
           ) : savedCardOpen && recentSavedRecord ? (
             <ReadNoteCard

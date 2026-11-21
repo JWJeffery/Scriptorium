@@ -1466,7 +1466,18 @@ body {
   min-height: 76px;
 }
 
+.pendingActions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.pendingActions .discardRecordButton {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
 .saveRecordButton {
+  flex: 1 1 auto;
   width: 100%;
   border-color: var(--ledger-terracotta-dark);
   background: var(--ledger-terracotta-dark);
