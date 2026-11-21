@@ -12,7 +12,7 @@ type PdfMetadata = { info?: Record<string, unknown>; metadata?: { get: (key: str
 type PdfPage = {
   getViewport: (args: { scale: number }) => PdfViewport;
   getTextContent: () => Promise<{ items: unknown[] }>;
-  render: (args: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<void> };
+  render: (args: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport; transform?: number[] }) => { promise: Promise<void> };
 };
 type PdfDocument = {
   numPages: number;
@@ -103,14 +103,51 @@ function embeddedMetadataFrom(pdfMetadata: PdfMetadata): PdfEmbeddedMetadata {
 
 async function renderCanvas(page: PdfPage, canvas: HTMLCanvasElement, scale: number) {
   const viewport = page.getViewport({ scale });
-  const canvasContext = canvas.getContext("2d");
+  const canvasContext = canvas.getContext("2d", { willReadFrequently: true });
   if (!canvasContext) throw new Error("Canvas unavailable.");
-  canvas.width = Math.floor(viewport.width);
-  canvas.height = Math.floor(viewport.height);
+  // Draw at the screen's real pixel density (2 on a Retina display), keeping the page's size on screen.
+  // At 1 the browser stretched the image, which blurred the type and greyed out thin strokes.
+  const density = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
+  canvas.width = Math.floor(viewport.width * density);
+  canvas.height = Math.floor(viewport.height * density);
   canvas.style.width = `${viewport.width}px`;
   canvas.style.height = `${viewport.height}px`;
-  await page.render({ canvasContext, viewport }).promise;
+  await page.render({ canvasContext, viewport, transform: density !== 1 ? [density, 0, 0, density, 0, 0] : undefined }).promise;
   return viewport;
+}
+
+export type PageLevels = { paper: number; ink: number };
+const DEFAULT_LEVELS: PageLevels = { paper: 0.9, ink: 0.15 };
+
+// How light this page's paper is and how dark its ink is, measured from the rendered image (brightness 0-1).
+// Most of a book page is paper, so the median is the paper; the darkest 1.5% is the ink.
+function measurePageLevels(canvas: HTMLCanvasElement): PageLevels {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context || canvas.width === 0 || canvas.height === 0) return DEFAULT_LEVELS;
+  let data: Uint8ClampedArray;
+  try { data = context.getImageData(0, 0, canvas.width, canvas.height).data; } catch { return DEFAULT_LEVELS; }
+  const histogram = new Uint32Array(256);
+  let count = 0;
+  for (let i = 0; i < data.length; i += 4 * 7) {
+    histogram[Math.round(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2])] += 1;
+    count += 1;
+  }
+  const percentile = (fraction: number) => {
+    let seen = 0;
+    for (let level = 0; level < 256; level += 1) { seen += histogram[level]; if (seen >= count * fraction) return level / 255; }
+    return 1;
+  };
+  return { paper: percentile(0.5), ink: percentile(0.015) };
+}
+
+// The dark-page filter settings for a page: anything at least as light as (a little under) its paper becomes
+// the page colour, anything as dark as its ink becomes full-strength text, the range between is stretched,
+// and a gamma lift keeps thin strokes and small type solid instead of fading them.
+function darkPageFilterSettings(levels: PageLevels) {
+  const paperCut = Math.min(Math.max(levels.paper - 0.08, 0.45), 0.95);
+  const inkCut = Math.max(Math.min(levels.ink + 0.04, paperCut - 0.3), 0);
+  const span = paperCut - inkCut;
+  return { slope: (-1 / span).toFixed(4), intercept: (paperCut / span).toFixed(4) };
 }
 
 async function buildTextRuns(page: PdfPage, scale: number) {
@@ -292,6 +329,8 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
   const documentRef = useRef<PdfDocument | null>(null);
   const [pdfTextRuns, setPdfTextRuns] = useState<TextRun[]>([]);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
+  const [pageLevels, setPageLevels] = useState<PageLevels>(DEFAULT_LEVELS);
+  const darkFilter = darkPageFilterSettings(pageLevels);
   const [isLoading, setIsLoading] = useState(false);
   const [documentLoadKey, setDocumentLoadKey] = useState(0);
   const [dragRect, setDragRect] = useState<DragRect | null>(null);
@@ -526,6 +565,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
         const runs = await buildTextRuns(page, scale);
         if (cancelled) return;
         setPageSize({ width: viewport.width, height: viewport.height });
+        setPageLevels(measurePageLevels(canvas));
         setPdfTextRuns(runs);
         onStatusChange(
           runs.length > 0
@@ -849,16 +889,20 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
         >
           <svg className="pdfDarkPageFilterDefs" aria-hidden="true" focusable="false" width="0" height="0">
             {/* Dark-theme page rendering (used by styles.css). A plain inversion leaves a scan's grey or
-                yellowed paper as a muddy mid-tone with dim text. Instead: take each pixel's brightness, treat
-                anything at least as light as paper (>= 0.72) as background and anything as dark as ink
-                (<= 0.22) as text, stretch the range in between, and paint it from the page colour #171310
-                to warm light text #ece4d6. Paper becomes one even dark tone and the type stays crisp. */}
+                yellowed paper as a muddy mid-tone with dim text. Instead each pixel's brightness is mapped
+                through this page's own paper and ink levels (darkPageFilterSettings), lifted so thin strokes
+                stay solid, and painted from the page colour #171310 to warm light text #ece4d6. */}
             <filter id="pdfDarkPage" colorInterpolationFilters="sRGB">
               <feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0" />
               <feComponentTransfer>
-                <feFuncR type="linear" slope="-2" intercept="1.44" />
-                <feFuncG type="linear" slope="-2" intercept="1.44" />
-                <feFuncB type="linear" slope="-2" intercept="1.44" />
+                <feFuncR type="linear" slope={darkFilter.slope} intercept={darkFilter.intercept} />
+                <feFuncG type="linear" slope={darkFilter.slope} intercept={darkFilter.intercept} />
+                <feFuncB type="linear" slope={darkFilter.slope} intercept={darkFilter.intercept} />
+              </feComponentTransfer>
+              <feComponentTransfer>
+                <feFuncR type="gamma" exponent="0.6" />
+                <feFuncG type="gamma" exponent="0.6" />
+                <feFuncB type="gamma" exponent="0.6" />
               </feComponentTransfer>
               <feComponentTransfer>
                 <feFuncR type="linear" slope="0.8353" intercept="0.0902" />
