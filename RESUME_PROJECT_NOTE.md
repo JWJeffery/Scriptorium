@@ -42,7 +42,7 @@ Design:
 - Every run writes `backup-status.json` into the app's data volume (time, result, what was copied).
   The app shows a warning banner if the last good off-server backup is older than 36 hours or failed,
   and `/api/health` reports it. This is the free "notification": the owner sees it in the app.
-- `deploy/install-cron.sh` installs the nightly job idempotently (`/etc/cron.d/scriptorium`).
+- `deploy/server-setup.sh` installs the nightly job idempotently (`/etc/cron.d/scriptorium`), log rotation and automatic security updates.
 - `deploy/restore.sh` + a written runbook restore a fresh server from Drive; CI restores a real nightly
   backup (pg_restore + files) into an empty stack to prove it works.
 - Optional second copy (owner's idea, re-shaped): the shared-hosting account he already pays for, over
@@ -99,6 +99,23 @@ and the keyword-grep "verifiers" that only kept them alive; archive obsolete doc
 top as a one-page current state (history moves to `docs/archive/`). styles.css consolidation is done
 gradually, one component at a time, never as a big-bang rewrite.
 
+**9. Reading position follows you between devices (owner request, 2026-11-21).**
+The page is already saved to the server (`POST /api/v1/items/<id>/progress`, debounced). Add: when the reader
+opens a book or its tab becomes visible again, fetch the server's last page and when it was set; if it is newer
+than this device's last page change and different, jump there and say so ("Continued from page 112, where you
+left off on another device"). The time comparison prevents two open devices from fighting.
+
+**10. Register a book from Google Drive or Box (owner request, 2026-11-21).** Free, three layers:
+- Note for the owner: on a phone the existing file button already reaches Drive and Box (Android chooser,
+  iOS Files); on a Mac, Google Drive for desktop shows Drive as a folder.
+- Google Drive picker in the app (Google Picker + Drive API, `drive.file` scope, token in the browser only; the
+  browser downloads the chosen PDF and uploads it through the normal path). Needs a free Google Cloud project
+  (API key + OAuth client ID for the site's address), set once in `.env.production`; written as steps.
+- Box: OAuth sign-in (free Box developer app; client id/secret in `.env.production`), server downloads the
+  chosen file through the normal registration path.
+- "Add from a link" (no setup): paste a Google Drive, Box or Dropbox share link or a direct PDF link; the server
+  fetches it with SSRF protection (public addresses only, size cap, PDF check) and registers it.
+
 ### Rollout
 Each workstream lands as its own PR with real tests (unit, API against a production build, and
 Playwright in a browser), CI green, then merged to `main`. Production updates are batched so the owner
@@ -107,7 +124,7 @@ runs as few deploys as possible; each deploy message says exactly what to run.
 ### Status
 | # | Workstream | Status |
 |---|---|---|
-| 1 | Off-server backups to Google Drive | planned |
+| 1 | Off-server backups to Google Drive | built; full wipe-and-restore drill passed locally |
 | 2 | Production on `main` | planned |
 | 3 | Visible errors, no silent reverts | planned |
 | 4 | Jobs that finish and never stick | planned |
@@ -115,6 +132,8 @@ runs as few deploys as possible; each deploy message says exactly what to run.
 | 6 | Deploy script, health, cleanup | planned |
 | 7 | Search speed, browser storage | planned |
 | 8 | Tidy | planned |
+| 9 | Reading position across devices | planned |
+| 10 | Register from Google Drive / Box / a link | planned |
 
 ## What this project is
 

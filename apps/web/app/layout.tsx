@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import "./styles.css";
 import "./pdf-reader.css";
 import { themeInitScript } from "../lib/theme";
+import { BackupWarning } from "../components/BackupWarning";
 
 export const metadata: Metadata = {
   title: "Scriptorium",
@@ -15,7 +16,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body>{children}</body>
+      <body><BackupWarning />{children}</body>
     </html>
   );
 }

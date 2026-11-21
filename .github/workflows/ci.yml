@@ -85,6 +85,9 @@ jobs:
       - name: Verify Milestone 17 OCR pipeline contract
         run: node --experimental-strip-types scripts/verify-milestone-17-ocr-contract.mjs
 
+      - name: Verify the backup warning rules
+        run: node --experimental-strip-types scripts/verify-backup-status.mjs
+
       - name: Verify Milestone 18 non-Latin script tokenization
         run: node --experimental-strip-types scripts/verify-milestone-18-non-latin-tokenization.mjs
 
@@ -334,6 +337,22 @@ jobs:
         run: |
           source ci-auth.sh
           SCRIPTORIUM_BASE_URL=http://127.0.0.1 node scripts/verify-large-upload.mjs
+
+      - name: Disaster drill - back up, wipe everything, restore from the backup alone
+        run: |
+          source ci-auth.sh
+          export SCRIPTORIUM_BASE_URL=http://127.0.0.1 BACKUP_DIR="$RUNNER_TEMP/backups" DRIVE_REMOTE=gdrive:/backups/drive
+          # A local folder stands in for Google Drive (same rclone commands, no account needed).
+          mkdir -p deploy/rclone && printf '[gdrive]\ntype = local\n' > deploy/rclone/rclone.conf
+          node scripts/verify-restore.mjs record "$RUNNER_TEMP/restore.json"
+          ./deploy/backup.sh
+          test "$(jq -r '.ok and .offsite' "$BACKUP_DIR/backup-status.json")" = true
+          ./deploy/backup.sh   # a second run sends only what changed
+          rm -f "$BACKUP_DIR"/db-*.dump   # the restore must use the off-server copy
+          docker compose -f docker-compose.prod.yml --env-file .env.production down -v
+          docker compose -f docker-compose.prod.yml --env-file .env.production up -d --wait --wait-timeout 900
+          RESTORE_CONFIRM=yes ./deploy/restore.sh
+          node scripts/verify-restore.mjs check "$RUNNER_TEMP/restore.json"
 
       - name: Show logs if anything failed
         if: failure()
