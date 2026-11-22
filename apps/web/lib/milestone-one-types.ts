@@ -41,6 +41,8 @@ export type MilestoneOneAnchorInput = {
 };
 
 export type MilestoneOneAnnotationInput = {
+  /** the browser's id for this highlight; makes a retried save safe */
+  clientId?: string;
   documentId: string;
   versionId: string;
   sourceId: string;

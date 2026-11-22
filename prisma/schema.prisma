@@ -273,6 +273,9 @@ model Annotation {
   selectedText String
   note         String?
   anchor       Json?
+  /// The id the browser gave this highlight. A save that is retried (the reply was lost) sends the same id, and
+  /// the server returns the existing highlight instead of creating a second one.
+  clientId     String?         @unique @db.VarChar(191)
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   citations    Citation[]

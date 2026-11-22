@@ -102,7 +102,7 @@ export async function writeBackup(archive: Archiver): Promise<BackupManifest> {
 
   for (const file of await listStoredFiles()) {
     let bytes: Buffer;
-    try { bytes = await readStoredPdfFile(file.storageKey); } catch { continue; } // vanished while backing up
+    try { bytes = await readStoredPdfFile(file.storageKey); } catch (error) { console.warn(`[backup] skipped ${file.storageKey}:`, error); continue; } // vanished while backing up
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     await appendAndWait(archive, bytes, `files/${file.storageKey}`);
     manifest.files.push({ key: file.storageKey, size: bytes.byteLength, sha256 });

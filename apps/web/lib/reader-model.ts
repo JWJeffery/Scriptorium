@@ -17,7 +17,26 @@ export type PageMap = { basePdfPageIndex: number; baseBookPage: number; currentP
 export type ServerIds = { documentId: string; versionId: string; sourceId: string; pageMapId: string; storageKey?: string; snapshotKey?: string; sourceChecksum?: string };
 export type StoredDocument = { id: string; title: string; filename: string; kind: DocumentKind; mediaType: string; size: number; source: SourceRecord; pageMap: PageMap; server?: ServerIds };
 export type SelectionAnchor = PdfSelectionAnchor | TextSelectionAnchor;
-export type SavedAnnotation = { id: string; documentId: string; versionId?: string; snapshotKey?: string; colorKey: string; selectedText: string; note: string; pdfPageIndex: number; bookPageLabel: string; citationStyle: CitationStyle; citationText: string; anchor?: SelectionAnchor; createdAt: string; serverAnnotationId?: string; serverCitationId?: string; tags?: string[] };
+export type SavedAnnotation = { id: string; documentId: string; versionId?: string; snapshotKey?: string; colorKey: string; selectedText: string; note: string; pdfPageIndex: number; bookPageLabel: string; citationStyle: CitationStyle; citationText: string; anchor?: SelectionAnchor; createdAt: string; serverAnnotationId?: string; serverCitationId?: string; tags?: string[]; /** an edit (note, colour, tags) the database has not received yet */ pendingEdit?: boolean };
+
+// The server answered, but said no (as opposed to the network failing). Its reason is in `message`.
+export class ServerRefusedError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
+
+async function refusal(response: Response, fallback: string) {
+  let reason = "";
+  try {
+    const body = await response.json() as { error?: unknown; message?: unknown };
+    reason = typeof body.error === "string" ? body.error : typeof body.message === "string" ? body.message : "";
+  } catch { /* not JSON */ }
+  return new ServerRefusedError(response.status, reason || `${fallback} (error ${response.status})`);
+}
+
+/** Plain words for why a save did not reach the database. */
+export function whyNotSaved(error: unknown) {
+  return error instanceof ServerRefusedError ? `the server refused it: ${error.message}` : "the server could not be reached";
+}
 
 export type TextPersistResponse = {
   document: { id: string; storageKey?: string | null };
@@ -311,7 +330,7 @@ export async function persistPdfFile(file: File, document: StoredDocument, locat
   formData.set("currentPdfPageIndex", String(document.pageMap.currentPdfPageIndex));
   formData.set("bookPageLabel", locator);
   const response = await fetch("/api/core/files?allowDuplicate=true", { method: "POST", body: formData });
-  if (!response.ok) throw new Error("PDF upload persistence failed.");
+  if (!response.ok) throw await refusal(response, "The PDF could not be uploaded");
   const body = await response.json() as { document: { id: string; storageKey?: string | null }; version: { id: string }; source: { id: string }; pageMap: { id: string }; storedFile?: { storageKey: string } };
   return { documentId: body.document.id, versionId: body.version.id, sourceId: body.source.id, pageMapId: body.pageMap.id, storageKey: body.storedFile?.storageKey ?? body.document.storageKey ?? undefined } satisfies ServerIds;
 }
@@ -360,9 +379,20 @@ export async function persistAnnotation(document: StoredDocument, record: SavedA
   const response = await fetch("/api/core/annotations", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ documentId: document.server.documentId, versionId: document.server.versionId, sourceId: document.server.sourceId, pageMapId: document.server.pageMapId, colorKey: record.colorKey, selectedText: record.selectedText, note: record.note, tags: record.tags ?? [], anchor: record.anchor, citationStyle: record.citationStyle, citationText: record.citationText, locatorType: locatorTypeFor(document, record.anchor), locatorValue: record.bookPageLabel })
+    // clientId makes a retried save safe: the server returns the existing highlight instead of creating a second.
+    body: JSON.stringify({ clientId: record.id, documentId: document.server.documentId, versionId: document.server.versionId, sourceId: document.server.sourceId, pageMapId: document.server.pageMapId, colorKey: record.colorKey, selectedText: record.selectedText, note: record.note, tags: record.tags ?? [], anchor: record.anchor, citationStyle: record.citationStyle, citationText: record.citationText, locatorType: locatorTypeFor(document, record.anchor), locatorValue: record.bookPageLabel })
   });
-  if (!response.ok) throw new Error("Annotation persistence failed.");
+  if (!response.ok) throw await refusal(response, "The highlight could not be saved");
   return await response.json() as { annotation: { id: string }; citation: { id: string } };
+}
+
+/** Change a saved highlight's note, colour or tags in the database. */
+export async function patchAnnotation(serverAnnotationId: string, fields: { note?: string; colorKey?: string; tags?: string[] }) {
+  const response = await fetch("/api/core/annotations", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ annotationId: serverAnnotationId, ...fields })
+  });
+  if (!response.ok) throw await refusal(response, "The change could not be saved");
 }
 

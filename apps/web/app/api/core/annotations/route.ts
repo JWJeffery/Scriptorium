@@ -49,10 +49,26 @@ export async function POST(request: NextRequest) {
 
   const tagValues = cleanTags(body.tags);
   const anchorJson = anchorJsonFor(body.anchor);
+  const clientId = typeof body.clientId === "string" && body.clientId.trim() ? body.clientId.trim().slice(0, 191) : null;
 
-  const result = await prisma.$transaction(async (tx) => {
+  // A retried save (the first reply never arrived) carries the same browser id: answer with the highlight that
+  // already exists instead of creating a duplicate.
+  const existing = async () => {
+    if (!clientId) return null;
+    const found = await prisma.annotation.findUnique({ where: { clientId }, include: { tags: true, citations: { take: 1, orderBy: { createdAt: "asc" } } } });
+    if (!found) return null;
+    const { citations, ...annotation } = found;
+    return { annotation, citation: citations[0] ?? null };
+  };
+  const already = await existing();
+  if (already) return NextResponse.json({ ...already, alreadySaved: true }, { status: 200 });
+
+  let result;
+  try {
+    result = await prisma.$transaction(async (tx) => {
     const annotation = await tx.annotation.create({
       data: {
+        clientId,
         documentId: body.documentId,
         versionId: body.versionId,
         pageMapId: body.pageMapId ?? null,
@@ -81,6 +97,15 @@ export async function POST(request: NextRequest) {
 
     return { annotation, citation };
   });
+  } catch (error) {
+    // Two copies of the same save arriving at once: the second loses the race on the unique browser id.
+    if ((error as { code?: string }).code === "P2002") {
+      const raced = await existing();
+      if (raced) return NextResponse.json({ ...raced, alreadySaved: true }, { status: 200 });
+    }
+    console.error("[annotations] could not save a highlight:", error);
+    return NextResponse.json({ error: "The highlight could not be saved in the database." }, { status: 500 });
+  }
 
   return NextResponse.json(result, { status: 201 });
 }

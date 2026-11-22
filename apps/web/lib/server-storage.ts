@@ -20,7 +20,7 @@ function repositoryRootFromCwd() {
 
 const REPOSITORY_ROOT = repositoryRootFromCwd();
 const DEFAULT_STORAGE_DIR = path.join(REPOSITORY_ROOT, "storage");
-const MAX_PDF_BYTES = 75 * 1024 * 1024;
+export const MAX_PDF_BYTES = 75 * 1024 * 1024;
 const MAX_TEXT_SNAPSHOT_BYTES = 10 * 1024 * 1024;
 
 export type StoredPdfFile = {

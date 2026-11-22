@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../../lib/prisma";
-import { deleteStoredPdfFile, storePdfFile } from "../../../../lib/server-storage";
+import { MAX_PDF_BYTES, deleteStoredPdfFile, storePdfFile } from "../../../../lib/server-storage";
 import { extractPdfText } from "../../../../lib/pdf-text-extraction";
 import { looksLikePdf } from "../../../../lib/upload-guards";
 import { parseAuthors } from "../../../../lib/author-names";
@@ -55,7 +55,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (file.type !== "application/pdf") {
-    return failure("Only PDF files are accepted for Milestone 1.", 400);
+    return failure("Only PDF files can be added here.", 400);
+  }
+  // Checked before any heavy work, with a reason the reader can act on.
+  if (file.size > MAX_PDF_BYTES) {
+    return failure(`This PDF is ${Math.round(file.size / 1024 / 1024)} MB; the largest that can be added is ${Math.round(MAX_PDF_BYTES / 1024 / 1024)} MB.`, 413);
   }
 
   const title = readText(formData, "title") || file.name.replace(/\.pdf$/i, "");
@@ -102,9 +106,10 @@ export async function POST(request: NextRequest) {
   try {
     extraction = await extractPdfText(pdfBytes);
     extractionState = extraction.totalTextLength > 0 ? "server-pdfjs-text-layer" : "server-pdfjs-no-text-layer";
-  } catch {
+  } catch (error) {
     // Leave the defaults above. A failed extraction shouldn't fail the
     // whole upload - the document/file are still valid without it.
+    console.warn("[upload] could not read the PDF's text layer:", error);
   }
 
   try {
@@ -179,11 +184,13 @@ export async function POST(request: NextRequest) {
     }, { timeout: 60_000 });
 
     return NextResponse.json(result, { status: 201 });
-  } catch {
+  } catch (error) {
+    console.error("[upload] the PDF could not be stored:", error);
     if (storageKeyToClean) {
-      await deleteStoredPdfFile(storageKeyToClean);
+      await deleteStoredPdfFile(storageKeyToClean).catch(() => undefined);
     }
-
-    return failure("PDF upload could not be completed.", 500);
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOSPC") return failure("The server's disk is full, so the PDF could not be stored. Free some space (old backups, Docker leftovers) and try again.", 507);
+    return failure("The PDF could not be stored on the server. The details are in the server log.", 500);
   }
 }
