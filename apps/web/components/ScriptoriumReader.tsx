@@ -25,7 +25,7 @@ import { MoreMenu } from "./MoreMenu";
 
 import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getBrowserPdf, persistDocument, persistPdfFile, attachPdfToServer, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation, patchAnnotation, whyNotSaved, ServerRefusedError } from "../lib/reader-model";
 
-export function ScriptoriumMilestoneOnePersisted() {
+export function ScriptoriumReader() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [textContent, setTextContent] = useState("");

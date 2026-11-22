@@ -28,7 +28,7 @@ The first complete user flow is intentionally narrow:
 ## Proposed stack
 
 - Web app: Next.js + React + TypeScript
-- Database: PostgreSQL (with pgvector) through Prisma. Moving an older MySQL install: see `docs/POSTGRES_MIGRATION.md`
+- Database: PostgreSQL (with pgvector) through Prisma. Moving an older MySQL install: see `docs/archive/POSTGRES_MIGRATION.md`
 - ORM: Prisma
 - PDF rendering: PDF.js
 - Citation formatting: CSL JSON + citeproc-compatible engine

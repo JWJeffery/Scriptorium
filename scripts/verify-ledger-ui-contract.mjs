@@ -9,7 +9,7 @@ async function readMany(...paths) {
 
 const [page, workspace, reader, tools, styles, pageSplitRoute, pageSplitImport] = await Promise.all([
   readFile(new URL("../apps/web/app/page.tsx", import.meta.url), "utf8"),
-  readMany("../apps/web/components/ScriptoriumMilestoneOnePersisted.tsx", "../apps/web/lib/reader-model.ts"),
+  readMany("../apps/web/components/ScriptoriumReader.tsx", "../apps/web/lib/reader-model.ts"),
   readFile(new URL("../apps/web/components/PdfAnchoredPageReader.tsx", import.meta.url), "utf8"),
   readMany(
     "../apps/web/components/ScholarlyToolsPanel.tsx",
@@ -23,7 +23,7 @@ const [page, workspace, reader, tools, styles, pageSplitRoute, pageSplitImport] 
   readFile(new URL("../apps/web/app/api/page-split/import/route.ts", import.meta.url), "utf8")
 ]);
 
-assert.match(page, /return <ScriptoriumMilestoneOnePersisted\s*\/>/,
+assert.match(page, /return <ScriptoriumReader\s*\/>/,
   "The page must mount one state-owning Ledger workspace.");
 assert.doesNotMatch(page, /ScholarlyToolsPanel/,
   "Scholarly tools must not be mounted a second time outside the drawer.");

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const route = await readFile("apps/web/app/api/sources/route.ts", "utf8");
-const component = await readFile("apps/web/components/ScriptoriumMilestoneOnePersisted.tsx", "utf8");
+const component = await readFile("apps/web/components/ScriptoriumReader.tsx", "utf8");
 
 const requiredRouteTerms = [
   "PATCH",

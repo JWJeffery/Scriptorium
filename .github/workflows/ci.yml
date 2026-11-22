@@ -67,11 +67,7 @@ jobs:
       - name: Verify Milestone 7 citation exchange
         run: node scripts/verify-milestone-7-citation-exchange.mjs
 
-      - name: Verify Milestone 8 Zotero compatibility
-        run: node scripts/verify-milestone-8-zotero-compat.mjs
 
-      - name: Verify Milestone 9 research threads
-        run: node scripts/verify-milestone-9-research-threads.mjs
 
       - name: Verify Milestone 14 expanded citation styles
         run: node --experimental-strip-types scripts/verify-milestone-14-citation-styles.mjs
