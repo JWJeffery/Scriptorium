@@ -25,17 +25,36 @@ export type OcrWord = {
   lineNum?: number;
 };
 
+export type OcrPage = { pageIndex: number; text: string; confidence: number; words?: OcrWord[] };
+
 export type OcrResult = {
   text: string;
   warnings: string[];
-  pages?: { pageIndex: number; text: string; confidence: number; words?: OcrWord[] }[];
+  // Only the pages recognized in this run, and empty when the caller took them through onPageResult.
+  pages?: OcrPage[];
+  // Pages in the PDF (including any skipped because they were already done).
+  pageCount?: number;
+};
+
+export type OcrRunOptions = {
+  // Checked between pages: once it is aborted the run stops at the next page boundary (a page still being
+  // recognized gets a short grace period, then is abandoned) and extractText rejects with signal.reason.
+  signal?: AbortSignal;
+  // 1-based page numbers already recognized and saved by an earlier, interrupted run; not done again.
+  skipPages?: ReadonlySet<number>;
+  // Called once the PDF is open, before any recognition, with the work still to do.
+  onStart?: (info: { pageCount: number; pagesToDo: number }) => void;
+  // Called (and awaited) with each finished page. When given, pages are handed over here instead of
+  // being collected in the result, so a long book is never held in memory all at once.
+  onPageResult?: (page: OcrPage) => void | Promise<void>;
 };
 
 export interface OcrProvider {
   readonly name: string;
   extractText(
     input: { pdfBytes: Buffer; documentId: string },
-    onPageComplete?: (completed: number, total: number) => void
+    onPageComplete?: (completed: number, total: number) => void,
+    options?: OcrRunOptions
   ): Promise<OcrResult>;
 }
 

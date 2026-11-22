@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { detectLikelyScanned } from "../../../../lib/ocr-provider";
-import { OCR_RUNNING_STATE } from "../../../../lib/jobs/handlers";
+import { OCR_RUNNING_STATE } from "../../../../lib/jobs/ocr-states";
 import { latestJobsFor } from "../../../../lib/jobs/jobs";
 import { enqueueHeavyJob } from "../../../../lib/jobs/queue";
 

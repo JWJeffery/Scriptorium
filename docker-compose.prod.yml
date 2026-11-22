@@ -46,6 +46,9 @@ services:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     logging: *logging
+    # If the server runs out of memory, the kernel must kill the worker (an OCR job resumes from its last
+    # saved pages) long before it kills the database. No hard memory limits: the server's size is not known here.
+    oom_score_adj: -500
     environment:
       POSTGRES_USER: scriptorium
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
@@ -84,6 +87,11 @@ services:
   worker:
     <<: *app
     command: ["node", "node_modules/tsx/dist/cli.mjs", "worker/main.ts"]
+    # On a deploy the worker saves the current job's pages and exits (within 45 s); give it 60 s rather
+    # than Docker's default 10 s before it is killed.
+    stop_grace_period: 60s
+    # First in line for the out-of-memory killer (see postgres above).
+    oom_score_adj: 500
     depends_on:
       migrate:
         condition: service_completed_successfully
