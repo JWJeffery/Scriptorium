@@ -90,11 +90,18 @@ try {
 
   // 4. A new worker notices (heartbeat 10 s, check every 3 s), retries, and finishes.
   const second = startWorker();
-  const deadline = Date.now() + 120_000;
+  // The retry redoes all 40 pages, which on a shared CI machine can take well over two minutes. So the test fails
+  // when the job stops moving (no progress for 90 s: never noticed, or stuck), or after 10 minutes in all; a job
+  // that is slow but working is allowed to finish. (A fixed 120 s deadline failed at page 37 of 40 on CI.)
+  const started = Date.now();
+  let lastProgress = { key: "", at: Date.now() };
   for (;;) {
     job = await jobState();
     if (job.state === "complete" || job.state === "failed") break;
-    assert.ok(Date.now() < deadline, `the job was never recovered; last state ${JSON.stringify(job)}\n${second.output}`);
+    const key = `${job.state}:${job.attempts}:${job.progress?.done ?? 0}`;
+    if (key !== lastProgress.key) lastProgress = { key, at: Date.now() };
+    assert.ok(Date.now() - lastProgress.at < 90_000, `the job was never recovered (no progress for 90 s); last state ${JSON.stringify(job)}\n${second.output}`);
+    assert.ok(Date.now() - started < 600_000, `the job did not finish within 10 minutes; last state ${JSON.stringify(job)}\n${second.output}`);
     await sleep(500);
   }
   assert.equal(job.state, "complete", `${job.error}\n${second.output}`);
