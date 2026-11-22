@@ -86,7 +86,10 @@ services:
 
   worker:
     <<: *app
-    command: ["node", "node_modules/tsx/dist/cli.mjs", "worker/main.ts"]
+    # tsx is loaded inside node (not run as a wrapper process): the tsx wrapper gives the worker only 30 ms to
+    # acknowledge a stop signal and then force-kills it, which during OCR (busy reading a page) skipped the clean
+    # save-and-stop. Loaded this way, `docker compose stop` reaches the worker's own shutdown code directly.
+    command: ["node", "--import", "tsx", "worker/main.ts"]
     # On a deploy the worker saves the current job's pages and exits (within 45 s); give it 60 s rather
     # than Docker's default 10 s before it is killed.
     stop_grace_period: 60s

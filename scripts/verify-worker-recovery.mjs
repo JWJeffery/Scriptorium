@@ -38,7 +38,7 @@ function start(name, command, args, extra = {}) {
   child.label = name;
   return child;
 }
-const startWorker = () => start("worker", "node", ["node_modules/tsx/dist/cli.mjs", "worker/main.ts"]);
+const startWorker = () => start("worker", "node", ["--import", "tsx", "worker/main.ts"]);
 const killGroup = (child, signal) => { try { process.kill(-child.pid, signal); } catch { /* already gone */ } };
 const cleanup = () => { for (const child of children) killGroup(child, "SIGKILL"); };
 process.on("exit", cleanup);
@@ -112,7 +112,7 @@ try {
   assert.equal(split.splitReady, true, "the web server serves the result the second worker produced");
 
   // 5. A worker told to stop (SIGTERM) shuts down cleanly.
-  process.kill(second.pid, "SIGTERM"); // tsx forwards it to the worker
+  process.kill(second.pid, "SIGTERM"); // the worker itself (tsx is loaded inside node, not a wrapper)
   const code = await Promise.race([second.exited, sleep(30_000).then(() => "timeout")]);
   assert.equal(code, 0, `the worker did not stop cleanly:\n${second.output}`);
 

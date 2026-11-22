@@ -63,9 +63,17 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes("not yet saved to the database"), null, { timeout: 10000 });
 
   await page.unroute("**/api/core/annotations");
+  const resent = page.waitForResponse((response) => response.url().includes("/api/core/annotations") && response.request().method() === "PATCH", { timeout: 15000 });
   await page.getByRole("button", { name: "Save to the database" }).click();
-  await page.waitForFunction(() => document.body.innerText.includes("Saved 1 record to the database."), null, { timeout: 10000 });
-  assert.equal(sql(`select note from "Annotation" where "documentId"='${ids.documentId}'`), "A note written while the server said no", "the edit reached the database");
+  assert.equal((await resent).status(), 200, "the unsent edit is sent again and accepted");
+  // What matters is the database (a status line can be replaced a moment later by a newer message).
+  let stored = "";
+  for (let i = 0; i < 30 && stored !== "A note written while the server said no"; i += 1) {
+    stored = sql(`select coalesce(note,'') from "Annotation" where "documentId"='${ids.documentId}'`);
+    if (stored !== "A note written while the server said no") await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  assert.equal(stored, "A note written while the server said no", `the edit reached the database (screen said: ${(await page.locator("body").innerText()).match(/Saved[^\n]*|not yet saved[^\n]*|refused[^\n]*/)?.[0] ?? "nothing relevant"})`);
+  await page.waitForFunction(() => !document.body.innerText.includes("not yet saved to the database"), null, { timeout: 10000 });
   console.log("Save safety verified: retried saves never duplicate, refused edits survive a sync and are re-sent, real reasons are shown.");
 } finally {
   await browser.close();

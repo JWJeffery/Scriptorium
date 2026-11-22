@@ -65,14 +65,14 @@ function start(name, command, args, extra = {}) {
   children.push(child);
   return child;
 }
-const startWorker = (extra) => start("worker", "node", ["node_modules/tsx/dist/cli.mjs", "worker/main.ts"], extra);
+const startWorker = (extra) => start("worker", "node", ["--import", "tsx", "worker/main.ts"], extra);
 const killGroup = (child, signal) => { try { process.kill(-child.pid, signal); } catch { /* already gone */ } };
 const cleanup = () => { for (const child of children) killGroup(child, "SIGKILL"); };
 process.on("exit", cleanup);
 
 async function stopWorker(worker) {
   const began = Date.now();
-  process.kill(worker.pid, "SIGTERM"); // tsx forwards it to the worker
+  process.kill(worker.pid, "SIGTERM"); // the worker itself (tsx is loaded inside node, not a wrapper)
   const code = await Promise.race([worker.exited, sleep(50_000).then(() => "timeout")]);
   const seconds = (Date.now() - began) / 1000;
   assert.equal(code, 0, `the worker did not stop cleanly (${code}):\n${worker.output.slice(-3000)}`);
