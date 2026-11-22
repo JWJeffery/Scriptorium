@@ -12,6 +12,7 @@ import { SearchPanel, type SearchOpenRequest } from "./SearchPanel";
 import { AddToThread } from "./ThreadsPanel";
 import { TagInput, normalizeTags } from "./TagInput";
 import { SourceLookupDialog } from "./SourceLookupDialog";
+import { AddBookDialog } from "./AddBookDialog";
 import { PageNumberingEditor } from "./PageNumberingEditor";
 import { labelForPage, pdfPageForLabel, type PageRangeSpec } from "../lib/page-labels";
 import { authorsToText } from "../lib/author-names";
@@ -40,6 +41,7 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const panelsRestoredRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [addBook, setAddBook] = useState<null | "menu" | "box">(null);
   const [pendingSplitOcr, setPendingSplitOcr] = useState(false);
   const [ledgerFilter, setLedgerFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("");
@@ -313,6 +315,15 @@ export function ScriptoriumMilestoneOnePersisted() {
     }, 1500);
     return () => { window.clearTimeout(timer); state.writePending = false; };
   }, [lastPageDocumentId, lastPageNumber, pageCount]);
+
+  // Coming back from Box's sign-in page (/?box=connected|cancelled|failed): reopen Add a book on Box.
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get("box");
+    if (!result) return;
+    window.history.replaceState(null, "", "/");
+    if (result === "connected") { setStatus("Box is connected. Choose a PDF to add."); setAddBook("box"); }
+    else setStatus(result === "cancelled" ? "Connecting Box was cancelled." : "Box could not be connected. Try again, or see docs/CLOUD_IMPORT.md.");
+  }, []);
 
   // A link such as /?open=<book id> (from the Library) opens that book.
   useEffect(() => {
@@ -651,6 +662,11 @@ export function ScriptoriumMilestoneOnePersisted() {
     const file = event.target.files?.[0];
     event.currentTarget.value = "";
     if (!file) return;
+    await registerFile(file);
+  }
+
+  // Adds a book from a File, wherever it came from: this device, a link, Google Drive or Box (AddBookDialog).
+  async function registerFile(file: File) {
 
     const kind = fileKind(file);
     if (!kind) {
@@ -1310,7 +1326,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           <MoreMenu
             badge={pendingSplitOcr}
             items={[
-              { key: "add", label: "Add a book…", onSelect: () => fileInputRef.current?.click() },
+              { key: "add", label: "Add a book…", onSelect: () => setAddBook("menu") },
               { key: "bookmark", label: bookmarks.some((bookmark) => bookmark.pdfPage === currentPage) ? "Remove bookmark from this page" : "Bookmark this page", onSelect: () => void toggleBookmark(), hidden: !bookmarkDocumentId },
               { key: "tools", label: pendingSplitOcr ? "Tools (needs attention)" : "Tools", onSelect: () => setToolsOpen(true) },
               { key: "help", label: "Keyboard shortcuts", onSelect: () => setHelpOpen(true) },
@@ -1513,6 +1529,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       ) : null}
       {/* Only what is worth a reader's attention: not how a page was drawn or what was captured. */}
       {positionNotice ? <p className="serverCopyNotice done positionNotice" role="status">{positionNotice}</p> : null}
+      {addBook ? <AddBookDialog startWith={addBook} onClose={() => setAddBook(null)} onPickDevice={() => fileInputRef.current?.click()} onFile={registerFile} /> : null}
       {serverCopy ? (
         <p className={`serverCopyNotice ${serverCopy.phase}`} role="status">
           {serverCopy.phase === "saving" ? `Saving a copy of this book to your server… ${serverCopy.percent}%. Keep this page open.` : serverCopy.phase === "done" ? "A copy of this book is now saved on your server." : serverCopy.phase === "different" ? "Not saved: that is a different file from the one first added for this book." : "This book could not be copied to your server yet. Reload this page to try again."}

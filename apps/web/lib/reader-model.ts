@@ -21,7 +21,8 @@ export type SavedAnnotation = { id: string; documentId: string; versionId?: stri
 
 // The server answered, but said no (as opposed to the network failing). Its reason is in `message`.
 export class ServerRefusedError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+  readonly status: number;
+  constructor(status: number, message: string) { super(message); this.status = status; }
 }
 
 async function refusal(response: Response, fallback: string) {

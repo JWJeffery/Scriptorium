@@ -406,3 +406,14 @@ model ProcessingJob {
   @@index([state])
   @@index([createdAt])
 }
+
+/// A signed-in connection to a cloud storage account used to add books (one row per service, e.g. "box").
+/// Tokens never leave the server.
+model ImportConnection {
+  provider     String   @id @db.VarChar(32)
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  account      String?  @db.VarChar(255)
+  updatedAt    DateTime @updatedAt
+}

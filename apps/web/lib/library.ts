@@ -333,6 +333,8 @@ export const sha256Hex = (bytes: Uint8Array) => createHash("sha256").update(byte
 export async function findItemByChecksum(checksum: string) {
   const version = await prisma.documentVersion.findFirst({
     where: { sourceChecksum: checksum, document: { deletedAt: null } },
+    // The first copy added, not whichever the database happens to return first.
+    orderBy: { createdAt: "asc" },
     select: { document: { select: { id: true, title: true } } }
   });
   return version?.document ?? null;
