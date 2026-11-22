@@ -13,6 +13,7 @@
 #     cd /opt/scriptorium && ./deploy/connect-google-drive.sh
 #   and paste the line when asked.
 set -Eeuo pipefail
+trap 'echo "connect-google-drive.sh stopped at line $LINENO (command: $BASH_COMMAND)." >&2' ERR
 umask 077
 cd "$(dirname "$0")/.."
 COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env.production)

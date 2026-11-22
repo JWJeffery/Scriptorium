@@ -6,6 +6,8 @@
 #   - turns on automatic security updates, restarting the server at 04:30 only when an update needs it
 #     (the app comes back by itself after a restart)
 set -Eeuo pipefail
+# Never stop silently: say where, so the problem can be reported.
+trap 'echo "server-setup.sh stopped at line $LINENO (command: $BASH_COMMAND). Nothing after that step was done." >&2' ERR
 [ "$(id -u)" -eq 0 ] || { echo "Run this as root." >&2; exit 1; }
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -17,8 +19,10 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 CRON
 chmod 644 /etc/cron.d/scriptorium
 # Older instructions put the backup in root's own crontab; remove that line so it never runs twice.
-if crontab -l 2>/dev/null | grep -q "deploy/backup.sh"; then
-  crontab -l 2>/dev/null | grep -v "deploy/backup.sh" | crontab -
+# (grep without -q reads all of its input, so the pipe cannot fail early; an empty remainder removes the crontab.)
+if crontab -l 2>/dev/null | grep "deploy/backup.sh" > /dev/null; then
+  remaining="$(crontab -l 2>/dev/null | grep -v "deploy/backup.sh" || true)"
+  if [ -n "$remaining" ]; then printf '%s\n' "$remaining" | crontab -; else crontab -r; fi
   echo "Removed the old backup line from root's crontab (it is now in /etc/cron.d/scriptorium)."
 fi
 echo "Nightly backup scheduled (03:00): /etc/cron.d/scriptorium"

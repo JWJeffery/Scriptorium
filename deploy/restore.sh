@@ -6,6 +6,7 @@
 # Before running it on a new server: clone the repository to /opt/scriptorium, create .env.production (docs/DEPLOY_VM.md),
 # and run deploy/connect-google-drive.sh.
 set -Eeuo pipefail
+trap 'echo "restore.sh stopped at line $LINENO (command: $BASH_COMMAND)." >&2' ERR
 umask 077
 cd "$(dirname "$0")/.."
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/scriptorium}"

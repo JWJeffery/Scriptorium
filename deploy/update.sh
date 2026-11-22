@@ -4,6 +4,7 @@
 # It backs up first (and stops if the backup fails), pulls the new code, rebuilds, waits until the app reports
 # healthy, then clears out old build leftovers so the disk does not fill up.
 set -Eeuo pipefail
+trap 'echo "update.sh stopped at line $LINENO (command: $BASH_COMMAND)." >&2' ERR
 cd "$(dirname "$0")/.."
 COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env.production)
 
