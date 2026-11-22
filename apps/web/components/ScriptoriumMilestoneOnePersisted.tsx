@@ -44,6 +44,8 @@ export function ScriptoriumMilestoneOnePersisted() {
   const [ledgerFilter, setLedgerFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("");
   const [pageRanges, setPageRanges] = useState<{ ranges: PageRangeSpec[]; saved: boolean } | null>(null);
+  const pageRangesRef = useRef<PageRangeSpec[] | undefined>(undefined);
+  pageRangesRef.current = pageRanges?.ranges;
   const [bookPageGoto, setBookPageGoto] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | undefined>();
@@ -244,17 +246,72 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (lastPageDocumentId && lastPageNumber) rememberLastPage(lastPageDocumentId, lastPageNumber);
   }, [lastPageDocumentId, lastPageNumber]);
 
-  // The server keeps the reading position too, so every browser agrees (and the Library can show it).
+  // The server keeps the reading position too, so every device agrees (and the Library can show it).
+  // Reading on the laptop and then picking up the phone: when a book opens, or its tab comes back into view, the
+  // reader asks the server where the book was last left. If another device saved a position after this one last
+  // did, it goes there and says so. Positions are compared by the server's clock only, so devices whose clocks
+  // disagree cannot fight, and this device saves nothing until it has checked (or it would overwrite the newer
+  // position with its old one).
+  const positionRef = useRef<{ documentId?: string; checked: boolean; lastWriteAt: string | null; writePending: boolean; lastCheck: number }>({ checked: false, lastWriteAt: null, writePending: false, lastCheck: 0 });
+  const currentPageRef = useRef<number | undefined>(undefined);
+  currentPageRef.current = lastPageNumber;
+  const goToPageRef = useRef<(page: number) => void>(() => undefined);
+  const [positionNotice, setPositionNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!lastPageDocumentId || documentRecord?.kind !== "PDF") return;
+    const state = { documentId: lastPageDocumentId, checked: false, lastWriteAt: null as string | null, writePending: false, lastCheck: 0 };
+    positionRef.current = state;
+    let noticeTimer: number | undefined;
+    async function followOtherDevice() {
+      if (positionRef.current !== state || state.writePending || Date.now() - state.lastCheck < 3000) return;
+      state.lastCheck = Date.now();
+      try {
+        const response = await fetch(`/api/v1/items/${encodeURIComponent(state.documentId)}/progress`, { cache: "no-store" });
+        if (!response.ok || positionRef.current !== state || state.writePending) return;
+        const saved = (await response.json()) as { lastPage: number | null; updatedAt: string | null };
+        const newerThanMine = Boolean(saved.updatedAt) && (!state.lastWriteAt || (saved.updatedAt as string) > state.lastWriteAt);
+        if (newerThanMine && saved.lastPage && saved.lastPage !== currentPageRef.current) {
+          goToPageRef.current(saved.lastPage);
+          const label = labelForPage(pageRangesRef.current ?? [], saved.lastPage);
+          setPositionNotice(`Continued from ${label ? `page ${label}` : `PDF page ${saved.lastPage}`}, where you left off on another device.`);
+          window.clearTimeout(noticeTimer);
+          noticeTimer = window.setTimeout(() => setPositionNotice(null), 6000);
+        }
+        if (newerThanMine) state.lastWriteAt = saved.updatedAt;
+      } catch { /* offline: carry on from this device's own place */ } finally {
+        if (positionRef.current === state) state.checked = true;
+      }
+    }
+    void followOtherDevice();
+    const onVisible = () => { if (document.visibilityState === "visible") void followOtherDevice(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.clearTimeout(noticeTimer);
+    };
+    // Runs per opened book; the refs carry the current page and helpers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastPageDocumentId]);
+
   useEffect(() => {
     if (!lastPageDocumentId || !lastPageNumber) return;
+    const state = positionRef.current;
+    if (state.documentId !== lastPageDocumentId || !state.checked) return; // not until this device has checked
+    state.writePending = true;
     const timer = window.setTimeout(() => {
       void fetch(`/api/v1/items/${encodeURIComponent(lastPageDocumentId)}/progress`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ page: lastPageNumber, ...(pageCount > 0 ? { pageCount } : {}) })
-      }).catch(() => undefined);
+      })
+        .then(async (response) => { if (response.ok) { const body = (await response.json()) as { updatedAt?: string }; if (body.updatedAt) state.lastWriteAt = body.updatedAt; } })
+        .catch(() => undefined)
+        .finally(() => { state.writePending = false; });
     }, 1500);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(timer); state.writePending = false; };
   }, [lastPageDocumentId, lastPageNumber, pageCount]);
 
   // A link such as /?open=<book id> (from the Library) opens that book.
@@ -685,6 +742,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     updateDocument({ ...documentRecord, title: field === "title" ? value : documentRecord.title, source: { ...documentRecord.source, [field]: value } });
   }
   function updatePageMap(field: keyof PageMap, value: number) { if (documentRecord) updateDocument({ ...documentRecord, pageMap: { ...documentRecord.pageMap, [field]: Number.isFinite(value) ? value : 1 } }); }
+  goToPageRef.current = (page: number) => goToPage(page);
   function goToPage(page: number) { if (!documentRecord || documentRecord.kind !== "PDF") return; const upper = pageCount > 0 ? pageCount : page; setAnchor(undefined); setSelectedText(""); updatePageMap("currentPdfPageIndex", Math.min(Math.max(page, 1), upper)); }
 
   // Take details looked up from an ISBN/DOI or imported from Zotero and make them this book's source.
@@ -1454,6 +1512,7 @@ export function ScriptoriumMilestoneOnePersisted() {
         </>
       ) : null}
       {/* Only what is worth a reader's attention: not how a page was drawn or what was captured. */}
+      {positionNotice ? <p className="serverCopyNotice done positionNotice" role="status">{positionNotice}</p> : null}
       {serverCopy ? (
         <p className={`serverCopyNotice ${serverCopy.phase}`} role="status">
           {serverCopy.phase === "saving" ? `Saving a copy of this book to your server… ${serverCopy.percent}%. Keep this page open.` : serverCopy.phase === "done" ? "A copy of this book is now saved on your server." : serverCopy.phase === "different" ? "Not saved: that is a different file from the one first added for this book." : "This book could not be copied to your server yet. Reload this page to try again."}

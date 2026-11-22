@@ -203,13 +203,22 @@ export async function updateItem(id: string, patch: z.infer<typeof updateItemSch
 // Reading position, kept on the server so every browser agrees. The first time a book is opened
 // it moves from "Read later" to "Reading"; it never moves back on its own.
 export async function recordProgress(id: string, input: z.infer<typeof progressSchema>) {
+  const now = new Date();
   const found = await prisma.document.updateMany({
     where: { id, deletedAt: null },
-    data: { lastPage: input.page, lastOpenedAt: new Date(), ...(input.pageCount ? { pageCount: input.pageCount } : {}) }
+    data: { lastPage: input.page, lastOpenedAt: now, ...(input.pageCount ? { pageCount: input.pageCount } : {}) }
   });
   if (found.count === 0) throw notFound();
   await prisma.document.updateMany({ where: { id, workflowState: "READ_LATER" }, data: { workflowState: "READING" } });
-  return { id, lastPage: input.page, pageCount: input.pageCount ?? null };
+  // updatedAt is the server's clock: devices compare positions by it, never by their own clocks.
+  return { id, lastPage: input.page, pageCount: input.pageCount ?? null, updatedAt: now.toISOString() };
+}
+
+/** Where a book was last left, on any device, and when (server time). */
+export async function readProgress(id: string) {
+  const row = await prisma.document.findFirst({ where: { id, deletedAt: null }, select: { lastPage: true, pageCount: true, lastOpenedAt: true } });
+  if (!row) throw notFound();
+  return { id, lastPage: row.lastPage, pageCount: row.pageCount, updatedAt: row.lastOpenedAt?.toISOString() ?? null };
 }
 
 export async function deleteImpact(id: string) {
