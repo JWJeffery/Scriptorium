@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { unlink } from "node:fs/promises";
 import { fail, text } from "../../../lib/api-helpers";
 import { BACKUP_NAME_PATTERN, backupPath, listBackups, saveBackupOnServer } from "../../../lib/backup";
-import { releaseHeavyJob, tryAcquireHeavyJob } from "../../../lib/heavy-job-guard";
+import { HEAVY_BUSY_MESSAGE, tryAcquireHeavyLock } from "../../../lib/heavy-job-lock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,8 +15,9 @@ export async function GET() {
 
 // Create a backup and keep it on the server (newest 14 are kept).
 export async function POST() {
-  const slot = tryAcquireHeavyJob("backup", "all");
-  if (!slot.acquired) return fail("Another long job (OCR, page split or backup) is running. Try again when it has finished.", 429);
+  // One heavy task at a time, server-wide (the worker's OCR, page splits and indexing take the same lock).
+  const lock = await tryAcquireHeavyLock("backup");
+  if (!lock) return fail(HEAVY_BUSY_MESSAGE, 429);
   try {
     const { name, size, manifest } = await saveBackupOnServer();
     return NextResponse.json({ name, size, totals: manifest.totals }, { status: 201 });
@@ -24,7 +25,7 @@ export async function POST() {
     console.error("Backup failed:", error);
     return fail("The backup could not be created.", 500);
   } finally {
-    releaseHeavyJob("backup", "all");
+    await lock.release();
   }
 }
 

@@ -4,7 +4,7 @@ import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { fail, text } from "../../../../lib/api-helpers";
 import { BACKUP_NAME_PATTERN, backupPath, backupStream } from "../../../../lib/backup";
-import { releaseHeavyJob, tryAcquireHeavyJob } from "../../../../lib/heavy-job-guard";
+import { HEAVY_BUSY_MESSAGE, tryAcquireHeavyLock } from "../../../../lib/heavy-job-lock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,10 +32,19 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const slot = tryAcquireHeavyJob("backup", "download");
-  if (!slot.acquired) return fail("Another long job (OCR, page split or backup) is running. Try again when it has finished.", 429);
-  const stream = backupStream();
-  stream.once("close", () => releaseHeavyJob("backup", "download"));
+  // One heavy task at a time, server-wide; held until the download stream ends or fails.
+  const lock = await tryAcquireHeavyLock("backup-download");
+  if (!lock) return fail(HEAVY_BUSY_MESSAGE, 429);
+  let stream: ReturnType<typeof backupStream>;
+  try {
+    stream = backupStream();
+  } catch (error) {
+    await lock.release();
+    throw error;
+  }
+  const release = () => void lock.release();
+  stream.once("close", release);
+  stream.once("error", release);
   const date = new Date().toISOString().slice(0, 10);
   return new Response(Readable.toWeb(stream) as ReadableStream, { headers: headers(`scriptorium-backup-${date}.zip`) });
 }
