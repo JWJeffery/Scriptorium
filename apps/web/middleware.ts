@@ -18,7 +18,8 @@ import { clientKey, hit } from "./lib/rate-limit";
 // request rates.
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-const PUBLIC_PATHS = new Set(["/login", "/api/auth/login", "/api/auth/logout", "/api/auth/session"]);
+// /api/health only says whether the app can reach its database (for Docker and uptime monitors).
+const PUBLIC_PATHS = new Set(["/login", "/api/auth/login", "/api/auth/logout", "/api/auth/session", "/api/health"]);
 // Long-running or heavy endpoints get a much lower allowance. Starting a job (any write) counts
 // against it; so does a GET that builds a file (exports and backups). Plain status polling
 // (the progress bars) only counts toward the general allowance.

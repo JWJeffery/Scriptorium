@@ -82,32 +82,35 @@ Do this once, after you have finished the PostgreSQL move on your Codespace (`do
    (Use the real file name.) It checks every checksum first and refuses to touch a database that already has books.
 4. Reload the site and open **Library**.
 
-## 6. Nightly backups
+## 6. Housekeeping and nightly backups (once)
 
 ```
-chmod +x deploy/backup.sh
-(crontab -l 2>/dev/null; echo "0 3 * * * cd /opt/scriptorium && ./deploy/backup.sh >> /var/log/scriptorium-backup.log 2>&1") | crontab -
-./deploy/backup.sh
+cd /opt/scriptorium && ./deploy/server-setup.sh
 ```
 
-The last line runs one now; check that two new files appear in `/var/backups/scriptorium`. The newest 14 are kept.
-**Backups on the same server do not survive losing the server.** Copy them elsewhere: install `rclone`, run `rclone config`
-to add a Cloudflare R2 or Backblaze B2 bucket, and set `RCLONE_REMOTE=remotename:bucket/scriptorium` in the cron line.
-Then test a restore on a spare machine at least once.
+This schedules the nightly backup (03:00 server time), keeps its log tidy, and turns on automatic security updates
+(the server restarts at 04:30 only when an update needs it; Scriptorium comes back by itself). Do not take Ubuntu's
+"new release" upgrade: 24.04 is supported until 2029, and a release upgrade is a job for a fresh snapshot, not a whim.
+
+Then connect the off-server copy to your Google Drive (free): follow `docs/BACKUPS.md`, "Connect Google Drive".
+Until you do, the app shows a "Backups need attention" banner, because a backup that lives only on this server
+does not survive losing this server.
 
 ## 7. Updating
 
 ```
-cd /opt/scriptorium && git pull && docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+cd /opt/scriptorium && ./deploy/update.sh
 ```
 
-Database changes apply by themselves. Take a backup first (`./deploy/backup.sh`).
+It backs up first and stops if that fails, pulls the new code, rebuilds, waits until the app reports healthy, and
+clears out old build leftovers so the disk does not fill. Database changes apply by themselves.
 
 ## Going back
 
-Check out the older version (`git checkout <older commit>`) and run the same `up -d --build`. Data changes are additive,
-but if an update ever needs undoing, restore the dump taken just before it:
-`docker compose ... exec -T postgres pg_restore -U scriptorium -d scriptorium --clean --if-exists < /var/backups/scriptorium/db-XXXX.dump`.
+Check out the older version (`git checkout <older commit>`) and run
+`docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`. Data changes are additive; if an
+update ever needs undoing, restore the dump taken just before it with `./deploy/restore.sh /var/backups/scriptorium/db-XXXX.dump`
+(see `docs/BACKUPS.md`).
 
 ## Useful commands
 
@@ -119,4 +122,6 @@ but if an update ever needs undoing, restore the dump taken just before it:
 
 GitHub's "Production stack (Docker)" check builds this exact image, starts the whole stack, and runs
 `scripts/verify-production-stack.mjs` through the front door: sign-in gate, database setup, an upload, a job run by the
-separate worker container, reading its result, and a backup download.
+separate worker container, reading its result, and a backup download. It then runs a disaster drill: a real
+`deploy/backup.sh` to a stand-in for Google Drive, deleting every volume, `deploy/restore.sh`, and checking that a book,
+its exact PDF and its highlight came back (`scripts/verify-restore.mjs`).

@@ -15,7 +15,8 @@ import { getStorageRoot, listStoredFiles, readStoredPdfFile } from "./server-sto
 
 export const BACKUP_FORMAT = 1;
 export const BACKUP_NAME_PATTERN = /^scriptorium-backup-\d{8}-\d{6}\.zip$/;
-const KEEP_LATEST = 14;
+// The nightly off-server backup is deploy/backup.sh; these in-app ZIPs are for manual downloads, so few are kept.
+const KEEP_LATEST = 3;
 const BATCH = 100;
 
 type Delegate = { findMany: (args: { take: number; skip?: number; cursor?: { id: string }; orderBy: { id: "asc" } }) => Promise<Array<{ id: string }>> };

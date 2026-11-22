@@ -2,10 +2,18 @@
 #   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
 # See docs/DEPLOY_VM.md. Settings come from .env.production (copy .env.production.example).
 
+# Every container's log is capped (3 files of 10 MB), so logs can never fill the disk.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-app: &app
   build: .
   image: scriptorium:local
   restart: unless-stopped
+  logging: *logging
   environment: &app-env
     NODE_ENV: production
     DATABASE_URL: postgresql://scriptorium:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}@postgres:5432/scriptorium
@@ -16,6 +24,8 @@ x-app: &app
     SCRIPTORIUM_STORAGE_DIR: /data/storage
     SCRIPTORIUM_BACKUP_DIR: /data/backups
     SCRIPTORIUM_MODEL_DIR: /data/models
+    # Written by deploy/backup.sh; the app warns when the last off-server backup is stale or failed.
+    SCRIPTORIUM_BACKUP_STATUS_FILE: /data/backup-status.json
     SCRIPTORIUM_STORAGE_BACKEND: ${SCRIPTORIUM_STORAGE_BACKEND:-}
     SCRIPTORIUM_S3_BUCKET: ${SCRIPTORIUM_S3_BUCKET:-}
     SCRIPTORIUM_S3_ENDPOINT: ${SCRIPTORIUM_S3_ENDPOINT:-}
@@ -29,6 +39,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: scriptorium
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
@@ -57,7 +68,8 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # /api/health answers only when the app can reach its database.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -70,9 +82,21 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # The off-server backup tool, used only by deploy/backup.sh, connect-google-drive.sh and restore.sh (it never runs
+  # on its own: the "tools" profile keeps it out of `up`). Official rclone image, pinned.
+  rclone:
+    image: rclone/rclone:1.68.2
+    profiles: ["tools"]
+    logging: *logging
+    volumes:
+      - app-data:/data
+      - ${BACKUP_DIR:-/var/backups/scriptorium}:/backups
+      - ./deploy/rclone:/config/rclone
+
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *logging
     ports:
       - "${SCRIPTORIUM_HTTP_PORT:-80}:80"
       - "${SCRIPTORIUM_HTTPS_PORT:-443}:443"

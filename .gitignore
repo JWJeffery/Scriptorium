@@ -24,3 +24,5 @@ files-report-*.json
 storage-legacy/
 
 !.env.production.example
+deploy/rclone/
+.claude/
