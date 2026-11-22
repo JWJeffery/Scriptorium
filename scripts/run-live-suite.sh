@@ -46,4 +46,10 @@ run node scripts/e2e-theme.mjs
 run node scripts/e2e-layout.mjs
 # Last, because it empties the (throwaway) database and restores it from a backup.
 SCRIPTORIUM_ALLOW_WIPE=yes run node scripts/verify-backup-restore.mjs
+
+# OCR resume, stuck-job reconciliation and the database-wide heavy-task lock. It starts its own web server
+# and workers and must have the job queue to itself, so the server above (which works the queue) stops first.
+kill "$server_pid" 2>/dev/null || true
+wait "$server_pid" 2>/dev/null || true
+node scripts/verify-ocr-resume.mjs || { echo "FAILED: node scripts/verify-ocr-resume.mjs"; exit 1; }
 echo "== all live checks passed =="
