@@ -209,11 +209,19 @@ model PassageEmbedding {
   endChar    Int      @default(0)
   textHash   String   @db.VarChar(40)
   model      String   @db.VarChar(64)
+  // The vector as raw bytes (a Float32Array). Still written: it is the lossless original that the
+  // pgvector column below is filled from.
   vector     Bytes
+  // The same vector as pgvector (zero-padded to 384 numbers), searched in the database. Prisma cannot
+  // read or write this type, so lib/meaning-index.ts uses raw SQL for it. Also in the migration
+  // 20261122010000_search_indexes, and not expressible here: its HNSW index (vector_ip_ops), a partial
+  // index on rows where it is still NULL, and the SQL function scriptorium_bytes_to_vector.
+  embedding  Unsupported("vector(384)")?
   createdAt  DateTime @default(now())
 
   @@index([documentId, kind])
   @@index([refId])
+  @@index([model, documentId])
 }
 
 // A place marked in a book, to come back to.
@@ -259,6 +267,8 @@ model TextSpan {
 
   @@index([versionId])
   @@index([pageMapId])
+  // Trigram index (pg_trgm) so exact search's ILIKE '%term%' does not read every page.
+  @@index([text(ops: raw("gin_trgm_ops"))], type: Gin, map: "TextSpan_text_trgm_idx")
 }
 
 model Annotation {
@@ -395,4 +405,15 @@ model ProcessingJob {
   @@index([type, subjectId])
   @@index([state])
   @@index([createdAt])
+}
+
+/// A signed-in connection to a cloud storage account used to add books (one row per service, e.g. "box").
+/// Tokens never leave the server.
+model ImportConnection {
+  provider     String   @id @db.VarChar(32)
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  account      String?  @db.VarChar(255)
+  updatedAt    DateTime @updatedAt
 }

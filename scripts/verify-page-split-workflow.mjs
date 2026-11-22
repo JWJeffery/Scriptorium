@@ -30,7 +30,7 @@ try {
   const requireFromWeb = createRequire(join(repoRoot, "apps/web/package.json"));
   const { createCanvas } = requireFromWeb("@napi-rs/canvas");
   const { PDFDocument } = requireFromWeb("pdf-lib");
-  const { splitTwoPageSpreadPdf } = await import(pathToFileURL(join(repoRoot, "apps/web/lib/pdf-page-splitter.ts")).href);
+  const { splitTwoPageSpreadPdf, SplitTimeoutError, splitTimeLimitMs } = await import(pathToFileURL(join(repoRoot, "apps/web/lib/pdf-page-splitter.ts")).href);
 
   // Build one realistic image-backed spread: dense, uneven horizontal
   // strokes on both halves and a continuous white spine gutter. This runs
@@ -68,7 +68,23 @@ try {
   assert.ok(left.getWidth() > 200 && right.getWidth() > 200, "both physical crop pages must contain substantial content");
   assert.ok(Math.abs(left.getHeight() - right.getHeight()) < 0.01, "both crop pages must preserve the source height");
 
-  console.log("Page-split workflow verifier passed (job-state mapping, isolated detection, and physical two-page output).");
+  // Time limits: a stuck page process is killed, the whole split has a limit scaled by page count, and
+  // an abort (worker shutdown) stops it.
+  assert.equal(splitTimeLimitMs(425), (5 * 60 + 30 * 425) * 1000);
+  const sourceBytes = await source.save();
+  await assert.rejects(
+    () => splitTwoPageSpreadPdf(sourceBytes, undefined, { pageTimeoutMs: 1 }),
+    (error) => error instanceof SplitTimeoutError && /page 1 took longer/.test(error.message)
+  );
+  await assert.rejects(
+    () => splitTwoPageSpreadPdf(sourceBytes, undefined, { timeLimitMs: () => 1 }),
+    (error) => error instanceof SplitTimeoutError && /limit for 1 pages/.test(error.message)
+  );
+  const shutdown = new AbortController();
+  shutdown.abort(new Error("shutting down"));
+  await assert.rejects(() => splitTwoPageSpreadPdf(sourceBytes, undefined, { signal: shutdown.signal }), /shutting down/);
+
+  console.log("Page-split workflow verifier passed (job-state mapping, isolated detection, physical two-page output, time limits).");
 } finally {
   await rm(scratchRoot, { recursive: true, force: true });
 }

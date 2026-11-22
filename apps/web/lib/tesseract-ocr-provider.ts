@@ -61,7 +61,7 @@ import "./pdfjs-worker-setup";
 import { createWorker, PSM } from "tesseract.js";
 import { createCanvas, type Canvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import type { OcrProvider, OcrResult, OcrWord } from "./ocr-provider";
+import type { OcrProvider, OcrResult, OcrRunOptions, OcrWord } from "./ocr-provider";
 
 // Higher scale = sharper rendered page = better recognition, at the cost of
 // time and memory - in theory. Was raised from 2 to 4 on a hypothesis that
@@ -231,132 +231,218 @@ function cropCanvas(source: Canvas, x0: number, x1: number): Canvas {
   return cropped;
 }
 
+// Once a run is told to stop, a page still being recognized gets this long to finish (so its work is
+// kept) before it is abandoned. Short enough that a worker shutdown still fits in its ~45 s budget.
+const ABORT_GRACE_MS = 10_000;
+
+// Resolves with `work`, unless `signal` aborts first and `work` is still not done ABORT_GRACE_MS later:
+// then rejects with the abort reason. The abandoned work is stopped by the caller's cleanup
+// (worker.terminate / doc.destroy).
+function finishUnlessAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work;
+  return new Promise<T>((resolve, reject) => {
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      graceTimer = setTimeout(() => reject(signal.reason), ABORT_GRACE_MS);
+    };
+    const settle = () => {
+      if (graceTimer) clearTimeout(graceTimer);
+      signal.removeEventListener("abort", onAbort);
+    };
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        settle();
+        resolve(value);
+      },
+      (error) => {
+        settle();
+        reject(error);
+      }
+    );
+  });
+}
+
+type RecognizedPage = { pageIndex: number; text: string; confidence: number; words: OcrWord[] };
+type TesseractWorker = Awaited<ReturnType<typeof createWorker>>;
+type PdfDocument = Awaited<ReturnType<typeof getDocument>["promise"]>;
+
+// The quality warnings for one recognized page. A pure function of what is stored for the page (its
+// text, confidence and word positions), so a run resumed after an interruption can rebuild exactly the
+// warnings an uninterrupted run would have produced.
+//
+// Persisted diagnostics, not just console.log: a prior session lost the one log line that would have
+// pinned down a real word-count discrepancy because the sandbox terminal reset mid multi-page run before
+// it could be read. Anything worth knowing about a page's OCR quality needs to survive that, so it goes
+// into `warnings` (already surfaced to Josh in the panel's status line) rather than only stdout.
+export function ocrPageWarnings(page: { pageIndex: number; text: string; confidence: number; wordCount: number }): string[] {
+  const { pageIndex, text, confidence, wordCount } = page;
+  const warnings: string[] = [];
+  const naiveTextWordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
+  const wordCoverage = naiveTextWordCount > 0 ? wordCount / naiveTextWordCount : 1;
+  if (text && confidence < LOW_CONFIDENCE_THRESHOLD) {
+    warnings.push(
+      `Page ${pageIndex}: low OCR confidence (${confidence.toFixed(0)}%) - recognized text may be unreliable and worth checking against the original scan.`
+    );
+  }
+  if (naiveTextWordCount > 0 && wordCoverage < WORD_COVERAGE_WARNING_THRESHOLD) {
+    warnings.push(
+      `Page ${pageIndex}: word-position data covers only ${wordCount} of an estimated ${naiveTextWordCount} words (${(wordCoverage * 100).toFixed(0)}%) - the recognized text itself may look complete, but drag-selection/highlighting on this page will likely be incomplete or missing in places. Worth checking this page against the original scan.`
+    );
+  }
+  return warnings;
+}
+
+async function recognizePage(doc: PdfDocument, worker: TesseractWorker, pageIndex: number): Promise<RecognizedPage> {
+  const page = await doc.getPage(pageIndex);
+  try {
+    const viewport = page.getViewport({ scale: RENDER_SCALE });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    const context = canvas.getContext("2d");
+
+    // pdfjs's render() expects a DOM-shaped CanvasRenderingContext2D.
+    // @napi-rs/canvas implements the subset pdfjs actually calls, but
+    // TypeScript doesn't know that, hence the cast.
+    await page.render({ canvasContext: context as unknown as CanvasRenderingContext2D, viewport }).promise;
+    applyContrastEnhancement(canvas, CONTRAST_FACTOR);
+
+    // See findGutterSplit above - if this page is a two-page spread
+    // with a real physical gutter, split it into two independent
+    // recognition passes rather than one. This is what eliminates
+    // cross-column selection at the source, instead of continuing
+    // to reconstruct column separation after the fact from a single
+    // pass's output (block detection, gap heuristics - the whole
+    // history in RESUME_PROJECT_NOTE.md).
+    const gutterX = findGutterSplit(canvas);
+    let data: { text: string; confidence: number; tsv: string | null };
+    let words: OcrWord[];
+    if (gutterX !== null) {
+      const leftHalf = cropCanvas(canvas, 0, gutterX);
+      const rightHalf = cropCanvas(canvas, gutterX, canvas.width);
+      const [leftResult, rightResult] = await Promise.all([
+        worker.recognize(leftHalf.toBuffer("image/png"), {}, { tsv: true }),
+        worker.recognize(rightHalf.toBuffer("image/png"), {}, { tsv: true })
+      ]);
+      const leftWords = extractWordsFromTsv(leftResult.data.tsv, RENDER_SCALE, 0, 0);
+      // Right-half block numbers offset by 10000 so they can never
+      // collide with left-half block numbers (each half's Tesseract
+      // run numbers its own blocks starting from 1).
+      const rightWords = extractWordsFromTsv(rightResult.data.tsv, RENDER_SCALE, gutterX / RENDER_SCALE, 10000);
+      words = [...leftWords, ...rightWords];
+      data = {
+        text: `${leftResult.data.text.trim()} ${rightResult.data.text.trim()}`.trim(),
+        // Weighted by word count, not a flat average - a half with
+        // more recognized words should count for more.
+        confidence:
+          leftWords.length + rightWords.length > 0
+            ? (leftResult.data.confidence * leftWords.length + rightResult.data.confidence * rightWords.length) /
+              (leftWords.length + rightWords.length)
+            : (leftResult.data.confidence + rightResult.data.confidence) / 2,
+        tsv: null // already consumed into `words` above; not needed further
+      };
+    } else {
+      const pngBuffer = canvas.toBuffer("image/png");
+      // tsv: true asks Tesseract for its standard per-word TSV
+      // export (see extractWordsFromTsv above for why this replaced
+      // blocks: true) - real positioned words instead of trusting
+      // pdf.js's own (sometimes corrupted - see the NGUCA incident)
+      // text layer for pages OCR actually ran on.
+      const singleResult = await worker.recognize(pngBuffer, {}, { tsv: true });
+      data = singleResult.data;
+      words = extractWordsFromTsv(data.tsv, RENDER_SCALE);
+    }
+    const text = data.text.trim();
+
+    const naiveTextWordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
+    const wordCoverage = naiveTextWordCount > 0 ? words.length / naiveTextWordCount : 1;
+    console.log(
+      `[OCR-SERVER-DEBUG] page ${pageIndex}/${doc.numPages}: confidence=${data.confidence.toFixed(1)} textLength=${text.length} naiveTextWordCount=${naiveTextWordCount} tsvWordCount=${words.length} coverage=${(wordCoverage * 100).toFixed(0)}% gutterSplit=${gutterX !== null ? `yes(x=${gutterX})` : "no"}`
+    );
+    return { pageIndex, text, confidence: data.confidence, words };
+  } finally {
+    page.cleanup();
+  }
+}
+
 export class TesseractOcrProvider implements OcrProvider {
   readonly name = "tesseract-js-eng-v1";
 
   async extractText(
     input: { pdfBytes: Buffer; documentId: string },
-    onPageComplete?: (completed: number, total: number) => void
+    onPageComplete?: (completed: number, total: number) => void,
+    options: OcrRunOptions = {}
   ): Promise<OcrResult> {
+    const { signal, skipPages, onStart, onPageResult } = options;
+    signal?.throwIfAborted();
     const loadingTask = getDocument({
       data: new Uint8Array(input.pdfBytes),
       useSystemFonts: true,
       isEvalSupported: false,
       disableFontFace: true
     });
-    const doc = await loadingTask.promise;
-    const worker = await createWorker("eng");
-    // Explicitly set PSM.AUTO - confirmed via direct testing (comparing
-    // against the native tesseract CLI on the exact same real-pipeline
-    // image) that tesseract.js's actual internal default, when no
-    // parameter is set at all, is NOT the same as PSM.AUTO/3: omitting
-    // this call gave only 1 block (matching the old forced-SINGLE_BLOCK
-    // behavior) on a page the native CLI at real PSM 3 correctly splits
-    // into 10 blocks matching the real visual columns. Set explicitly,
-    // not omitted.
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
-    const pages: { pageIndex: number; text: string; confidence: number; words: OcrWord[] }[] = [];
+    let doc: PdfDocument;
+    try {
+      doc = await finishUnlessAborted(loadingTask.promise, signal);
+    } catch (error) {
+      await loadingTask.destroy().catch(() => undefined);
+      throw error;
+    }
+    const pageCount = doc.numPages;
+    const isSkipped = (pageIndex: number) => skipPages?.has(pageIndex) ?? false;
+    let pagesToDo = 0;
+    for (let pageIndex = 1; pageIndex <= pageCount; pageIndex++) if (!isSkipped(pageIndex)) pagesToDo++;
+    onStart?.({ pageCount, pagesToDo });
+
+    const pages: RecognizedPage[] = [];
     const warnings: string[] = [];
+    let worker: TesseractWorker | undefined;
 
     try {
-      for (let pageIndex = 1; pageIndex <= doc.numPages; pageIndex++) {
-        const page = await doc.getPage(pageIndex);
+      if (pagesToDo > 0) {
+        const starting = createWorker("eng");
         try {
-          const viewport = page.getViewport({ scale: RENDER_SCALE });
-          const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
-          const context = canvas.getContext("2d");
-
-          // pdfjs's render() expects a DOM-shaped CanvasRenderingContext2D.
-          // @napi-rs/canvas implements the subset pdfjs actually calls, but
-          // TypeScript doesn't know that, hence the cast.
-          await page.render({ canvasContext: context as unknown as CanvasRenderingContext2D, viewport }).promise;
-          applyContrastEnhancement(canvas, CONTRAST_FACTOR);
-
-          // See findGutterSplit above - if this page is a two-page spread
-          // with a real physical gutter, split it into two independent
-          // recognition passes rather than one. This is what eliminates
-          // cross-column selection at the source, instead of continuing
-          // to reconstruct column separation after the fact from a single
-          // pass's output (block detection, gap heuristics - the whole
-          // history in RESUME_PROJECT_NOTE.md).
-          const gutterX = findGutterSplit(canvas);
-          let data: { text: string; confidence: number; tsv: string | null };
-          let words: OcrWord[];
-          if (gutterX !== null) {
-            const leftHalf = cropCanvas(canvas, 0, gutterX);
-            const rightHalf = cropCanvas(canvas, gutterX, canvas.width);
-            const [leftResult, rightResult] = await Promise.all([
-              worker.recognize(leftHalf.toBuffer("image/png"), {}, { tsv: true }),
-              worker.recognize(rightHalf.toBuffer("image/png"), {}, { tsv: true })
-            ]);
-            const leftWords = extractWordsFromTsv(leftResult.data.tsv, RENDER_SCALE, 0, 0);
-            // Right-half block numbers offset by 10000 so they can never
-            // collide with left-half block numbers (each half's Tesseract
-            // run numbers its own blocks starting from 1).
-            const rightWords = extractWordsFromTsv(rightResult.data.tsv, RENDER_SCALE, gutterX / RENDER_SCALE, 10000);
-            words = [...leftWords, ...rightWords];
-            data = {
-              text: `${leftResult.data.text.trim()} ${rightResult.data.text.trim()}`.trim(),
-              // Weighted by word count, not a flat average - a half with
-              // more recognized words should count for more.
-              confidence:
-                leftWords.length + rightWords.length > 0
-                  ? (leftResult.data.confidence * leftWords.length + rightResult.data.confidence * rightWords.length) /
-                    (leftWords.length + rightWords.length)
-                  : (leftResult.data.confidence + rightResult.data.confidence) / 2,
-              tsv: null // already consumed into `words` above; not needed further
-            };
-          } else {
-            const pngBuffer = canvas.toBuffer("image/png");
-            // tsv: true asks Tesseract for its standard per-word TSV
-            // export (see extractWordsFromTsv above for why this replaced
-            // blocks: true) - real positioned words instead of trusting
-            // pdf.js's own (sometimes corrupted - see the NGUCA incident)
-            // text layer for pages OCR actually ran on.
-            const singleResult = await worker.recognize(pngBuffer, {}, { tsv: true });
-            data = singleResult.data;
-            words = extractWordsFromTsv(data.tsv, RENDER_SCALE);
-          }
-          const text = data.text.trim();
-          pages.push({ pageIndex, text, confidence: data.confidence, words });
-
-          // Persisted diagnostics, not just console.log: a prior session
-          // lost the one log line that would have pinned down a real
-          // word-count discrepancy because the sandbox terminal reset mid
-          // multi-page run before it could be read. Anything worth knowing
-          // about a page's OCR quality needs to survive that, so it goes
-          // into `warnings` (already surfaced to Josh in the panel's status
-          // line) rather than only stdout.
-          const naiveTextWordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
-          const wordCoverage = naiveTextWordCount > 0 ? words.length / naiveTextWordCount : 1;
-          console.log(
-            `[OCR-SERVER-DEBUG] page ${pageIndex}/${doc.numPages}: confidence=${data.confidence.toFixed(1)} textLength=${text.length} naiveTextWordCount=${naiveTextWordCount} tsvWordCount=${words.length} coverage=${(wordCoverage * 100).toFixed(0)}% gutterSplit=${gutterX !== null ? `yes(x=${gutterX})` : "no"}`
-          );
-
-          if (text && data.confidence < LOW_CONFIDENCE_THRESHOLD) {
-            warnings.push(
-              `Page ${pageIndex}: low OCR confidence (${data.confidence.toFixed(0)}%) - recognized text may be unreliable and worth checking against the original scan.`
-            );
-          }
-          if (naiveTextWordCount > 0 && wordCoverage < WORD_COVERAGE_WARNING_THRESHOLD) {
-            warnings.push(
-              `Page ${pageIndex}: word-position data covers only ${words.length} of an estimated ${naiveTextWordCount} words (${(wordCoverage * 100).toFixed(0)}%) - the recognized text itself may look complete, but drag-selection/highlighting on this page will likely be incomplete or missing in places. Worth checking this page against the original scan.`
-            );
-          }
-        } finally {
-          page.cleanup();
-          onPageComplete?.(pageIndex, doc.numPages);
+          worker = await finishUnlessAborted(starting, signal);
+        } catch (error) {
+          // Abandoned while still starting (say, a stalled language-data download): stop it when it does start.
+          void starting.then((late) => late.terminate(), () => undefined);
+          throw error;
         }
+        // Explicitly set PSM.AUTO - confirmed via direct testing (comparing
+        // against the native tesseract CLI on the exact same real-pipeline
+        // image) that tesseract.js's actual internal default, when no
+        // parameter is set at all, is NOT the same as PSM.AUTO/3: omitting
+        // this call gave only 1 block (matching the old forced-SINGLE_BLOCK
+        // behavior) on a page the native CLI at real PSM 3 correctly splits
+        // into 10 blocks matching the real visual columns. Set explicitly,
+        // not omitted.
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+      }
+
+      for (let pageIndex = 1; pageIndex <= pageCount; pageIndex++) {
+        if (isSkipped(pageIndex)) {
+          onPageComplete?.(pageIndex, pageCount);
+          continue;
+        }
+        // The page boundary: a stop request (time limit, shutdown) takes effect here.
+        signal?.throwIfAborted();
+        const page = await finishUnlessAborted(recognizePage(doc, worker!, pageIndex), signal);
+        warnings.push(...ocrPageWarnings({ ...page, wordCount: page.words.length }));
+        if (onPageResult) await onPageResult(page);
+        else pages.push(page);
+        onPageComplete?.(pageIndex, pageCount);
       }
     } finally {
-      await worker.terminate();
+      // Stops any recognition still in flight (an abandoned page) and frees the page renderer.
+      await worker?.terminate().catch(() => undefined);
       await doc.destroy();
     }
 
     return {
       text: pages.map((page) => page.text).join("\n\n"),
       warnings,
-      pages
+      pages,
+      pageCount
     };
   }
 }

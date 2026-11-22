@@ -8,7 +8,7 @@ trial on the owner's real data are the remaining sign-offs.**
 | Work item | Delivered | Evidence |
 |---|---|---|
 | PostgreSQL + pgvector as the database | Baseline migration, queries audited (case-insensitive search, raw SQL, JSON paths) | Whole live suite runs on PostgreSQL; `prisma migrate diff` reports no drift |
-| MySQL to PostgreSQL migration with reconciliation | `scripts/migrate-mysql-to-postgres.mjs`, `docs/POSTGRES_MIGRATION.md` | Row counts and SHA-256 per table, orphan check, sample chains; dry run and all-or-nothing rollback; refuses a non-empty target |
+| MySQL to PostgreSQL migration with reconciliation | `scripts/migrate-mysql-to-postgres.mjs`, `docs/archive/POSTGRES_MIGRATION.md` | Row counts and SHA-256 per table, orphan check, sample chains; dry run and all-or-nothing rollback; refuses a non-empty target |
 | Item, collection, tag, state, progress model | `Document` extended in place, `DocumentTag`, `Collection`, `ItemCollection`, `SavedSearch`, `/api/v1/items...` | `scripts/verify-library-api.mjs` |
 | Checksum duplicate handling | SHA-256 on upload, 409 `duplicate`, browser pre-check, duplicate review | `verify-library-api.mjs`, `e2e-library.mjs` |
 | Object storage | S3 backend, copy-first script with read-back verification, restore into a bucket | Whole suite repeated against an S3 emulator; `scripts/verify-object-storage.mjs` |
@@ -26,7 +26,7 @@ trial on the owner's real data are the remaining sign-offs.**
 
 ## Migration and rollback
 
-- Take a backup first (Scholarly tools > Backup), then follow `docs/POSTGRES_MIGRATION.md`. MySQL is only read, so rollback is `git checkout 1d2ae4f`, restore the old `DATABASE_URL`, and restart.
+- Take a backup first (Scholarly tools > Backup), then follow `docs/archive/POSTGRES_MIGRATION.md`. MySQL is only read, so rollback is `git checkout 1d2ae4f`, restore the old `DATABASE_URL`, and restart.
 - File moves are copy-first (`docs/OBJECT_STORAGE.md`); the local folder is never changed.
 - All schema changes are additive after the PostgreSQL baseline (`20261025030000_library_foundation`, `20261025040000_processing_jobs`).
 

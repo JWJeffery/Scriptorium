@@ -2960,3 +2960,33 @@ button:disabled { opacity: 0.5; cursor: default; }
 :root[data-theme="dark"] .backupWarning {
   background: #3a1f1a;
 }
+
+/* Add a book (components/AddBookDialog.tsx) */
+.addBook { display: grid; gap: 0.8rem; min-width: min(30rem, 86vw); }
+.addBookOptions { display: grid; gap: 0.6rem; }
+.addBookOption {
+  display: grid;
+  gap: 0.2rem;
+  text-align: left;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line, #d8cfc2);
+  border-radius: 12px;
+  background: var(--surface, #fffdf9);
+  color: var(--ink);
+  cursor: pointer;
+}
+.addBookOption:hover:not(:disabled), .addBookOption:focus-visible { border-color: var(--accent-strong); }
+.addBookOption span, .addBookHint { color: var(--muted); font-size: 0.9rem; }
+.addBookLink { display: grid; gap: 0.6rem; }
+.addBookLink label { display: grid; gap: 0.3rem; }
+.addBookLink input { padding: 0.6rem 0.7rem; border-radius: 10px; border: 1px solid var(--line, #d8cfc2); background: var(--surface, #fff); color: var(--ink); }
+.addBookActions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: space-between; }
+.addBookActions .secondaryButton { margin-top: 0; }
+.addBookBoxHead { display: flex; gap: 0.6rem; align-items: center; }
+.addBookBoxList { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; border: 1px solid var(--line, #d8cfc2); border-radius: 10px; }
+.addBookBoxList li + li { border-top: 1px solid var(--line, #d8cfc2); }
+.addBookBoxList button { display: flex; gap: 0.5rem; align-items: baseline; width: 100%; padding: 0.55rem 0.7rem; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.addBookBoxList button:hover:not(:disabled) { background: var(--surface-soft, rgb(0 0 0 / 4%)); }
+.addBookBoxList small { margin-left: auto; color: var(--muted); }
+.addBookBusy { color: var(--muted); }
+.addBookError { color: var(--danger); }

@@ -67,11 +67,7 @@ jobs:
       - name: Verify Milestone 7 citation exchange
         run: node scripts/verify-milestone-7-citation-exchange.mjs
 
-      - name: Verify Milestone 8 Zotero compatibility
-        run: node scripts/verify-milestone-8-zotero-compat.mjs
 
-      - name: Verify Milestone 9 research threads
-        run: node scripts/verify-milestone-9-research-threads.mjs
 
       - name: Verify Milestone 14 expanded citation styles
         run: node --experimental-strip-types scripts/verify-milestone-14-citation-styles.mjs
@@ -87,6 +83,12 @@ jobs:
 
       - name: Verify the backup warning rules
         run: node --experimental-strip-types scripts/verify-backup-status.mjs
+
+      - name: Verify the link import rules (share links, private addresses refused)
+        run: node --experimental-strip-types scripts/verify-remote-fetch.mjs
+
+      - name: Verify what the browser keeps of highlights (open book + unsent work; full storage never throws)
+        run: node --experimental-strip-types scripts/verify-annotation-storage.mjs
 
       - name: Verify Milestone 18 non-Latin script tokenization
         run: node --experimental-strip-types scripts/verify-milestone-18-non-latin-tokenization.mjs

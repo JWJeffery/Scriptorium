@@ -44,12 +44,30 @@ export type SplitPdfResult = {
 
 type WorkerResult = { gutterX: number | null; confidence: number | null; widthPixels: number; heightPixels: number };
 
+// TIME LIMITS. One page (render + gutter detection + two JPEG crops, in its own process) takes about a
+// second on a laptop. A page process that has not finished after 2 minutes is stuck: it is killed and
+// the split fails rather than hanging the queue. The whole split gets 5 minutes plus 30 s a page
+// (pass 2 re-runs some pages), e.g. about 3 h 37 min for 425 pages, well inside the queue's expiry.
+export const SPLIT_PAGE_TIMEOUT_MS = 2 * 60 * 1000;
+export const splitTimeLimitMs = (pageCount: number) => (5 * 60 + 30 * pageCount) * 1000;
+
+export class SplitTimeoutError extends Error {}
+
+export type SplitOptions = {
+  // Stops the split (and kills the page process) when aborted, e.g. on worker shutdown.
+  signal?: AbortSignal;
+  pageTimeoutMs?: number;
+  timeLimitMs?: (pageCount: number) => number;
+};
+
 async function runWorker(
   workerPath: string,
   tempPdfPath: string,
   pageIndex: number,
   tempDir: string,
-  expectedRatio?: number
+  expectedRatio: number | undefined,
+  signal: AbortSignal,
+  pageTimeoutMs: number
 ): Promise<WorkerResult> {
   const args = [
     "--experimental-strip-types",
@@ -59,7 +77,21 @@ async function runWorker(
     tempDir,
     ...(expectedRatio !== undefined ? [String(expectedRatio)] : [])
   ];
-  const { stdout } = await execFileAsync(process.execPath, args, { maxBuffer: 1024 * 1024 * 50 });
+  signal.throwIfAborted();
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync(process.execPath, args, {
+      maxBuffer: 1024 * 1024 * 50,
+      timeout: pageTimeoutMs,
+      killSignal: "SIGKILL",
+      signal
+    }));
+  } catch (error) {
+    if (signal.aborted) throw signal.reason;
+    const killed = (error as { killed?: boolean; signal?: string }).killed;
+    if (killed) throw new SplitTimeoutError(`Page splitting stopped: page ${pageIndex} took longer than ${Math.round(pageTimeoutMs / 1000)} seconds.`);
+    throw error;
+  }
   // The worker may emit warnings on stdout/stderr from pdfjs-dist
   // (missing embedded font glyphs, etc. - harmless, seen throughout this
   // whole investigation); only the last line is the actual JSON result.
@@ -69,12 +101,25 @@ async function runWorker(
 
 export async function splitTwoPageSpreadPdf(
   pdfBytes: Buffer | Uint8Array,
-  onProgress?: (completed: number, total: number) => void
+  onProgress?: (completed: number, total: number) => void,
+  options: SplitOptions = {}
 ): Promise<SplitPdfResult> {
   const bytes = pdfBytes instanceof Buffer ? new Uint8Array(pdfBytes) : pdfBytes;
 
   const sourceDoc = await PDFDocument.load(bytes);
   const originalPageCount = sourceDoc.getPageCount();
+
+  const limitMs = (options.timeLimitMs ?? splitTimeLimitMs)(originalPageCount);
+  const limit = new AbortController();
+  const limitTimer = setTimeout(
+    () => limit.abort(new SplitTimeoutError(`Page splitting stopped: it took longer than its ${Math.round(limitMs / 60_000)}-minute limit for ${originalPageCount} pages.`)),
+    limitMs
+  );
+  limitTimer.unref?.();
+  const signal = options.signal ? AbortSignal.any([options.signal, limit.signal]) : limit.signal;
+  const pageTimeoutMs = options.pageTimeoutMs ?? SPLIT_PAGE_TIMEOUT_MS;
+  const run = (pageIndex: number, expectedRatio?: number) =>
+    runWorker(workerPath, tempPdfPath, pageIndex, tempDir, expectedRatio, signal, pageTimeoutMs);
 
   // Each page is rendered, gutter-detected, and - for pages that split -
   // physically cropped into separate left/right JPEGs, all inside a
@@ -111,7 +156,7 @@ export async function splitTwoPageSpreadPdf(
     // 2's page count in advance.
     const results: WorkerResult[] = [];
     for (let pageIndex = 1; pageIndex <= originalPageCount; pageIndex++) {
-      results.push(await runWorker(workerPath, tempPdfPath, pageIndex, tempDir));
+      results.push(await run(pageIndex));
       onProgress?.(pageIndex, originalPageCount);
     }
 
@@ -142,7 +187,7 @@ export async function splitTwoPageSpreadPdf(
         const pageIndex = i + 1;
         const isAmbiguous = r.gutterX !== null && r.confidence !== null && r.confidence < HIGH_CONFIDENCE_THRESHOLD;
         if (isAmbiguous) {
-          results[i] = await runWorker(workerPath, tempPdfPath, pageIndex, tempDir, expectedRatio);
+          results[i] = await run(pageIndex, expectedRatio);
         }
       }
     }
@@ -190,6 +235,7 @@ export async function splitTwoPageSpreadPdf(
       splitOriginalPageNumbers
     };
   } finally {
+    clearTimeout(limitTimer);
     await rm(tempDir, { recursive: true, force: true });
   }
 }

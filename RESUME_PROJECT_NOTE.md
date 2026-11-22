@@ -124,16 +124,16 @@ runs as few deploys as possible; each deploy message says exactly what to run.
 ### Status
 | # | Workstream | Status |
 |---|---|---|
-| 1 | Off-server backups to Google Drive | built; full wipe-and-restore drill passed locally |
-| 2 | Production on `main` | planned |
-| 3 | Visible errors, no silent reverts | planned |
-| 4 | Jobs that finish and never stick | planned |
-| 5 | Security fixes | planned |
-| 6 | Deploy script, health, cleanup | planned |
-| 7 | Search speed, browser storage | planned |
-| 8 | Tidy | planned |
-| 9 | Reading position across devices | planned |
-| 10 | Register from Google Drive / Box / a link | planned |
+| 1 | Off-server backups to Google Drive | **merged** (PR #52); disaster drill passes locally and in CI. Owner still has to connect Google Drive and run `server-setup.sh` |
+| 2 | Production on `main` | **merged** (PR #51). Server must switch once: `git fetch origin && git checkout main && git pull --ff-only` |
+| 3 | Visible errors, no silent reverts | **merged** (PR #53) |
+| 4 | Jobs that finish and never stick | in progress (worker branch `ws4-jobs`) |
+| 5 | Security fixes | **merged** (PR #53) |
+| 6 | Deploy script, health, cleanup | **merged** (PR #52): `update.sh`, `/api/health`, log caps, image prune, `server-setup.sh` |
+| 7 | Search speed, browser storage | done (PR #54 / next): trigram + pgvector HNSW; browser keeps open book + unsent work only |
+| 8 | Tidy | done (next PR): reader renamed, 6 dead routes + keyword verifiers removed, old docs archived. Ongoing: styles.css consolidation |
+| 9 | Reading position across devices | done (PR #54) |
+| 10 | Register from Google Drive / Box / a link | done (PR #54). Owner setup for Google/Box: `docs/CLOUD_IMPORT.md` |
 
 ## What this project is
 

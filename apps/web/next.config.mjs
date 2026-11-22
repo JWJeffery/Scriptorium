@@ -6,11 +6,15 @@ const isDev = process.env.NODE_ENV !== "production";
 const contentSecurityPolicy = [
   "default-src 'self'",
   // Next.js injects inline bootstrap scripts; 'wasm-unsafe-eval' is for pdf.js.
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
+  // Google's sign-in and file picker (Add a book > From Google Drive) load from these two addresses only.
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://apis.google.com${isDev ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline' https://accounts.google.com",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  `connect-src 'self' blob: data:${isDev ? " ws: wss:" : ""}`,
+  // The browser downloads a PDF picked in Google Drive straight from Google's Drive API.
+  `connect-src 'self' blob: data: https://www.googleapis.com https://content.googleapis.com${isDev ? " ws: wss:" : ""}`,
+  // Google's picker and sign-in run in their own frames.
+  "frame-src https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",

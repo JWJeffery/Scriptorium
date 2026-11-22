@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { prisma } from "../../../lib/prisma";
 import { cosineSimilarity } from "../../../lib/local-similarity";
-import { escapeLike, lineOfFirstMatch, makeSnippet, matchRank, parseQuery, type Snippet } from "../../../lib/search-text";
+import { lineOfFirstMatch, makeSnippet, matchRank, parseQuery, type Snippet } from "../../../lib/search-text";
+import { exactPageRows, pageQuery, scopeFilter, type PageRow } from "../../../lib/search-queries";
 import { bookLabel, type NumberingSystem } from "../../../lib/page-labels";
 import { searchByMeaning, type MeaningHit } from "../../../lib/meaning-index";
 
@@ -14,9 +14,6 @@ export const dynamic = "force-dynamic";
 //   mode=related pages and notes ranked by similarity of meaning-bearing words
 // Optional documentId limits the search to one document.
 
-type PageRow = { id: string; versionId: string; documentId: string; text: string; pdfPageIndex: bigint | number | null };
-
-const MAX_PAGE_CANDIDATES = 400;
 const MAX_RELATED_CANDIDATES = 4000;
 
 function clean(value: unknown) {
@@ -26,20 +23,6 @@ function clean(value: unknown) {
 function boundedLimit(value: string | null) {
   const parsed = Number.parseInt(value ?? "30", 10);
   return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 100) : 30;
-}
-
-// Latest version of each document only: older versions would repeat every hit.
-function pageQuery(whereExtra: Prisma.Sql, limit: number) {
-  return Prisma.sql`
-    SELECT ts.id, ts."versionId", v."documentId", ts.text,
-           (ts.anchor->>'pdfPageIndex')::int AS "pdfPageIndex"
-    FROM "TextSpan" ts
-    JOIN "DocumentVersion" v ON v.id = ts."versionId"
-    JOIN "Document" d ON d.id = v."documentId" AND d."deletedAt" IS NULL
-    WHERE v.id = (SELECT v2.id FROM "DocumentVersion" v2 WHERE v2."documentId" = v."documentId" ORDER BY v2."createdAt" DESC, v2.id DESC LIMIT 1)
-    ${whereExtra}
-    ORDER BY v."documentId", "pdfPageIndex", ts.id
-    LIMIT ${limit}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -53,7 +36,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Type at least two characters to search." }, { status: 400 });
   }
 
-  const scope = documentId ? Prisma.sql`AND v."documentId" = ${documentId}` : Prisma.empty;
+  const scope = scopeFilter(documentId);
 
   // Related passages: rank by meaning when this scope has a by-meaning index,
   // otherwise by shared words.
@@ -100,10 +83,8 @@ export async function GET(request: NextRequest) {
       pageRows.push({ id: `${span.id}@${hit.start}`, versionId: span.versionId, documentId: hit.documentId, text: span.text.slice(hit.start, hit.end), pdfPageIndex: hit.pdfPage });
     }
   } else if (mode === "exact") {
-    const likes = terms.map((term) => Prisma.sql`AND ts.text ILIKE ${`%${escapeLike(term)}%`}`);
-    // Words broken across lines are rare enough that a LIKE on the raw column
-    // is a safe pre-filter; exact phrase ranking happens on cleaned text below.
-    pageRows = await prisma.$queryRaw<PageRow[]>(pageQuery(Prisma.sql`${scope} ${Prisma.join(likes, " ")}`, MAX_PAGE_CANDIDATES));
+    // ILIKE pre-filter (trigram-indexed); exact phrase ranking happens on cleaned text below.
+    pageRows = await exactPageRows(terms, documentId);
   } else {
     pageRows = await prisma.$queryRaw<PageRow[]>(pageQuery(scope, MAX_RELATED_CANDIDATES));
   }

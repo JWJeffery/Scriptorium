@@ -22,8 +22,16 @@ let stopping = false;
 async function shutdown(signal: string) {
   if (stopping) return;
   stopping = true;
-  console.log(`[jobs] ${signal} received; finishing the current job before stopping...`);
+  console.log(`[jobs] ${signal} received; saving the current job's progress and stopping...`);
+  // The current job stops at its next safe point (OCR: the next page, after saving what it has done) and
+  // continues after the restart. Never take longer than 45 s: docker-compose.prod.yml allows 60 s before
+  // it kills the container, and a job cut off even then still resumes from its last saved batch.
+  setTimeout(() => {
+    console.error("[jobs] the current job did not stop within 45 s; exiting anyway.");
+    process.exit(1);
+  }, 45_000).unref();
   await stopWorker().catch((error) => console.error("[jobs] error while stopping:", error));
+  console.log("[jobs] worker stopped");
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));

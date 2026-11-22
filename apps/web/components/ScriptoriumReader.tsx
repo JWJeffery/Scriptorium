@@ -1,0 +1,1579 @@
+"use client";
+
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { highlightColors, allHighlightColors, findHighlightColor, meaningFor, parseLegend, type HighlightLegend } from "../lib/highlights";
+import { HighlightMeaning, swatchName } from "./HighlightMeaning";
+import { PdfAnchoredPageReader, type PdfAuthoritativeWord, type PdfEmbeddedMetadata, type PdfPageHighlight, type PdfSelectionAnchor } from "./PdfAnchoredPageReader";
+import { ScholarlyToolsPanel, type ImportedReadingNoteRecord } from "./ScholarlyToolsPanel";
+import type { ReadingNoteCandidate } from "../lib/reading-notes-import";
+import type { SavedDocumentEntry } from "../lib/saved-document-entry";
+import { SearchPanel, type SearchOpenRequest } from "./SearchPanel";
+import { AddToThread } from "./ThreadsPanel";
+import { TagInput, normalizeTags } from "./TagInput";
+import { SourceLookupDialog } from "./SourceLookupDialog";
+import { AddBookDialog } from "./AddBookDialog";
+import { PageNumberingEditor } from "./PageNumberingEditor";
+import { labelForPage, pdfPageForLabel, type PageRangeSpec } from "../lib/page-labels";
+import { authorsToText } from "../lib/author-names";
+import { mergeServerRecords } from "../lib/annotation-sync";
+import { TextAnchoredReader, type TextPageHighlight, type TextSelectionAnchor } from "./TextAnchoredReader";
+import { ReadModeToolbar } from "./ReadModeToolbar";
+import { ReadNoteCard } from "./ReadNoteCard";
+import { ThemeMenu } from "./ThemeMenu";
+import { MoreMenu } from "./MoreMenu";
+
+import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getBrowserPdf, persistDocument, persistPdfFile, attachPdfToServer, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation, patchAnnotation, whyNotSaved, ServerRefusedError } from "../lib/reader-model";
+
+export function ScriptoriumReader() {
+  const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [textContent, setTextContent] = useState("");
+  const [pageCount, setPageCount] = useState(0);
+  const [annotations, setAnnotations] = useState<SavedAnnotation[]>([]);
+  const [selectedColor, setSelectedColor] = useState(highlightColors[0].key);
+  const [selectedText, setSelectedText] = useState("");
+  const [anchor, setAnchor] = useState<SelectionAnchor | undefined>();
+  const [note, setNote] = useState("");
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [inspectorPinned, setInspectorPinned] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const panelsRestoredRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [addBook, setAddBook] = useState<null | "menu" | "box">(null);
+  const [pendingSplitOcr, setPendingSplitOcr] = useState(false);
+  const [ledgerFilter, setLedgerFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("");
+  const [pageRanges, setPageRanges] = useState<{ ranges: PageRangeSpec[]; saved: boolean } | null>(null);
+  const pageRangesRef = useRef<PageRangeSpec[] | undefined>(undefined);
+  pageRangesRef.current = pageRanges?.ranges;
+  const [bookPageGoto, setBookPageGoto] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | undefined>();
+  const [lookupOpen, setLookupOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [bookmarks, setBookmarks] = useState<Array<{ id: string; pdfPage: number; label: string }>>([]);
+  const [draftReady, setDraftReady] = useState(false);
+  const [searchHighlight, setSearchHighlight] = useState<{ terms: string[]; pageNumber: number } | null>(null);
+  const [compactLayout, setCompactLayout] = useState(false);
+  const [canSignOut, setCanSignOut] = useState(false);
+  // Read mode: the page fills the screen, with a slim tool rail on the left. With the highlighter on,
+  // selecting text saves a highlight straight away in the chosen colour.
+  const [legend, setLegend] = useState<HighlightLegend>({});
+  const [readMode, setReadMode] = useState(false);
+  const [highlighterOn, setHighlighterOn] = useState(false);
+  const [autoSavePending, setAutoSavePending] = useState(false);
+  const [savedCardOpen, setSavedCardOpen] = useState(false);
+  const [cardNote, setCardNote] = useState("");
+  const workspaceRef = useRef<HTMLElement | null>(null);
+  const readModeRef = useRef(false);
+  const highlighterOnRef = useRef(false);
+  readModeRef.current = readMode;
+  highlighterOnRef.current = readMode && highlighterOn;
+
+  // The names given to this book's custom highlight colours: kept with the book on the server.
+  const legendDocumentId = documentRecord?.server?.documentId;
+  useEffect(() => {
+    setLegend({});
+    if (!legendDocumentId) return;
+    let cancelled = false;
+    fetch(`/api/v1/items/${encodeURIComponent(legendDocumentId)}/legend`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { legend?: unknown } | null) => { if (!cancelled && body?.legend) setLegend(parseLegend(JSON.stringify(body.legend))); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [legendDocumentId]);
+
+  const renameColor = useCallback((key: string, label: string) => {
+    setLegend((current) => {
+      const next = { ...current };
+      if (label) next[key] = label; else delete next[key];
+      if (legendDocumentId) {
+        fetch(`/api/v1/items/${encodeURIComponent(legendDocumentId)}/legend`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ legend: next }) }).catch(() => undefined);
+      }
+      return next;
+    });
+  }, [legendDocumentId]);
+
+  const enterReadMode = useCallback(() => {
+    setReadMode(true);
+    const target = workspaceRef.current;
+    if (target && !document.fullscreenElement && typeof target.requestFullscreen === "function") {
+      // Real full screen where the browser allows it; the page still fills the window if it does not.
+      target.requestFullscreen().catch(() => undefined);
+    }
+  }, []);
+
+  const exitReadMode = useCallback(() => {
+    setSavedCardOpen(false);
+    setReadMode(false);
+    setHighlighterOn(false);
+    setAutoSavePending(false);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      // Escape (or the browser's own control) left full screen: leave read mode with it.
+      if (!document.fullscreenElement && readModeRef.current) {
+        setReadMode(false);
+        setHighlighterOn(false);
+        setAutoSavePending(false);
+      }
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    function onEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && readModeRef.current && !document.fullscreenElement) setReadMode(false);
+    }
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, []);
+
+  useEffect(() => {
+    // The highlighter saves the moment a selection is captured.
+    if (!autoSavePending || !anchor || !selectedText.trim()) return;
+    setAutoSavePending(false);
+    const previous = savedCardOpen ? annotations.find((record) => record.id === recentAnnotationId) : undefined;
+    if (previous && cardNote.trim() && cardNote.trim() !== (previous.note ?? "")) void attachNote(previous.id, cardNote);
+    void saveRecord();
+    setSavedCardOpen(true);
+    setCardNote("");
+    // saveRecord reads the state of this render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSavePending, anchor, selectedText]);
+
+  useEffect(() => {
+    // If the login session runs out, send the reader to the sign-in page instead of showing errors.
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const response = await originalFetch(...args);
+      if (response.status === 401 && !response.url.includes("/api/auth/")) {
+        window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      }
+      return response;
+    };
+    void originalFetch("/api/auth/session")
+      .then((response) => response.json())
+      .then((data: { authRequired?: boolean; signedIn?: boolean }) => setCanSignOut(Boolean(data.authRequired && data.signedIn)))
+      .catch(() => undefined);
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, []);
+
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    window.location.assign("/login");
+  }
+
+  // The side panels start closed. On a wide window, which of them a reader leaves open is remembered.
+  useEffect(() => {
+    const compactQuery = window.matchMedia("(max-width: 1279px)");
+    setCompactLayout(compactQuery.matches);
+    if (!compactQuery.matches) {
+      try {
+        const saved = JSON.parse(localStorage.getItem("scriptorium-panels-v2") ?? "null") as { left?: boolean; right?: boolean } | null;
+        if (saved?.left) setLedgerOpen(true);
+        if (saved?.right) { setInspectorPinned(true); setInspectorOpen(true); }
+      } catch { /* no saved choice */ }
+    }
+    panelsRestoredRef.current = true;
+    setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY)));
+    const handleLayoutChange = (event: MediaQueryListEvent) => setCompactLayout(event.matches);
+    compactQuery.addEventListener("change", handleLayoutChange);
+    return () => compactQuery.removeEventListener("change", handleLayoutChange);
+  }, []);
+
+  useEffect(() => {
+    if (!panelsRestoredRef.current || compactLayout) return;
+    try { localStorage.setItem("scriptorium-panels-v2", JSON.stringify({ left: ledgerOpen, right: inspectorPinned })); } catch { /* storage blocked */ }
+  }, [ledgerOpen, inspectorPinned, compactLayout]);
+
+  // Ctrl/Cmd+K, or "/" when not typing in a field, opens Search.
+  useEffect(() => {
+    function openSearchShortcut(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const typing = Boolean(target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable));
+      if (((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") || (!typing && event.key === "/" && !event.metaKey && !event.ctrlKey)) {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+    window.addEventListener("keydown", openSearchShortcut);
+    return () => window.removeEventListener("keydown", openSearchShortcut);
+  }, []);
+
+  // Bookmarks for this book.
+  const bookmarkDocumentId = documentRecord?.kind === "PDF" ? documentRecord.server?.documentId : undefined;
+  useEffect(() => {
+    if (!bookmarkDocumentId) { setBookmarks([]); return; }
+    let cancelled = false;
+    fetch(`/api/bookmarks?documentId=${encodeURIComponent(bookmarkDocumentId)}`)
+      .then((response) => (response.ok ? response.json() : { bookmarks: [] }))
+      .then((body: { bookmarks: Array<{ id: string; pdfPage: number; label: string }> }) => { if (!cancelled) setBookmarks(body.bookmarks); })
+      .catch(() => { if (!cancelled) setBookmarks([]); });
+    return () => { cancelled = true; };
+  }, [bookmarkDocumentId]);
+
+  async function toggleBookmark() {
+    if (!bookmarkDocumentId || documentRecord?.kind !== "PDF") return;
+    const page = documentRecord.pageMap.currentPdfPageIndex;
+    const existing = bookmarks.find((bookmark) => bookmark.pdfPage === page);
+    try {
+      if (existing) {
+        const response = await fetch(`/api/bookmarks?id=${encodeURIComponent(existing.id)}`, { method: "DELETE" });
+        if (!response.ok && response.status !== 404) throw new Error("failed");
+        setBookmarks((current) => current.filter((bookmark) => bookmark.id !== existing.id));
+        setStatus(`Removed the bookmark on PDF page ${page}.`);
+      } else {
+        const response = await fetch("/api/bookmarks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ documentId: bookmarkDocumentId, pdfPage: page }) });
+        const body = await response.json() as { bookmark?: { id: string; pdfPage: number; label: string } };
+        if (!response.ok || !body.bookmark) throw new Error("failed");
+        setBookmarks((current) => [...current, body.bookmark as { id: string; pdfPage: number; label: string }].sort((a, b) => a.pdfPage - b.pdfPage));
+        setStatus(`Bookmarked PDF page ${page}.`);
+      }
+    } catch { setStatus("The bookmark could not be saved. Try again in a moment."); }
+  }
+
+  // Remember where each book was left.
+  const lastPageDocumentId = documentRecord?.server?.documentId;
+  const lastPageNumber = documentRecord?.kind === "PDF" ? documentRecord.pageMap.currentPdfPageIndex : undefined;
+  useEffect(() => {
+    if (lastPageDocumentId && lastPageNumber) rememberLastPage(lastPageDocumentId, lastPageNumber);
+  }, [lastPageDocumentId, lastPageNumber]);
+
+  // The server keeps the reading position too, so every device agrees (and the Library can show it).
+  // Reading on the laptop and then picking up the phone: when a book opens, or its tab comes back into view, the
+  // reader asks the server where the book was last left. If another device saved a position after this one last
+  // did, it goes there and says so. Positions are compared by the server's clock only, so devices whose clocks
+  // disagree cannot fight, and this device saves nothing until it has checked (or it would overwrite the newer
+  // position with its old one).
+  const positionRef = useRef<{ documentId?: string; checked: boolean; lastWriteAt: string | null; writePending: boolean; lastCheck: number }>({ checked: false, lastWriteAt: null, writePending: false, lastCheck: 0 });
+  const currentPageRef = useRef<number | undefined>(undefined);
+  currentPageRef.current = lastPageNumber;
+  const goToPageRef = useRef<(page: number) => void>(() => undefined);
+  const [positionNotice, setPositionNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!lastPageDocumentId || documentRecord?.kind !== "PDF") return;
+    const state = { documentId: lastPageDocumentId, checked: false, lastWriteAt: null as string | null, writePending: false, lastCheck: 0 };
+    positionRef.current = state;
+    let noticeTimer: number | undefined;
+    async function followOtherDevice() {
+      if (positionRef.current !== state || state.writePending || Date.now() - state.lastCheck < 3000) return;
+      state.lastCheck = Date.now();
+      try {
+        const response = await fetch(`/api/v1/items/${encodeURIComponent(state.documentId)}/progress`, { cache: "no-store" });
+        if (!response.ok || positionRef.current !== state || state.writePending) return;
+        const saved = (await response.json()) as { lastPage: number | null; updatedAt: string | null };
+        const newerThanMine = Boolean(saved.updatedAt) && (!state.lastWriteAt || (saved.updatedAt as string) > state.lastWriteAt);
+        if (newerThanMine && saved.lastPage && saved.lastPage !== currentPageRef.current) {
+          goToPageRef.current(saved.lastPage);
+          const label = labelForPage(pageRangesRef.current ?? [], saved.lastPage);
+          setPositionNotice(`Continued from ${label ? `page ${label}` : `PDF page ${saved.lastPage}`}, where you left off on another device.`);
+          window.clearTimeout(noticeTimer);
+          noticeTimer = window.setTimeout(() => setPositionNotice(null), 6000);
+        }
+        if (newerThanMine) state.lastWriteAt = saved.updatedAt;
+      } catch { /* offline: carry on from this device's own place */ } finally {
+        if (positionRef.current === state) state.checked = true;
+      }
+    }
+    void followOtherDevice();
+    const onVisible = () => { if (document.visibilityState === "visible") void followOtherDevice(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.clearTimeout(noticeTimer);
+    };
+    // Runs per opened book; the refs carry the current page and helpers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastPageDocumentId]);
+
+  useEffect(() => {
+    if (!lastPageDocumentId || !lastPageNumber) return;
+    const state = positionRef.current;
+    if (state.documentId !== lastPageDocumentId || !state.checked) return; // not until this device has checked
+    state.writePending = true;
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/v1/items/${encodeURIComponent(lastPageDocumentId)}/progress`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ page: lastPageNumber, ...(pageCount > 0 ? { pageCount } : {}) })
+      })
+        .then(async (response) => { if (response.ok) { const body = (await response.json()) as { updatedAt?: string }; if (body.updatedAt) state.lastWriteAt = body.updatedAt; } })
+        .catch(() => undefined)
+        .finally(() => { state.writePending = false; });
+    }, 1500);
+    return () => { window.clearTimeout(timer); state.writePending = false; };
+  }, [lastPageDocumentId, lastPageNumber, pageCount]);
+
+  // Coming back from Box's sign-in page (/?box=connected|cancelled|failed): reopen Add a book on Box.
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get("box");
+    if (!result) return;
+    window.history.replaceState(null, "", "/");
+    if (result === "connected") { setStatus("Box is connected. Choose a PDF to add."); setAddBook("box"); }
+    else setStatus(result === "cancelled" ? "Connecting Box was cancelled." : "Box could not be connected. Try again, or see docs/CLOUD_IMPORT.md.");
+  }, []);
+
+  // A link such as /?open=<book id> (from the Library) opens that book.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("open");
+    if (!wanted) return;
+    window.history.replaceState(null, "", "/");
+    if (readDocument()?.server?.documentId === wanted) return;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/core/library?documentId=${encodeURIComponent(wanted)}`);
+        const entry = ((await response.json()) as { documents?: SavedDocumentEntry[] }).documents?.[0];
+        if (!response.ok || !entry) throw new Error("That book could not be found on the server.");
+        await openSavedDocument(entry);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "The book could not be opened.");
+      }
+    })();
+    // Once, on first load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keyboard shortcuts. Ignored while typing in a box or while a dialog is open.
+  useEffect(() => {
+    function onShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const typing = Boolean(target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable));
+      if (typing || searchOpen || lookupOpen || toolsOpen) return;
+      const key = event.key;
+      const zoom = (command: string) => window.dispatchEvent(new CustomEvent("scriptorium-zoom", { detail: command }));
+      const handled = (action: () => void) => { event.preventDefault(); action(); };
+
+      if (key === "?") return handled(() => setHelpOpen((open) => !open));
+      if (helpOpen && key === "Escape") return handled(() => setHelpOpen(false));
+      if (!documentRecord) return;
+      if (key === "z") return handled(() => (readModeRef.current ? exitReadMode() : enterReadMode()));
+      if (key === "h" && readModeRef.current) return handled(() => setHighlighterOn((on) => !on));
+      if (/^[0-9]$/.test(key)) {
+        const index = key === "0" ? 9 : Number(key) - 1;
+        return handled(() => { setSelectedColor(highlightColors[index].key); setStatus(`Highlight meaning: ${meaningFor(highlightColors[index].key, legend)}.`); });
+      }
+      if (key === "n") return handled(() => { setInspectorOpen(true); setInspectorPinned(true); window.setTimeout(() => noteTextAreaRef.current?.focus(), 30); });
+      if (key === "b" && documentRecord.kind === "PDF") return handled(() => { void toggleBookmark(); });
+      if (key === "g") return handled(() => { setInspectorOpen(true); setInspectorPinned(true); window.setTimeout(() => (document.getElementById("go-to-book-page") as HTMLInputElement | null)?.focus(), 30); });
+      if (documentRecord.kind !== "PDF") return;
+      const page = documentRecord.pageMap.currentPdfPageIndex;
+      if (key === "ArrowLeft" || key === "PageUp" || key === "k") return handled(() => goToPage(page - 1));
+      if (key === "ArrowRight" || key === "PageDown" || key === "j") return handled(() => goToPage(page + 1));
+      if (key === "Home") return handled(() => goToPage(1));
+      if (key === "End" && pageCount > 0) return handled(() => goToPage(pageCount));
+      if (key === "+" || key === "=") return handled(() => zoom("in"));
+      if (key === "-") return handled(() => zoom("out"));
+      if (key === "f") return handled(() => zoom("fit"));
+      if (key === "r") return handled(() => zoom("reset"));
+    }
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+    // goToPage closes over the latest page state each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentRecord, pageCount, helpOpen, searchOpen, lookupOpen, toolsOpen]);
+
+  // Draft protection: what has been typed or selected but not saved survives a reload.
+  useEffect(() => {
+    if (!documentRecord || draftReady) return;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as { documentId?: string; selectedText?: string; anchor?: SelectionAnchor; note?: string; tags?: string[]; colorKey?: string };
+        if (draft.documentId === documentRecord.id && (draft.selectedText || draft.note || (draft.tags ?? []).length)) {
+          setSelectedText(draft.selectedText ?? "");
+          setAnchor(draft.anchor);
+          setNote(draft.note ?? "");
+          setTags(draft.tags ?? []);
+          if (draft.colorKey) setSelectedColor(draft.colorKey);
+          setInspectorOpen(true); setInspectorPinned(true);
+          setStatus("Restored the unsaved selection and note you were working on. Save it, or use Clear selection to discard it.");
+        }
+      }
+    } catch { /* ignore a damaged draft */ }
+    setDraftReady(true);
+  }, [documentRecord, draftReady]);
+
+  useEffect(() => {
+    if (!draftReady || !documentRecord) return;
+    const hasContent = !editingId && Boolean(selectedText.trim() || note.trim() || tags.length);
+    const timer = window.setTimeout(() => {
+      try {
+        if (hasContent) localStorage.setItem(DRAFT_KEY, JSON.stringify({ documentId: documentRecord.id, selectedText, anchor, note, tags, colorKey: selectedColor, savedAt: new Date().toISOString() }));
+        else localStorage.removeItem(DRAFT_KEY);
+      } catch { /* storage full or blocked: the draft is a convenience */ }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [draftReady, documentRecord, editingId, selectedText, anchor, note, tags, selectedColor]);
+
+  // Warn before closing the tab with work that has not been saved.
+  useEffect(() => {
+    const unsaved = Boolean(selectedText.trim() || note.trim());
+    if (!unsaved) return;
+    function warn(event: BeforeUnloadEvent) { event.preventDefault(); event.returnValue = ""; }
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [selectedText, note]);
+
+  useEffect(() => {
+    function closeOverlay(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (toolsOpen) {
+        setToolsOpen(false);
+        setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY)));
+      }
+      else if (ledgerOpen) setLedgerOpen(false);
+      else if (!inspectorPinned || compactLayout) setInspectorOpen(false);
+    }
+    window.addEventListener("keydown", closeOverlay);
+    return () => window.removeEventListener("keydown", closeOverlay);
+  }, [compactLayout, inspectorPinned, ledgerOpen, toolsOpen]);
+
+  // A "select some text" workflow needs an equally easy way to back out of
+  // it - clears both the app's own captured selection state and the
+  // browser's own visible native-highlight selection (window.getSelection
+  // is a real, separate thing from selectedText/anchor here - clearing
+  // one doesn't clear the other on its own).
+  function clearSelection() {
+    window.getSelection()?.removeAllRanges();
+    setSelectedText("");
+    setAnchor(undefined);
+  }
+  // Throw away an unsaved highlight: the selection and whatever note or tags were typed for it.
+  function discardPending() {
+    clearSelection();
+    setNote("");
+    setTags([]);
+  }
+  // field-sizing: content (CSS-only auto-grow) turned out to be unreliable
+  // across Chrome versions still in real use - stabilized late enough that
+  // it can't be counted on yet. This does the same job with plain JS,
+  // which works everywhere: measure the content's real height and set the
+  // textarea to match, capped by the CSS max-height (overflow-y: auto
+  // handles anything beyond that). Runs on every value change, not just
+  // onChange, because selectedText is set programmatically by
+  // capturePdfAnchor/captureTextAnchor - a real selection on the page, not
+  // the person typing - and onChange alone would never fire for that.
+  const selectedTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const noteTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  function autoResize(el: HTMLTextAreaElement | null) {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }
+
+  useEffect(() => {
+    autoResize(selectedTextAreaRef.current);
+  }, [selectedText]);
+
+  useEffect(() => {
+    autoResize(noteTextAreaRef.current);
+  }, [note]);
+  const [style, setStyle] = useState<CitationStyle>("sbl-note");
+  const [status, setStatus] = useState("Register a PDF, TXT, Markdown, or DOCX file to begin.");
+  const [sourceSaveMessage, setSourceSaveMessage] = useState("");
+  const [serverCopy, setServerCopy] = useState<{ phase: "saving" | "done" | "failed" | "different"; percent: number } | null>(null);
+  const [recentAnnotationId, setRecentAnnotationId] = useState<string | undefined>();
+  const [authoritativePageText, setAuthoritativePageText] = useState<string | null>(null);
+  const [authoritativeWords, setAuthoritativeWords] = useState<PdfAuthoritativeWord[] | null>(null);
+
+  useEffect(() => {
+    const storedDocument = readDocument();
+    const storedAnnotations = readAnnotations();
+    setAnnotations(storedAnnotations);
+    if (!storedDocument) return;
+    setDocumentRecord(storedDocument);
+
+    if (storedDocument.kind === "PDF") {
+      getBrowserPdf(storedDocument).then((blob) => {
+        if (blob) {
+          setPdfUrl(URL.createObjectURL(blob));
+          setStatus(storedDocument.server?.storageKey ? "Recovered browser PDF and server file record." : storedDocument.server ? "Recovered browser PDF and database ids." : "Recovered browser-local prototype records.");
+          // A book that only ever lived in this browser: keep a copy on the server too, so it opens anywhere.
+          if (storedDocument.server?.documentId && !storedDocument.server.storageKey) void saveBrowserCopyToServer(storedDocument, blob);
+          return;
+        }
+        const storedServerUrl = serverPdfUrl(storedDocument);
+        if (storedServerUrl) {
+          setPdfUrl(storedServerUrl);
+          setStatus("Recovered PDF from server file storage.");
+          return;
+        }
+        setStatus(storedDocument.server ? "This book's PDF isn't in your library yet. Choose the PDF file once and it will open on every device." : "Recovered records, but no browser or server PDF was found.");
+      });
+      return;
+    }
+
+    const localText = readTextContent();
+    if (localText) {
+      setTextContent(localText);
+      setStatus(storedDocument.server?.sourceChecksum ? "Recovered versioned text snapshot and database ids." : storedDocument.server ? "Recovered text document and database ids." : "Recovered browser-local text document.");
+      return;
+    }
+
+    if (storedDocument.server) {
+      fetch(`/api/core/workspace?documentId=${storedDocument.server.documentId}`)
+        .then((response) => response.ok ? response.json() : null)
+        .then((body: { document?: { versions?: Array<{ id: string; textSpans?: Array<{ text: string }> }> } } | null) => {
+          const currentVersion = body?.document?.versions?.find((version) => version.id === storedDocument.server?.versionId) ?? body?.document?.versions?.[0];
+          const text = currentVersion?.textSpans?.[0]?.text ?? "";
+          if (text) {
+            saveTextContent(text);
+            setTextContent(text);
+            setStatus("Recovered text document from versioned database text snapshot.");
+          } else {
+            setStatus("Recovered text metadata, but no text snapshot was found.");
+          }
+        });
+    }
+  }, []);
+
+  useEffect(() => () => { if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
+
+  const locator = useMemo(() => currentLocator(documentRecord, anchor, pageRanges?.ranges), [documentRecord, anchor, pageRanges]);
+  const fallbackCitation = useMemo(() => documentRecord ? citation(documentRecord, locator, style) : "Register a document before generating a citation.", [documentRecord, locator, style]);
+  const [engineCitation, setEngineCitation] = useState<EngineCitation | null>(null);
+  const unsavedSource = sourceSaveMessage.startsWith("Unsaved");
+  useEffect(() => {
+    if (!documentRecord) { setEngineCitation(null); return; }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void formatViaEngine(documentRecord, locator, style, unsavedSource).then((result) => { if (!cancelled) setEngineCitation(result); });
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [documentRecord, locator, style, unsavedSource]);
+  const generatedCitation = engineCitation?.text ?? fallbackCitation;
+  const currentSnapshotRecords = useMemo(() => annotations.filter((record) => recordMatchesCurrentVersion(record, documentRecord)), [annotations, documentRecord]);
+  const recentSavedRecord = useMemo(() => recentAnnotationId ? annotations.find((record) => record.id === recentAnnotationId) : undefined, [annotations, recentAnnotationId]);
+  const recentSavedColor = recentSavedRecord ? findHighlightColor(recentSavedRecord.colorKey) : undefined;
+  const visiblePdfHighlights = useMemo<PdfPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
+    if (!record.anchor || isTextAnchor(record.anchor)) return [];
+    const color = findHighlightColor(record.colorKey);
+    return [{ id: record.id, color: color.color, anchor: record.anchor, note: record.note?.trim() || undefined }];
+  }), [currentSnapshotRecords]);
+  const previewPdfHighlight = useMemo<PdfPageHighlight[]>(() => {
+    if (!documentRecord || documentRecord.kind !== "PDF" || !anchor || isTextAnchor(anchor) || !selectedText.trim()) return [];
+    const color = findHighlightColor(selectedColor);
+    return [{ id: "active-selection-preview", color: color.color, anchor }];
+  }, [anchor, documentRecord, selectedColor, selectedText]);
+  const activePdfHighlights = useMemo(() => [...visiblePdfHighlights, ...previewPdfHighlight], [previewPdfHighlight, visiblePdfHighlights]);
+  const visibleTextHighlights = useMemo<TextPageHighlight[]>(() => currentSnapshotRecords.flatMap((record) => {
+    if (!record.anchor || !isTextAnchor(record.anchor)) return [];
+    const color = findHighlightColor(record.colorKey);
+    return [{ id: record.id, color: color.color, anchor: record.anchor }];
+  }), [currentSnapshotRecords]);
+
+  const mergePdfMetadata = useCallback((metadata: PdfEmbeddedMetadata) => {
+    setDocumentRecord((current) => {
+      if (!current || current.kind !== "PDF") return current;
+      const fileTitle = titleFromFilename(current.filename);
+      const nextSource = {
+        ...current.source,
+        title: metadata.title && (!current.source.title.trim() || current.source.title === fileTitle) ? metadata.title : current.source.title,
+        author: metadata.author && !current.source.author.trim() ? metadata.author : current.source.author
+      };
+      const nextTitle = nextSource.title || current.title;
+      const nextDocument = { ...current, title: nextTitle, source: nextSource };
+      saveDocument(nextDocument);
+      return nextDocument;
+    });
+  }, []);
+
+  const capturePdfAnchor = useCallback((nextAnchor: PdfSelectionAnchor) => {
+    setEditingId(undefined);
+    setAnchor(nextAnchor);
+    setSelectedText(nextAnchor.selectedText);
+    if (!readModeRef.current) { setInspectorOpen(true); setInspectorPinned(true); }
+    if (highlighterOnRef.current) setAutoSavePending(true);
+    setStatus("Captured selected text, context, and highlight rectangles from the PDF page. Preview highlight is shown until saved.");
+  }, []);
+
+  const captureTextAnchor = useCallback((nextAnchor: TextSelectionAnchor) => {
+    setEditingId(undefined);
+    setAnchor(nextAnchor);
+    setSelectedText(nextAnchor.selectedText);
+    if (!readModeRef.current) { setInspectorOpen(true); setInspectorPinned(true); }
+    if (highlighterOnRef.current) setAutoSavePending(true);
+    setStatus(`Captured selected text, context, offsets, and line locator ${lineLocator(nextAnchor)}.`);
+  }, []);
+
+  // Returns true once the file is stored on the server. interactive: the person chose this file
+  // themselves, so a file that differs from the original can be confirmed instead of refused.
+  async function saveBrowserCopyToServer(stored: StoredDocument, blob: Blob, interactive = false, allowDifferent = false): Promise<boolean> {
+    if (!stored.server?.documentId) return false;
+    const leaveWarning = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", leaveWarning);
+    setServerCopy({ phase: "saving", percent: 0 });
+    try {
+      const result = await attachPdfToServer(stored.server.documentId, blob, stored.filename, (fraction) => setServerCopy({ phase: "saving", percent: Math.round(fraction * 100) }), allowDifferent);
+      const next: StoredDocument = { ...stored, server: { ...stored.server, storageKey: result.storageKey } };
+      saveDocument(next);
+      setDocumentRecord(next);
+      // Keep this browser's copy under the library id too, the id used when the book is reopened from the Library.
+      await putPdf(stored.server.documentId, blob).catch(() => undefined);
+      setServerCopy({ phase: "done", percent: 100 });
+      window.setTimeout(() => setServerCopy(null), 6000);
+      return true;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "";
+      if (reason === "already-stored") { setServerCopy(null); return true; }
+      if (reason === "different-file") {
+        if (interactive && window.confirm("This is not the same file that was first added for this book, so your highlights may not line up with its pages.\n\nPress OK to use it anyway, or Cancel to choose another file.")) {
+          window.removeEventListener("beforeunload", leaveWarning);
+          return saveBrowserCopyToServer(stored, blob, interactive, true);
+        }
+        setServerCopy({ phase: "different", percent: 0 });
+        return false;
+      }
+      setServerCopy({ phase: "failed", percent: 0 });
+      return false;
+    } finally {
+      window.removeEventListener("beforeunload", leaveWarning);
+    }
+  }
+
+  // The book is in the library without its PDF and this device has no copy: the person chooses the file once.
+  async function chooseMissingPdf(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !documentRecord) return;
+    if (fileKind(file) !== "PDF") { setStatus("Please choose a PDF file."); return; }
+    if (await saveBrowserCopyToServer(documentRecord, file, true)) {
+      if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
+      setPdfUrl(URL.createObjectURL(file));
+      setStatus("PDF saved to your library. It will open on every device from now on.");
+    }
+  }
+
+  async function registerSource(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    await registerFile(file);
+  }
+
+  // Adds a book from a File, wherever it came from: this device, a link, Google Drive or Box (AddBookDialog).
+  async function registerFile(file: File) {
+
+    const kind = fileKind(file);
+    if (!kind) {
+      setStatus("This workspace accepts PDF, TXT, Markdown, and DOCX files only.");
+      return;
+    }
+
+    if (kind === "PDF") {
+      // Same limit as the server (lib/server-storage.ts MAX_PDF_BYTES), checked before anything changes.
+      if (file.size > 75 * 1024 * 1024) {
+        setStatus(`Not added: this PDF is ${Math.round(file.size / 1024 / 1024)} MB, and the largest that can be added is 75 MB.`);
+        return;
+      }
+      const duplicate = await findDuplicateFile(file);
+      if (duplicate && !window.confirm(`This exact file is already in your library as "${duplicate.title}".\n\nPress OK to add another copy anyway, or Cancel and use "Open saved" to open the existing one.`)) {
+        setStatus(`Not added: "${duplicate.title}" is already in your library. Use Open saved to open it.`);
+        return;
+      }
+    }
+
+    if (pdfUrl?.startsWith("blob:")) URL.revokeObjectURL(pdfUrl);
+
+    const textReimportDocument = kind !== "PDF" && isText(documentRecord) && documentRecord.kind === kind && documentRecord.server?.documentId ? documentRecord : null;
+    const isTextReimport = Boolean(textReimportDocument);
+    const documentId = textReimportDocument ? textReimportDocument.id : localId("doc");
+    const title = titleFromFilename(file.name);
+    let nextDocument: StoredDocument = textReimportDocument
+      ? { ...textReimportDocument, title, filename: file.name, mediaType: mediaTypeFor(kind, file), size: file.size, source: { ...textReimportDocument.source, title: textReimportDocument.source.title || title }, pageMap: DEFAULT_PAGE_MAP }
+      : { id: documentId, title, filename: file.name, kind, mediaType: mediaTypeFor(kind, file), size: file.size, source: { ...EMPTY_SOURCE, title }, pageMap: DEFAULT_PAGE_MAP };
+
+    if (!isTextReimport) {
+      saveAnnotations([]);
+      setAnnotations([]);
+    }
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote(""); setTags([]);
+    setPageCount(0);
+    setSourceSaveMessage("");
+    setRecentAnnotationId(undefined);
+
+    if (kind === "PDF") {
+      setTextContent("");
+      saveTextContent("");
+      await putPdf(documentId, file);
+      try {
+        const server = await persistPdfFile(file, nextDocument, bookPage(nextDocument.pageMap));
+        nextDocument = { ...nextDocument, server };
+        setStatus("Book added.");
+      } catch (uploadError) {
+        try {
+          const server = await persistDocument(nextDocument, bookPage(nextDocument.pageMap));
+          nextDocument = { ...nextDocument, server };
+          setStatus(`Book added, but its file is only in this browser for now (${whyNotSaved(uploadError)}). It will be copied to the server automatically when you next open it here.`);
+        } catch (recordError) {
+          setStatus(`Book opened here only; it could not be saved to the server (${whyNotSaved(recordError instanceof ServerRefusedError ? recordError : uploadError)}).`);
+        }
+      }
+      setPdfUrl(URL.createObjectURL(file));
+    } else {
+      setPdfUrl(null);
+      if (kind === "DOCX") {
+        setTextContent("");
+        saveTextContent("");
+      } else {
+        const normalizedText = normalizeTextSnapshot(await file.text());
+        setTextContent(normalizedText);
+        saveTextContent(normalizedText);
+      }
+      try {
+        const persisted = await persistTextLikeFile(file, nextDocument, "1", textReimportDocument?.server?.documentId);
+        nextDocument = { ...nextDocument, server: persisted.server };
+        setTextContent(persisted.text);
+        saveTextContent(persisted.text);
+        setStatus(`${formatFor(kind)} ${isTextReimport ? "reimported as a new version" : "document registered"}; checksum ${persisted.server.sourceChecksum?.slice(0, 12) ?? "pending"}; annotations remain version-specific.`);
+      } catch {
+        setStatus(`${formatFor(kind)} document registration failed. ${kind === "DOCX" ? "DOCX extraction requires the server route." : "Database snapshot persistence is unavailable in this environment."}`);
+      }
+    }
+
+    saveDocument(nextDocument);
+    setDocumentRecord(nextDocument);
+  }
+
+  function updateDocument(nextDocument: StoredDocument) { setDocumentRecord(nextDocument); saveDocument(nextDocument); }
+  function updateSource(field: keyof SourceRecord, value: string) {
+    if (!documentRecord) return;
+    setSourceSaveMessage("Unsaved source metadata changes.");
+    updateDocument({ ...documentRecord, title: field === "title" ? value : documentRecord.title, source: { ...documentRecord.source, [field]: value } });
+  }
+  function updatePageMap(field: keyof PageMap, value: number) { if (documentRecord) updateDocument({ ...documentRecord, pageMap: { ...documentRecord.pageMap, [field]: Number.isFinite(value) ? value : 1 } }); }
+  goToPageRef.current = (page: number) => goToPage(page);
+  function goToPage(page: number) { if (!documentRecord || documentRecord.kind !== "PDF") return; const upper = pageCount > 0 ? pageCount : page; setAnchor(undefined); setSelectedText(""); updatePageMap("currentPdfPageIndex", Math.min(Math.max(page, 1), upper)); }
+
+  // Take details looked up from an ISBN/DOI or imported from Zotero and make them this book's source.
+  async function applyLookedUpSource(csl: Record<string, unknown>) {
+    if (!documentRecord) return;
+    const year = (csl.issued as { "date-parts"?: unknown[][] } | undefined)?.["date-parts"]?.[0]?.[0];
+    const nextSource: SourceRecord = {
+      title: typeof csl.title === "string" ? csl.title : documentRecord.source.title,
+      author: Array.isArray(csl.author) ? authorsToText(csl.author as Parameters<typeof authorsToText>[0]) : "",
+      place: typeof csl["publisher-place"] === "string" ? csl["publisher-place"] : "",
+      publisher: typeof csl.publisher === "string" ? csl.publisher : "",
+      year: year === undefined || year === null ? "" : String(year)
+    };
+    const nextDocument: StoredDocument = { ...documentRecord, title: nextSource.title || documentRecord.title, source: nextSource };
+    if (documentRecord.server?.sourceId) {
+      const response = await fetch("/api/sources/apply", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceId: documentRecord.server.sourceId, csl }) });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? "The details could not be saved.");
+    }
+    updateDocument(nextDocument);
+    setSourceSaveMessage("Source details filled in and saved.");
+    setStatus(`Source details updated: ${nextSource.title}.`);
+  }
+
+  async function saveSourceRecord() {
+    if (!documentRecord) { setStatus("Register a document before saving CSL source metadata."); return; }
+    const validationMessage = validateSource(documentRecord.source);
+    if (validationMessage) { setStatus(validationMessage); setSourceSaveMessage(validationMessage); return; }
+    const nextDocument = { ...documentRecord, title: documentRecord.source.title.trim() || documentRecord.title, source: { ...documentRecord.source, title: documentRecord.source.title.trim(), author: documentRecord.source.author.trim(), place: documentRecord.source.place.trim(), publisher: documentRecord.source.publisher.trim(), year: documentRecord.source.year.trim() } };
+
+    setSourceSaveMessage("Saving CSL source metadata…");
+    try {
+      await persistSourceMetadata(nextDocument);
+      updateDocument(nextDocument);
+      setSourceSaveMessage("CSL source metadata saved to database.");
+      setStatus("Book information saved.");
+    } catch {
+      updateDocument(nextDocument);
+      setSourceSaveMessage("Source metadata saved locally; database source persistence is unavailable for this record.");
+      setStatus("Book information saved in this browser only; the server could not be reached.");
+    }
+  }
+
+  async function saveRecord() {
+    if (!documentRecord) { setStatus("Add a book before saving a highlight."); return; }
+    const normalizedSelectedText = selectedText.trim();
+    const normalizedNote = note.trim();
+    if (!normalizedSelectedText && !normalizedNote) { setStatus("Capture a passage or enter a page note before saving."); return; }
+    if (isText(documentRecord) && !isTextAnchor(anchor)) { setStatus("Select the text directly on the page to highlight it."); return; }
+
+    const normalizedAnchor = anchor ? { ...anchor, selectedText: normalizedSelectedText } as SelectionAnchor : undefined;
+    let record: SavedAnnotation = { id: localId("ann"), documentId: documentRecord.id, versionId: documentRecord.server?.versionId, snapshotKey: documentRecord.server?.snapshotKey, colorKey: selectedColor, selectedText: normalizedSelectedText, note: normalizedNote, pdfPageIndex: documentRecord.pageMap.currentPdfPageIndex, bookPageLabel: currentLocator(documentRecord, normalizedAnchor, pageRanges?.ranges), citationStyle: style, citationText: citation(documentRecord, currentLocator(documentRecord, normalizedAnchor, pageRanges?.ranges), style), anchor: normalizedAnchor, createdAt: new Date().toISOString(), tags: normalizeTags(tags) };
+
+    const formatted = await formatViaEngine(documentRecord, record.bookPageLabel, style, unsavedSource);
+    if (formatted) record = { ...record, citationText: formatted.text };
+
+    try {
+      const serverRecord = await persistAnnotation(documentRecord, record);
+      record = { ...record, serverAnnotationId: serverRecord.annotation.id, serverCitationId: serverRecord.citation.id };
+      setStatus("Highlight saved.");
+    } catch (error) {
+      setStatus(`Highlight kept in this browser only: ${whyNotSaved(error)}. Use "Save unsaved" in Highlights to try again.`);
+    }
+
+    setAnnotations((previous) => {
+      const next = [record, ...previous];
+      saveAnnotations(next);
+      return next;
+    });
+    setRecentAnnotationId(record.id);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote(""); setTags([]);
+  }
+
+  const editingRecord = editingId ? annotations.find((record) => record.id === editingId) : undefined;
+
+  // Load a saved record into the inspector so its note and colour can be
+  // changed, or the record deleted.
+  function startEditing(record: SavedAnnotation) {
+    setEditingId(record.id);
+    setSelectedText(record.selectedText);
+    setAnchor(undefined);
+    setNote(record.note);
+    setTags(record.tags ?? []);
+    setSelectedColor(record.colorKey);
+    setInspectorOpen(true); setInspectorPinned(true);
+    setLedgerOpen(false);
+    if (recordMatchesCurrentVersion(record, documentRecord) && record.anchor && !isTextAnchor(record.anchor)) goToPage(record.anchor.pageNumber);
+    setStatus("Editing this highlight. You can change its note and colour, or delete it.");
+  }
+
+  // Bring this browser's copy of the open book's annotations in line with the database.
+  const [syncInfo, setSyncInfo] = useState<{ unsaved: number; lastChecked: string | null; unreachable: boolean }>({ unsaved: 0, lastChecked: null, unreachable: false });
+  const lastSyncRef = useRef(0);
+  const annotationsRef = useRef<SavedAnnotation[]>([]);
+  annotationsRef.current = annotations;
+  async function syncFromServer(announce = false) {
+    const serverDocumentId = documentRecord?.server?.documentId;
+    if (!documentRecord || !serverDocumentId) return;
+    lastSyncRef.current = Date.now();
+    const server = await fetchServerRecords(serverDocumentId, documentRecord.pageMap.currentPdfPageIndex);
+    if (!server) {
+      setSyncInfo((current) => ({ ...current, unreachable: true }));
+      if (announce) setStatus("Could not reach the server. Showing the copy saved in this browser.");
+      return;
+    }
+    const scope = { versionIds: server.versionIds, localDocumentIds: new Set([documentRecord.id, serverDocumentId]) };
+    const result = mergeServerRecords(annotationsRef.current, server.records, scope);
+    annotationsRef.current = result.records;
+    saveAnnotations(result.records);
+    setAnnotations(result.records);
+    setSyncInfo({ unsaved: result.unsaved, lastChecked: new Date().toISOString(), unreachable: false });
+    if (announce) setStatus(`Refreshed from the database: ${result.added} new, ${result.updated} checked, ${result.removed} removed${result.unsaved ? `, ${result.unsaved} not yet saved to the database` : ""}.`);
+  }
+
+  // Send records that were saved only in this browser (the database was unreachable at the time).
+  async function saveUnsavedRecords() {
+    if (!documentRecord?.server) return;
+    const inThisBook = (record: SavedAnnotation) => (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id);
+    const pending = annotations.filter((record) => inThisBook(record) && (!record.serverAnnotationId || record.pendingEdit));
+    let saved = 0;
+    let lastError: unknown;
+    const updates = new Map<string, SavedAnnotation>();
+    for (const record of pending) {
+      try {
+        if (!record.serverAnnotationId) {
+          // Safe to repeat: the server recognises the browser id and never creates a second copy.
+          const result = await persistAnnotation(documentRecord, record);
+          updates.set(record.id, { ...record, serverAnnotationId: result.annotation.id, serverCitationId: result.citation.id, pendingEdit: undefined });
+        } else {
+          await patchAnnotation(record.serverAnnotationId, { note: record.note, colorKey: record.colorKey, tags: record.tags ?? [] });
+          updates.set(record.id, { ...record, pendingEdit: undefined });
+        }
+        saved += 1;
+      } catch (error) { lastError = error; /* try the rest, report below */ }
+    }
+    if (updates.size) {
+      setAnnotations((previous) => {
+        const next = previous.map((record) => updates.get(record.id) ?? record);
+        saveAnnotations(next);
+        return next;
+      });
+    }
+    setSyncInfo((current) => ({ ...current, unsaved: pending.length - saved }));
+    setStatus(saved === pending.length ? `Saved ${saved} record${saved === 1 ? "" : "s"} to the database.` : `Saved ${saved} of ${pending.length}. The rest were not saved: ${whyNotSaved(lastError)}.`);
+  }
+
+  // Sync when a book is opened, and again whenever the tab is brought back into view.
+  const syncDocumentId = documentRecord?.server?.documentId;
+  useEffect(() => {
+    if (!syncDocumentId) return;
+    void syncFromServer();
+    function onVisible() {
+      if (document.visibilityState === "visible" && Date.now() - lastSyncRef.current > 30_000) void syncFromServer();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+    // The sync reads the current document and records; it should run per opened book.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncDocumentId]);
+
+  function openHighlight(id: string) {
+    const record = annotations.find((item) => item.id === id);
+    if (record) startEditing(record);
+  }
+
+  function cancelEditing() {
+    setEditingId(undefined);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote(""); setTags([]);
+    setStatus("Stopped editing. No changes were made.");
+  }
+
+  async function saveEdit() {
+    if (!editingRecord) return;
+    const nextNote = note.trim();
+    if (!nextNote && !editingRecord.selectedText.trim()) { setStatus("A page note cannot be left empty. Delete the highlight instead."); return; }
+    const nextTags = normalizeTags(tags);
+    let updated: SavedAnnotation = { ...editingRecord, note: nextNote, colorKey: selectedColor, tags: nextTags, pendingEdit: undefined };
+    let message = "Highlight updated.";
+    if (editingRecord.serverAnnotationId) {
+      try {
+        await patchAnnotation(editingRecord.serverAnnotationId, { note: nextNote, colorKey: selectedColor, tags: nextTags });
+      } catch (error) {
+        // Marked, so the next sync keeps this version instead of undoing it, and "Save unsaved" re-sends it.
+        updated = { ...updated, pendingEdit: true };
+        message = `Change kept in this browser only: ${whyNotSaved(error)}. Use "Save unsaved" in Highlights to try again.`;
+      }
+    } else {
+      message = "Highlight updated in this browser only.";
+    }
+    setAnnotations((previous) => {
+      const next = previous.map((record) => (record.id === updated.id ? updated : record));
+      saveAnnotations(next);
+      return next;
+    });
+    setEditingId(undefined);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote(""); setTags([]);
+    setStatus(message);
+  }
+
+  // Adds (or changes) the comment on an already saved highlight, from read mode.
+  async function attachNote(recordId: string, text: string) {
+    const record = annotations.find((item) => item.id === recordId);
+    if (!record) return;
+    const nextNote = text.trim();
+    let message = "Comment saved.";
+    let pendingEdit: true | undefined;
+    if (record.serverAnnotationId) {
+      try {
+        await patchAnnotation(record.serverAnnotationId, { note: nextNote });
+      } catch (error) {
+        pendingEdit = true;
+        message = `Comment kept in this browser only: ${whyNotSaved(error)}. Use "Save unsaved" in Highlights to try again.`;
+      }
+    } else {
+      message = "Comment kept in this browser only.";
+    }
+    setAnnotations((previous) => {
+      const next = previous.map((item) => (item.id === recordId ? { ...item, note: nextNote, pendingEdit: pendingEdit ?? item.pendingEdit } : item));
+      saveAnnotations(next);
+      return next;
+    });
+    setStatus(message);
+  }
+
+  async function deleteEditingRecord() {
+    if (!editingRecord) return;
+    if (!window.confirm("Delete this annotation and its citation? This cannot be undone.")) return;
+    const message = "Highlight deleted.";
+    if (editingRecord.serverAnnotationId) {
+      try {
+        const response = await fetch(`/api/core/annotations?annotationId=${encodeURIComponent(editingRecord.serverAnnotationId)}`, { method: "DELETE" });
+        // 404 means the database no longer has it, which is what we wanted.
+        if (!response.ok && response.status !== 404) throw new Error("delete failed");
+      } catch {
+        setStatus("The server could not delete this highlight, so it was kept. Try again.");
+        return;
+      }
+    }
+    setAnnotations((previous) => {
+      const next = previous.filter((record) => record.id !== editingRecord.id);
+      saveAnnotations(next);
+      return next;
+    });
+    setRecentAnnotationId((current) => (current === editingRecord.id ? undefined : current));
+    setEditingId(undefined);
+    setSelectedText("");
+    setAnchor(undefined);
+    setNote(""); setTags([]);
+    setStatus(message);
+  }
+
+  // Reopen a document that is stored on the server. Everything the reader needs
+  // is rebuilt from the database, written to this browser's storage in the same
+  // shape registration uses, and the page reloads so the normal recovery path
+  // (server PDF, or server text snapshot) loads it.
+  async function openSavedDocument(entry: SavedDocumentEntry) {
+    if ((selectedText.trim() || note.trim()) && !window.confirm("Opening another document will discard the unsaved selection and note. Continue?")) return;
+    setStatus(`Opening "${entry.title}" from the server…`);
+    try {
+      const server = await fetchServerRecords(entry.documentId, entry.pdfPageIndex);
+      if (!server) throw new Error("The document's records could not be loaded.");
+
+      const csl = (typeof entry.cslJson === "object" && entry.cslJson !== null ? entry.cslJson : {}) as Record<string, unknown>;
+      const firstAuthor = Array.isArray(csl.author) ? csl.author[0] as { literal?: string; given?: string; family?: string } | undefined : undefined;
+      const issued = (csl.issued as { "date-parts"?: unknown[][] } | undefined)?.["date-parts"]?.[0]?.[0];
+      const rule = /PDF page (\d+) = book page (\d+)/.exec(entry.pageMapNote ?? "");
+      const basePdfPageIndex = rule ? Number(rule[1]) : 1;
+      const baseBookPage = rule ? Number(rule[2]) : 1;
+      const opened: StoredDocument = {
+        id: entry.documentId,
+        title: entry.title,
+        filename: entry.filename,
+        kind: entry.kind,
+        mediaType: entry.mediaType,
+        size: entry.size ?? 0,
+        source: {
+          author: Array.isArray(csl.author) ? authorsToText(csl.author as Parameters<typeof authorsToText>[0]) : (firstAuthor?.literal ?? [firstAuthor?.given, firstAuthor?.family].filter(Boolean).join(" ")),
+          title: typeof csl.title === "string" ? csl.title : entry.title,
+          place: typeof csl["publisher-place"] === "string" ? csl["publisher-place"] : "",
+          publisher: typeof csl.publisher === "string" ? csl.publisher : "",
+          year: issued === undefined ? "" : String(issued)
+        },
+        pageMap: { basePdfPageIndex, baseBookPage, currentPdfPageIndex: entry.lastPage ?? readLastPages()[entry.documentId] ?? entry.pdfPageIndex },
+        server: { documentId: entry.documentId, versionId: entry.versionId, sourceId: entry.sourceId, pageMapId: entry.pageMapId, storageKey: entry.storageKey ?? undefined, snapshotKey: entry.snapshotKey ?? undefined, sourceChecksum: entry.sourceChecksum ?? undefined }
+      };
+
+      // The database is the truth: bring this book's records in line with it.
+      const merged = mergeServerRecords(annotations, server.records, { versionIds: server.versionIds, localDocumentIds: new Set([entry.documentId]) });
+
+      saveDocument(opened);
+      localStorage.removeItem(TEXT_CONTENT_KEY);
+      saveAnnotations(merged.records);
+      window.history.replaceState(null, "", "/");
+      window.location.reload();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The document could not be opened.");
+    }
+  }
+
+  // Open a Search result: jump to the page and light up the matched words, or
+  // load a note into the inspector. A result in another document first opens
+  // that document (the page reloads), then finishes the jump.
+  async function openSearchResult(request: SearchOpenRequest) {
+    setSearchOpen(false);
+    if (request.kind === "thread") {
+      setStatus("Opened the thread under Scholarly tools > Research threads.");
+      setToolsOpen(true);
+      return;
+    }
+    const hit = request.hit;
+    await openLocation({ documentId: hit.documentId, pdfPageIndex: hit.pdfPageIndex, terms: request.terms, annotationId: request.kind === "annotation" ? request.hit.annotationId : null, line: request.kind === "page" ? request.hit.line : null });
+  }
+
+  // Go to a place in any stored document, opening that document first if needed.
+  async function openLocation(target: { documentId: string; pdfPageIndex: number | null; terms: string[]; annotationId: string | null; line: number | null }) {
+    if (documentRecord?.server?.documentId === target.documentId) {
+      applySearchJump(target.pdfPageIndex, target.terms, target.annotationId, target.line);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/core/library?documentId=${encodeURIComponent(target.documentId)}`);
+      const body = await response.json() as { documents?: SavedDocumentEntry[] };
+      const entry = body.documents?.[0];
+      if (!response.ok || !entry) throw new Error("That document could not be found on the server.");
+      sessionStorage.setItem(PENDING_JUMP_KEY, JSON.stringify({ documentId: target.documentId, pdfPageIndex: target.pdfPageIndex, terms: target.terms, annotationId: target.annotationId }));
+      void openSavedDocument(entry);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The place could not be opened.");
+    }
+  }
+
+  function applySearchJump(pdfPageIndex: number | null, terms: string[], annotationId: string | null, line: number | null) {
+    if (annotationId) {
+      const record = annotations.find((item) => item.serverAnnotationId === annotationId);
+      if (record) { startEditing(record); if (pdfPageIndex) setSearchHighlight({ terms, pageNumber: pdfPageIndex }); return; }
+    }
+    if (pdfPageIndex && documentRecord?.kind === "PDF") {
+      goToPage(pdfPageIndex);
+      setSearchHighlight({ terms, pageNumber: pdfPageIndex });
+      setStatus(`Opened PDF page ${pdfPageIndex}. The matched words are outlined in orange.`);
+    } else if (line) {
+      setStatus(`The match is near line ${line} of this text document.`);
+    }
+  }
+
+  // Finish a jump begun in another document, once that document has loaded.
+  useEffect(() => {
+    if (!documentRecord) return;
+    const raw = sessionStorage.getItem(PENDING_JUMP_KEY);
+    if (!raw) return;
+    try {
+      const pending = JSON.parse(raw) as { documentId: string; pdfPageIndex: number | null; terms: string[]; annotationId: string | null };
+      if (pending.documentId !== documentRecord.server?.documentId) return;
+      sessionStorage.removeItem(PENDING_JUMP_KEY);
+      applySearchJump(pending.pdfPageIndex, pending.terms, pending.annotationId, null);
+    } catch {
+      sessionStorage.removeItem(PENDING_JUMP_KEY);
+    }
+    // applySearchJump closes over current state; this should run once per loaded document.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentRecord?.id, annotations.length]);
+
+
+  function previewReadingNote(candidate: ReadingNoteCandidate) {
+    if (!documentRecord || documentRecord.kind !== "PDF" || !candidate.anchor) return;
+    goToPage(candidate.anchor.pageNumber);
+    setAnchor(candidate.anchor);
+    setSelectedText(candidate.selectedText);
+    setNote(candidate.note);
+    setToolsOpen(false);
+    setInspectorOpen(true); setInspectorPinned(true);
+    setStatus(`Previewing the proposed highlight for book page ${candidate.pageLabel}. Review it in the inspector before importing.`);
+  }
+
+  function addImportedReadingNotes(records: ImportedReadingNoteRecord[]) {
+    if (!documentRecord) return;
+    const imported: SavedAnnotation[] = records.map((record) => ({
+      id: `import_${record.annotationId}`,
+      documentId: documentRecord.id,
+      versionId: documentRecord.server?.versionId,
+      snapshotKey: documentRecord.server?.snapshotKey,
+      colorKey: record.colorKey,
+      selectedText: record.selectedText,
+      note: record.note,
+      pdfPageIndex: record.pdfPageIndex,
+      bookPageLabel: record.bookPageLabel,
+      citationStyle: record.citationStyle as CitationStyle,
+      citationText: record.citationText,
+      anchor: record.anchor,
+      createdAt: record.createdAt,
+      serverAnnotationId: record.annotationId,
+      serverCitationId: record.citationId
+    }));
+    setAnnotations((previous) => {
+      const known = new Set(previous.map((record) => record.serverAnnotationId).filter(Boolean));
+      const next = [...imported.filter((record) => !known.has(record.serverAnnotationId)), ...previous];
+      saveAnnotations(next);
+      return next;
+    });
+    setLedgerOpen(true);
+    setStatus(`Imported ${imported.length} earlier reading note${imported.length === 1 ? "" : "s"} as native Ledger records.`);
+  }
+
+  const currentPage = documentRecord?.pageMap.currentPdfPageIndex ?? 1;
+
+  useEffect(() => {
+    const versionId = documentRecord?.server?.versionId;
+    if (!versionId || documentRecord?.kind !== "PDF") {
+      setAuthoritativePageText(null);
+      setAuthoritativeWords(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/ocr/page-text?versionId=${encodeURIComponent(versionId)}&pdfPageIndex=${currentPage}`)
+      .then((response) => (response.ok ? response.json() : { text: null, words: null }))
+      .then((body: { text?: string | null; words?: PdfAuthoritativeWord[] | null }) => {
+        if (cancelled) return;
+        setAuthoritativePageText(body.text ?? null);
+        setAuthoritativeWords(body.words ?? null);
+      })
+      .catch(() => {
+        // Best-effort only - most documents won't have extraction/OCR data
+        // yet, and that's a normal, silent case, not an error to surface.
+        if (!cancelled) {
+          setAuthoritativePageText(null);
+          setAuthoritativeWords(null);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [documentRecord?.server?.versionId, documentRecord?.kind, currentPage]);
+
+  const knownTags = (() => {
+    const counts = new Map<string, number>();
+    for (const record of annotations) for (const tag of record.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([tag]) => tag);
+  })();
+  // Printed page numbering for this document, loaded from the server.
+  const rangesVersionId = documentRecord?.kind === "PDF" ? documentRecord.server?.versionId : undefined;
+  useEffect(() => {
+    if (!rangesVersionId) { setPageRanges(null); return; }
+    let cancelled = false;
+    fetch(`/api/page-ranges?versionId=${encodeURIComponent(rangesVersionId)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { ranges: PageRangeSpec[]; source: "saved" | "legacy" } | null) => { if (!cancelled && body) setPageRanges({ ranges: body.ranges, saved: body.source === "saved" }); })
+      .catch(() => { if (!cancelled) setPageRanges(null); });
+    return () => { cancelled = true; };
+  }, [rangesVersionId]);
+
+  async function savePageRanges(ranges: PageRangeSpec[]) {
+    if (!documentRecord?.server?.versionId) throw new Error("Save this document to the server first.");
+    const response = await fetch("/api/page-ranges", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ versionId: documentRecord.server.versionId, ranges }) });
+    const body = await response.json().catch(() => ({})) as { error?: string; ranges?: PageRangeSpec[] };
+    if (!response.ok || !body.ranges) throw new Error(body.error ?? "Could not save the numbering.");
+    setPageRanges({ ranges: body.ranges, saved: true });
+    const stale = annotations.filter((record) => record.anchor && !isTextAnchor(record.anchor) && recordMatchesCurrentVersion(record, documentRecord) && labelForPage(body.ranges!, record.anchor.pageNumber) !== (record.bookPageLabel || null));
+    return stale.length > 0
+      ? `Numbering saved. ${stale.length} saved record${stale.length === 1 ? " cites" : "s cite"} a different page number under it. Use “Refresh saved records” to update them.`
+      : "Numbering saved.";
+  }
+
+  // Re-derive the page number and citation of saved records after the numbering changed.
+  async function refreshSavedRecordPages() {
+    if (!documentRecord || !pageRanges) return;
+    const pending = annotations.flatMap((record) => {
+      if (!record.anchor || isTextAnchor(record.anchor) || !recordMatchesCurrentVersion(record, documentRecord)) return [];
+      const label = labelForPage(pageRanges.ranges, record.anchor.pageNumber) ?? "";
+      return label === record.bookPageLabel ? [] : [{ record, label }];
+    });
+    const updates: Array<{ record: SavedAnnotation; label: string; citationText: string }> = [];
+    for (const item of pending) {
+      const formatted = await formatViaEngine(documentRecord, item.label, item.record.citationStyle, false);
+      updates.push({ ...item, citationText: formatted?.text ?? citation(documentRecord, item.label, item.record.citationStyle) });
+    }
+    if (updates.length === 0) { setStatus("Every highlight already matches the page numbers."); return; }
+    let failed = 0;
+    for (const update of updates) {
+      if (!update.record.serverAnnotationId) continue;
+      try {
+        const response = await fetch("/api/core/annotations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ annotationId: update.record.serverAnnotationId, locatorValue: update.label, citationText: update.citationText }) });
+        if (!response.ok) failed += 1;
+      } catch { failed += 1; }
+    }
+    const byId = new Map(updates.map((update) => [update.record.id, update]));
+    setAnnotations((previous) => {
+      const next = previous.map((record) => { const update = byId.get(record.id); return update ? { ...record, bookPageLabel: update.label, citationText: update.citationText } : record; });
+      saveAnnotations(next);
+      return next;
+    });
+    setStatus(failed ? `Updated ${updates.length} records here; ${failed} could not be updated in the database.` : `Updated ${updates.length} saved record${updates.length === 1 ? "" : "s"} to the new page numbering.`);
+  }
+
+  function goToBookPage() {
+    if (!pageRanges) return;
+    const target = pdfPageForLabel(pageRanges.ranges, bookPageGoto, pageCount || undefined);
+    if (!target) { setStatus(`No page numbered “${bookPageGoto.trim()}” was found in this book’s numbering.`); return; }
+    goToPage(target);
+    setStatus(`Went to book page ${bookPageGoto.trim()} (PDF page ${target}).`);
+  }
+
+  const unsavedCount = documentRecord?.server ? annotations.filter((record) => (!record.serverAnnotationId || record.pendingEdit) && (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id)).length : 0;
+  const usedHighlightColors = allHighlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
+  const filteredAnnotations = annotations.filter((record) => {
+    if (tagFilter && !(record.tags ?? []).some((tag) => tag.toLowerCase() === tagFilter.toLowerCase())) return false;
+    if (ledgerFilter === "all") return true;
+    if (ledgerFilter === "prior") return !recordMatchesCurrentVersion(record, documentRecord);
+    return record.colorKey === ledgerFilter;
+  });
+
+  const detailsOpen = compactLayout ? inspectorOpen : inspectorPinned;
+  function hideDetails() { setInspectorOpen(false); setInspectorPinned(false); }
+  function toggleDetails() { if (detailsOpen) hideDetails(); else openAnnotationInspector(); }
+
+  function openAnnotationInspector() {
+    setInspectorOpen(true); setInspectorPinned(true);
+    window.requestAnimationFrame(() => {
+      const field = selectedTextAreaRef.current;
+      if (!field || field.disabled) return;
+      field.scrollIntoView({ behavior: "smooth", block: "center" });
+      field.focus({ preventScroll: true });
+      setStatus(selectedText.trim()
+        ? "Annotation inspector focused. Review the selected passage, add your note, and save."
+        : "Annotation inspector focused. Select a passage in the document or enter one here.");
+    });
+  }
+
+  function openCurrentRecord(record: SavedAnnotation) {
+    if (!recordMatchesCurrentVersion(record, documentRecord) || !record.anchor || isTextAnchor(record.anchor)) return;
+    goToPage(record.anchor.pageNumber);
+    setLedgerOpen(false);
+    setStatus(`Opened saved highlight on PDF page ${record.anchor.pageNumber}.`);
+  }
+
+  return (
+    <section ref={workspaceRef} className={`ledgerWorkspace${ledgerOpen ? " leftOpen" : ""}${inspectorPinned ? " inspectorPinned" : ""}${inspectorOpen ? " inspectorOpen" : ""}${readMode ? " readMode" : ""}`} aria-label="Scriptorium scholarly reading workspace">
+      <a className="skipLink" href="#ledger-reader">Skip to document</a>
+      <header className="ledgerTopbar">
+        <div className="ledgerBrand">
+          <strong>Scriptorium</strong>
+          <span aria-hidden="true">/</span>
+          <span className="activeDocumentTitle">{documentRecord?.title ?? "No book open"}</span>
+          {documentRecord ? <span className="locatorChip">{isText(documentRecord) ? `Line ${locator}` : (locator ? `Page ${locator}` : `PDF page ${currentPage}`)}</span> : null}
+        </div>
+        <div className="ledgerActions">
+          <button className="compactAction" type="button" onClick={() => setSearchOpen(true)} title="Search (Ctrl+K or /)">Search</button>
+          <button className="compactAction ledgerToggle" type="button" aria-pressed={ledgerOpen} onClick={() => setLedgerOpen((open) => !open)} title="Your highlights in this book">Highlights{annotations.length > 0 ? <span className="countBadge">{annotations.length}</span> : null}</button>
+          <button
+            className="compactAction inspectorToggle"
+            type="button"
+            aria-controls="annotation-inspector"
+            aria-expanded={detailsOpen}
+            aria-pressed={detailsOpen}
+            title="Note, citation and book information"
+            onClick={toggleDetails}
+          >
+            Details
+          </button>
+          <a className="compactAction" href="/library" title="Your library: every book, with filters and collections">Library</a>
+          <ThemeMenu />
+          <MoreMenu
+            badge={pendingSplitOcr}
+            items={[
+              { key: "add", label: "Add a book…", onSelect: () => setAddBook("menu") },
+              { key: "bookmark", label: bookmarks.some((bookmark) => bookmark.pdfPage === currentPage) ? "Remove bookmark from this page" : "Bookmark this page", onSelect: () => void toggleBookmark(), hidden: !bookmarkDocumentId },
+              { key: "tools", label: pendingSplitOcr ? "Tools (needs attention)" : "Tools", onSelect: () => setToolsOpen(true) },
+              { key: "help", label: "Keyboard shortcuts", onSelect: () => setHelpOpen(true) },
+              { key: "signout", label: "Sign out", onSelect: () => void signOut(), hidden: !canSignOut }
+            ]}
+          />
+          <input ref={fileInputRef} className="srOnly" type="file" tabIndex={-1} aria-label="Add a book" accept="application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" onChange={registerSource} />
+        </div>
+      </header>
+
+      {pendingSplitOcr ? (
+        <div className="ledgerAttention" role="status">
+          <span><strong>OCR required for the new split document.</strong> Open Scholarly tools to make its pages selectable, searchable, and exportable.</span>
+          <button type="button" onClick={() => setToolsOpen(true)}>Open OCR tools</button>
+        </div>
+      ) : null}
+
+      <div className="ledgerBody">
+        <aside className={`ledgerPane${ledgerOpen ? " open" : ""}`} aria-label="Highlights">
+          <div className="paneHeader">
+            <div><h2>Highlights</h2></div>
+            <button className="paneClose" type="button" onClick={() => setLedgerOpen(false)} aria-label="Close saved records">×</button>
+          </div>
+          {annotations.length > 0 ? <p className="paneCount">{annotations.length} highlight{annotations.length === 1 ? "" : "s"}</p> : null}
+          <div className="ledgerFilters" aria-label="Filter saved records">
+            <button type="button" className={ledgerFilter === "all" ? "active" : ""} onClick={() => setLedgerFilter("all")}>All</button>
+            {usedHighlightColors.map((color) => <button type="button" title={meaningFor(color.key, legend)} aria-label={`Filter by ${swatchName(color.key, legend)}`} className={ledgerFilter === color.key ? "active" : ""} onClick={() => setLedgerFilter(color.key)} key={color.key}><span style={{ background: color.color }} /></button>)}
+            {annotations.some((record) => !recordMatchesCurrentVersion(record, documentRecord)) ? <button type="button" className={ledgerFilter === "prior" ? "active" : ""} onClick={() => setLedgerFilter("prior")}>Prior</button> : null}
+          </div>
+          {knownTags.length > 0 ? (
+            <select className="ledgerTagFilter" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} aria-label="Filter by tag">
+              <option value="">All tags</option>
+              {knownTags.map((tag) => <option key={tag} value={tag}>#{tag}</option>)}
+            </select>
+          ) : null}
+          {bookmarks.length > 0 ? (
+            <details className="ledgerBookmarks">
+              <summary>Bookmarks · {bookmarks.length}</summary>
+              <ul>
+                {bookmarks.map((bookmark) => {
+                  const label = pageRanges ? labelForPage(pageRanges.ranges, bookmark.pdfPage) : null;
+                  return (
+                    <li key={bookmark.id}>
+                      <button type="button" onClick={() => goToPage(bookmark.pdfPage)}>{label ? `Book p. ${label}` : `PDF p. ${bookmark.pdfPage}`}<small> · PDF {bookmark.pdfPage}</small></button>
+                      <button type="button" className="bookmarkRemove" aria-label={`Remove bookmark on PDF page ${bookmark.pdfPage}`} onClick={async () => { await fetch(`/api/bookmarks?id=${encodeURIComponent(bookmark.id)}`, { method: "DELETE" }); setBookmarks((current) => current.filter((item) => item.id !== bookmark.id)); }}>×</button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </details>
+          ) : null}
+          {unsavedCount > 0 || syncInfo.unreachable ? (
+            <div className="syncNotice" role="status">
+              {syncInfo.unreachable ? <span>The database could not be reached; this is the copy saved in this browser.</span> : null}
+              {unsavedCount > 0 ? <span>{unsavedCount} record{unsavedCount === 1 ? " has" : "s have"} changes not yet saved to the database.</span> : null}
+              <span>
+                {unsavedCount > 0 ? <button type="button" className="textAction" onClick={() => void saveUnsavedRecords()}>Save to the database</button> : null}{" "}
+                <button type="button" className="textAction" onClick={() => void syncFromServer(true)}>Check again</button>
+              </span>
+            </div>
+          ) : null}
+          <div className="ledgerRecords">
+            {filteredAnnotations.length === 0 ? <p className="emptyAnnotationState">No highlights yet. Select text on the page to make one.</p> : filteredAnnotations.map((record) => {
+              const color = findHighlightColor(record.colorKey);
+              const current = recordMatchesCurrentVersion(record, documentRecord);
+              const canOpen = current && record.anchor && !isTextAnchor(record.anchor);
+              return <article className={`ledgerRecord${record.id === editingId ? " editing" : ""}`} key={record.id}>
+                <div className="recordHeader"><span className="recordColor" style={{ background: color.color }} /><strong>{meaningFor(color.key, legend)}</strong><span>{isText(documentRecord) ? "line" : "book p."} {record.bookPageLabel}</span></div>
+                {record.selectedText ? <blockquote>{record.selectedText}</blockquote> : null}
+                {record.note ? <p>{record.note}</p> : null}
+                {(record.tags ?? []).length ? <div className="recordTags">{(record.tags ?? []).map((tag) => <span key={tag}>#{tag}</span>)}</div> : null}
+                <div className="recordCitation">{record.citationText}</div>
+                {!current || !record.serverAnnotationId ? <small className="recordUnsaved">{[!current ? "From an earlier version of this file" : "", !record.serverAnnotationId ? "Not saved yet" : ""].filter(Boolean).join(" · ")}</small> : null}
+                <div className="recordActions">
+                  <button className="recordOpen" type="button" onClick={() => startEditing(record)}>Edit</button>
+                  {canOpen ? <button className="recordOpen" type="button" onClick={() => openCurrentRecord(record)}>Go to highlight</button> : null}
+                  {record.serverAnnotationId ? <AddToThread annotationId={record.serverAnnotationId} onResult={setStatus} /> : null}
+                </div>
+              </article>;
+            })}
+          </div>
+          <div className="ledgerFooter">
+                        {documentRecord?.server?.documentId ? (
+              <details className="exportMenu">
+                <summary>Export highlights</summary>
+                <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=docx&style=${style === "chicago-note" || style === "turabian-note" ? style : "sbl-note"}`}>Word (footnotes + bibliography)</a>
+                <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=markdown&style=${style === "chicago-note" || style === "turabian-note" ? style : "sbl-note"}`}>Markdown</a>
+                <a href={`/api/documents/export?documentId=${encodeURIComponent(documentRecord.server.documentId)}&format=csv`}>Spreadsheet (CSV)</a>
+              </details>
+            ) : null}
+          </div>
+        </aside>
+
+        <main className="ledgerReader" id="ledger-reader" tabIndex={-1}>
+          <section className="pdfPanel" aria-label="Document display">
+            {isPdf(documentRecord) ? (
+              pdfUrl ? <PdfAnchoredPageReader fileUrl={pdfUrl} pageNumber={currentPage} pageCount={pageCount} onPageChange={goToPage} highlights={activePdfHighlights} onPageCountChange={setPageCount} onSelectionCapture={capturePdfAnchor} onStatusChange={setStatus} onMetadataExtracted={mergePdfMetadata} authoritativePageText={authoritativePageText} authoritativeWords={authoritativeWords} hasSelection={Boolean(selectedText || anchor)} onClearSelection={clearSelection} searchTerms={searchHighlight && searchHighlight.pageNumber === currentPage ? searchHighlight.terms : null} onClearSearch={() => setSearchHighlight(null)} onHighlightClick={openHighlight} readMode={readMode} onToggleReadMode={() => (readMode ? exitReadMode() : enterReadMode())} /> : (documentRecord?.kind === "PDF" && documentRecord.server && !documentRecord.server.storageKey
+                ? <div className="emptyPdfState"><strong>This book&apos;s PDF isn&apos;t in your library yet.</strong><span>Choose the PDF file once. It will be saved to your library and open on every device from then on. Your highlights and notes stay as they are.</span><label className="uploadButton emptyPdfAttach">{serverCopy?.phase === "saving" ? `Saving… ${serverCopy.percent}%` : "Choose PDF file"}<input type="file" accept="application/pdf,.pdf" onChange={chooseMissingPdf} disabled={serverCopy?.phase === "saving"} /></label></div>
+                : <div className="emptyPdfState"><strong>No PDF available.</strong><span>Register a PDF to begin.</span></div>)
+            ) : isText(documentRecord) ? (
+              textContent ? <TextAnchoredReader text={textContent} highlights={visibleTextHighlights} onSelectionCapture={captureTextAnchor} onStatusChange={setStatus} /> : <div className="emptyPdfState"><strong>No text snapshot available.</strong><span>Register a TXT, Markdown, or DOCX file.</span></div>
+            ) : <div className="emptyPdfState"><strong>No source registered yet.</strong><span>Use Register source to load PDF, TXT, Markdown, or DOCX.</span></div>}
+          </section>
+        </main>
+
+        <aside id="annotation-inspector" className="inspectorPane" aria-label="Annotation inspector" aria-hidden={(!inspectorPinned || compactLayout) && !inspectorOpen}>
+          <div className="paneHeader">
+            <div><h2>{editingRecord ? "Edit highlight" : "Details"}</h2></div>
+            <button className="paneClose inspectorClose" type="button" onClick={() => setInspectorOpen(false)} aria-label="Close annotation inspector">×</button>
+          </div>
+          <div className="captureCard">
+            <label>Selected passage<textarea ref={selectedTextAreaRef} className="autoGrowTextarea" value={selectedText} onChange={(event) => setSelectedText(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Selected text appears here." rows={5} disabled={!documentRecord} readOnly={Boolean(editingRecord)} /></label>
+            {editingRecord ? <p className="anchorSummary">The passage and citation of a saved record are fixed. You can change the note and colour.</p> : (selectedText || anchor) ? <button className="textAction" type="button" onClick={clearSelection}>Clear selection</button> : null}
+            <label>Note<textarea ref={noteTextAreaRef} className="autoGrowTextarea" value={note} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void (editingRecord ? saveEdit() : saveRecord()); } }} onChange={(event) => setNote(event.target.value)} onInput={(event) => autoResize(event.currentTarget)} placeholder="Add your note." rows={5} disabled={!documentRecord} /></label>
+            <TagInput value={tags} onChange={setTags} suggestions={knownTags} disabled={!documentRecord} />
+            <fieldset className="colorPicker"><legend>Highlight meaning</legend><div>{highlightColors.map((color) => <button className={selectedColor === color.key ? "active" : ""} aria-label={`${swatchName(color.key, legend)}${selectedColor === color.key ? ", selected" : ""}`} title={swatchName(color.key, legend)} key={color.key} onClick={() => setSelectedColor(color.key)} type="button"><span style={{ background: color.color }} /></button>)}</div><HighlightMeaning colorKey={selectedColor} legend={legend} onRename={renameColor} className="colorMeaning" /></fieldset>
+            <label>Citation style<select value={style} onChange={(event) => setStyle(event.target.value as CitationStyle)}><option value="sbl-note">SBL note</option><option value="chicago-note">Chicago note</option><option value="turabian-note">Turabian note (Chicago form)</option><option value="apa">APA</option><option value="mla">MLA</option><option value="harvard">Harvard</option></select></label>
+            <div className="generatedCitation"><span>Citation</span><p>{editingRecord ? editingRecord.citationText : generatedCitation}</p>{!editingRecord && engineCitation && engineCitation.missing.length > 0 ? <small className="citationMissing">This source has no {engineCitation.missing.join(", ").replace(/, ([^,]*)$/, " or $1")} recorded, so the citation is incomplete. Add it under Book information below.</small> : null}</div>
+            {editingRecord ? <>
+              <button className="primaryButton saveRecordButton" onClick={saveEdit} type="button">Save changes</button>
+              <div className="editActions">
+                <button className="textAction" type="button" onClick={cancelEditing}>Cancel</button>
+                <button className="textAction dangerAction" type="button" onClick={deleteEditingRecord}>Delete this record</button>
+              </div>
+            </> : <div className="pendingActions">
+              {(selectedText.trim() || anchor || note.trim() || tags.length > 0) ? <button className="secondaryButton discardRecordButton" onClick={discardPending} type="button">Discard</button> : null}
+              <button className="primaryButton saveRecordButton" onClick={saveRecord} type="button">{selectedText.trim() ? "Save highlight" : "Save page note"}</button>
+            </div>}
+          </div>
+          {recentSavedRecord && recentSavedColor ? <div className="recentSavedRecord"><div><span className="recordColor" style={{ background: recentSavedColor.color }} /><strong>Latest saved record</strong></div>{recentSavedRecord.selectedText ? <blockquote>{recentSavedRecord.selectedText}</blockquote> : null}{recentSavedRecord.note ? <p>{recentSavedRecord.note}</p> : null}<small>{isText(documentRecord) ? "line" : "book page"} {recentSavedRecord.bookPageLabel} · {recentSavedRecord.serverAnnotationId ? "database" : "local"}</small></div> : null}
+          <details className="inspectorGroup">
+            <summary>Book information {sourceSaveMessage.startsWith("Unsaved") ? <span className="unsavedDot" aria-label="Unsaved changes" /> : null}</summary>
+            <div className="inspectorGroupContent">
+              <label>Title<input value={documentRecord?.source.title ?? ""} onChange={(event) => updateSource("title", event.target.value)} disabled={!documentRecord} /></label>
+              <label>Author / editor<input value={documentRecord?.source.author ?? ""} onChange={(event) => updateSource("author", event.target.value)} disabled={!documentRecord} /><small className="fieldHint">Several authors: separate with “and”. An organisation: put it in {"{braces}"}.</small></label>
+              <div className="twoColumnInputs"><label>Place<input value={documentRecord?.source.place ?? ""} onChange={(event) => updateSource("place", event.target.value)} disabled={!documentRecord} /></label><label>Year<input value={documentRecord?.source.year ?? ""} onChange={(event) => updateSource("year", event.target.value)} disabled={!documentRecord} /></label></div>
+              <label>Publisher<input value={documentRecord?.source.publisher ?? ""} onChange={(event) => updateSource("publisher", event.target.value)} disabled={!documentRecord} /></label>
+              <button className="secondaryButton" onClick={saveSourceRecord} type="button" disabled={!documentRecord}>Save CSL source metadata</button>
+              <button className="textAction" type="button" onClick={() => setLookupOpen(true)} disabled={!documentRecord}>Fill in details from an ISBN, DOI or Zotero…</button>
+              {sourceSaveMessage ? <p className="inlineSaveNotice">{sourceSaveMessage}</p> : null}
+            </div>
+          </details>
+          <details className="inspectorGroup">
+            <summary>{isPdf(documentRecord) ? "Page numbers" : "Text locator"}</summary>
+            <div className="inspectorGroupContent">
+              {isPdf(documentRecord) ? <>
+                <div className="twoColumnInputs"><label>PDF page<input type="number" min="1" max={pageCount || undefined} value={currentPage} onChange={(event) => goToPage(Number(event.target.value))} disabled={!documentRecord} /></label><label>Book page<input value={locator} readOnly /></label></div>
+                <div className="goToBookPage"><label>Go to book page<input id="go-to-book-page" value={bookPageGoto} onChange={(event) => setBookPageGoto(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") goToBookPage(); }} placeholder="e.g. 47 or xiv" disabled={!documentRecord || !pageRanges} /></label><button className="secondaryButton" type="button" onClick={goToBookPage} disabled={!bookPageGoto.trim() || !pageRanges}>Go</button></div>
+                {pageRanges ? <PageNumberingEditor ranges={pageRanges.ranges} saved={pageRanges.saved} currentPage={currentPage} pageCount={pageCount} disabled={!documentRecord?.server?.versionId} onSave={savePageRanges} /> : <p className="pageNumberingHelp">Page numbering loads once the document is saved to the server.</p>}
+                {pageRanges?.saved && annotations.some((record) => record.anchor && !isTextAnchor(record.anchor) && recordMatchesCurrentVersion(record, documentRecord)) ? <button className="textAction" type="button" onClick={() => void refreshSavedRecordPages()}>Refresh saved records to match this numbering</button> : null}
+              </> : <div className="textLocatorBox"><strong>{locator === "-" ? "No text-like document registered" : `Current locator: line ${locator}`}</strong><span>TXT, Markdown, and DOCX anchors use character offsets plus line numbers. Current snapshot checksum: {documentRecord?.server?.sourceChecksum?.slice(0, 12) ?? "not persisted"}.</span></div>}
+            </div>
+          </details>
+        </aside>
+      </div>
+
+      <p className="ledgerStatus" role="status" aria-live="polite">{status}</p>
+
+      {readMode ? (
+        <>
+          <ReadModeToolbar
+            colors={highlightColors}
+            legend={legend}
+            onRename={renameColor}
+            selectedColor={selectedColor}
+            highlighterOn={highlighterOn}
+            onSelectColor={(key) => { setSelectedColor(key); setStatus(`Highlight meaning: ${meaningFor(key, legend)}.`); }}
+            onToggleHighlighter={() => setHighlighterOn((on) => !on)}
+            onSearch={() => setSearchOpen(true)}
+            onExit={exitReadMode}
+          />
+          {readMode && !highlighterOn && anchor && selectedText.trim() && !editingId ? (
+            <ReadNoteCard
+              mode="pending"
+              excerpt={selectedText.trim()}
+              colors={highlightColors}
+              legend={legend}
+              selectedColor={selectedColor}
+              onSelectColor={setSelectedColor}
+              note={note}
+              onNoteChange={setNote}
+              onPrimary={() => void saveRecord()}
+              onSecondary={discardPending}
+            />
+          ) : savedCardOpen && recentSavedRecord ? (
+            <ReadNoteCard
+              mode="saved"
+              excerpt={recentSavedRecord.selectedText}
+              colors={highlightColors}
+              legend={legend}
+              selectedColor={recentSavedRecord.colorKey}
+              onSelectColor={() => undefined}
+              note={cardNote}
+              onNoteChange={setCardNote}
+              onPrimary={() => { void attachNote(recentSavedRecord.id, cardNote); setSavedCardOpen(false); }}
+              onSecondary={() => { if (cardNote.trim() && cardNote.trim() !== (recentSavedRecord.note ?? "")) void attachNote(recentSavedRecord.id, cardNote); setSavedCardOpen(false); }}
+            />
+          ) : null}
+        </>
+      ) : null}
+      {/* Only what is worth a reader's attention: not how a page was drawn or what was captured. */}
+      {positionNotice ? <p className="serverCopyNotice done positionNotice" role="status">{positionNotice}</p> : null}
+      {addBook ? <AddBookDialog startWith={addBook} onClose={() => setAddBook(null)} onPickDevice={() => fileInputRef.current?.click()} onFile={registerFile} /> : null}
+      {serverCopy ? (
+        <p className={`serverCopyNotice ${serverCopy.phase}`} role="status">
+          {serverCopy.phase === "saving" ? `Saving a copy of this book to your server… ${serverCopy.percent}%. Keep this page open.` : serverCopy.phase === "done" ? "A copy of this book is now saved on your server." : serverCopy.phase === "different" ? "Not saved: that is a different file from the one first added for this book." : "This book could not be copied to your server yet. Reload this page to try again."}
+        </p>
+      ) : null}
+      {/^(Captured|Rendered|PDF\.js loaded|Using this page|Recovered|Highlight meaning|Register a PDF)/.test(status) ? null : <p key={status} className="readToast" aria-hidden="true">{status}</p>}
+
+      {helpOpen ? (
+        <>
+          <button className="drawerScrim" type="button" onClick={() => setHelpOpen(false)} aria-label="Close shortcuts" />
+          <div className="savedDocsDialog shortcutsDialog" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+            <div className="drawerHeader"><div><p className="eyebrow">Reading</p><strong>Keyboard shortcuts</strong></div><button type="button" onClick={() => setHelpOpen(false)} aria-label="Close shortcuts">×</button></div>
+            <div className="savedDocsBody">
+              <dl className="shortcutList">
+                <dt>← → or PageUp / PageDown</dt><dd>Previous / next page (also j and k)</dd>
+                <dt>Home / End</dt><dd>First / last page</dd>
+                <dt>z</dt><dd>Read mode: the page fills the screen (press again, or Esc, to leave)</dd>
+                <dt>h</dt><dd>In read mode: turn the highlighter on or off</dd>
+                <dt>1 – 9, 0</dt><dd>Choose the highlight meaning (colour)</dd>
+                <dt>n</dt><dd>Write a note for the selection</dd>
+                <dt>Ctrl / ⌘ + Enter</dt><dd>Save, while typing a note</dd>
+                <dt>g</dt><dd>Go to a printed book page</dd>
+                <dt>b</dt><dd>Bookmark this page, or remove the bookmark</dd>
+                <dt>Ctrl / ⌘ + K, or /</dt><dd>Search</dd>
+                <dt>+ and −</dt><dd>Zoom in and out</dd>
+                <dt>f / r</dt><dd>Fit the page to the width / reset zoom</dd>
+                <dt>Esc</dt><dd>Close whatever is open</dd>
+                <dt>?</dt><dd>Show or hide this list</dd>
+              </dl>
+              <p className="backupFine">Shortcuts are switched off while you are typing in a box or while a window is open.</p>
+            </div>
+          </div>
+        </>
+      ) : null}
+      <SourceLookupDialog open={lookupOpen} onApply={applyLookedUpSource} onClose={() => setLookupOpen(false)} />
+      <SearchPanel open={searchOpen} currentDocumentId={documentRecord?.server?.documentId} onOpenResult={(request) => void openSearchResult(request)} onClose={() => setSearchOpen(false)} />
+
+      <div className={`toolsDrawer${toolsOpen ? " open" : ""}`} aria-hidden={!toolsOpen}>
+        <div className="drawerHeader"><div><p className="eyebrow">Research utilities</p><strong>Scholarly tools</strong></div><button type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools">×</button></div>
+        <ScholarlyToolsPanel active={toolsOpen} onPreviewReadingNote={previewReadingNote} onReadingNotesImported={addImportedReadingNotes} onOpenAnnotation={(request) => { setToolsOpen(false); void openLocation({ documentId: request.documentId, pdfPageIndex: request.pdfPageIndex, terms: [], annotationId: request.annotationId, line: null }); }} />
+      </div>
+      {toolsOpen ? <button className="drawerScrim" type="button" onClick={() => { setToolsOpen(false); setPendingSplitOcr(Boolean(localStorage.getItem(PENDING_SPLIT_OCR_KEY))); }} aria-label="Close scholarly tools" /> : null}
+      {ledgerOpen ? <button className="ledgerScrim" type="button" onClick={() => setLedgerOpen(false)} aria-label="Close saved records" /> : null}
+      {(!inspectorPinned || compactLayout) && inspectorOpen ? <button className="inspectorScrim" type="button" onClick={() => setInspectorOpen(false)} aria-label="Close annotation inspector" /> : null}
+    </section>
+  );
+}

@@ -7,6 +7,11 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 export SCRIPTORIUM_AUTH_DISABLED=true SCRIPTORIUM_FAKE_EMBEDDINGS=1 SCRIPTORIUM_RATE_LIMITS_DISABLED=true
+# Add a book: stand-ins for Box (served by e2e-add-book.mjs on port 4601) and Google, and links to the local test
+# server. Test values only.
+export SCRIPTORIUM_IMPORT_ALLOW_PRIVATE=true SCRIPTORIUM_BOX_CLIENT_ID=test-box SCRIPTORIUM_BOX_CLIENT_SECRET=test-secret \
+  SCRIPTORIUM_BOX_AUTH_BASE=http://127.0.0.1:4601 SCRIPTORIUM_BOX_API_BASE=http://127.0.0.1:4601 \
+  SCRIPTORIUM_GOOGLE_CLIENT_ID=test.apps.googleusercontent.com SCRIPTORIUM_GOOGLE_API_KEY=test-key SCRIPTORIUM_GOOGLE_APP_ID=1234
 base=http://127.0.0.1:3100
 log=next-server.log
 
@@ -26,10 +31,13 @@ echo "== live checks (storage: ${SCRIPTORIUM_STORAGE_BACKEND:-local disk}) =="
 for name in page-split search threads page-ranges sources reading meaning library jobs; do
   run node "scripts/verify-$name-api.mjs"
 done
+run node scripts/verify-search-indexes.mjs
 run node scripts/verify-large-upload.mjs
 run node scripts/e2e-attach-browser-book.mjs
 run node scripts/e2e-discard.mjs
 run node scripts/e2e-save-safety.mjs
+run node scripts/e2e-position-sync.mjs
+run node scripts/e2e-add-book.mjs
 if [ "${SCRIPTORIUM_STORAGE_BACKEND:-}" = "s3" ]; then run node scripts/verify-object-storage.mjs; fi
 run node scripts/e2e-browser.mjs
 run node scripts/e2e-library.mjs
@@ -38,4 +46,10 @@ run node scripts/e2e-theme.mjs
 run node scripts/e2e-layout.mjs
 # Last, because it empties the (throwaway) database and restores it from a backup.
 SCRIPTORIUM_ALLOW_WIPE=yes run node scripts/verify-backup-restore.mjs
+
+# OCR resume, stuck-job reconciliation and the database-wide heavy-task lock. It starts its own web server
+# and workers and must have the job queue to itself, so the server above (which works the queue) stops first.
+kill "$server_pid" 2>/dev/null || true
+wait "$server_pid" 2>/dev/null || true
+node scripts/verify-ocr-resume.mjs || { echo "FAILED: node scripts/verify-ocr-resume.mjs"; exit 1; }
 echo "== all live checks passed =="

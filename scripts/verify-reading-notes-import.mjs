@@ -55,7 +55,7 @@ assert.equal(analyzed[1].matchStatus, "page-note");
 
 const [tools, workspace, route] = await Promise.all([
   readFile("apps/web/components/ScholarlyToolsPanel.tsx", "utf8"),
-  readFile("apps/web/components/ScriptoriumMilestoneOnePersisted.tsx", "utf8"),
+  readFile("apps/web/components/ScriptoriumReader.tsx", "utf8"),
   readFile("apps/web/app/api/reading-notes/route.ts", "utf8")
 ]);
 assert.match(tools, /Import reading notes/);
