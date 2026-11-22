@@ -1,4 +1,5 @@
 import type { CitationStyleId, CslItem } from "./citation-styles";
+import { writeAnnotationCopy } from "./annotation-storage";
 import { formatCitation } from "./citation-styles";
 import type { PdfSelectionAnchor } from "../components/PdfAnchoredPageReader";
 import type { TextSelectionAnchor } from "../components/TextAnchoredReader";
@@ -215,7 +216,11 @@ export function rememberLastPage(documentId: string, page: number) {
   } catch { /* a reading convenience only */ }
 }
 
-export function saveAnnotations(records: SavedAnnotation[]) { localStorage.setItem(ANNOTATIONS_KEY, JSON.stringify(records)); }
+export function saveAnnotations(records: SavedAnnotation[]) {
+  let current: StoredDocument | null = null;
+  try { current = readDocument(); } catch { /* unreadable: keep everything that is unsent */ }
+  return writeAnnotationCopy(localStorage, ANNOTATIONS_KEY, records, current);
+}
 
 export function currentLocator(document: StoredDocument | null, anchor: SelectionAnchor | undefined, ranges?: PageRangeSpec[] | null) {
   if (!document) return "-";
