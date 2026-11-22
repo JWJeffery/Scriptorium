@@ -79,7 +79,8 @@ export async function GET(request: NextRequest) {
       } else {
         methodNote = "This book has not been indexed by meaning yet, so passages are ranked by shared words. Build the index under Scholarly tools > Meaning search.";
       }
-    } catch {
+    } catch (error) {
+      console.warn("[search] search by meaning failed; falling back to shared words:", error);
       methodNote = "Search by meaning is not available right now, so passages are ranked by shared words.";
     }
   }

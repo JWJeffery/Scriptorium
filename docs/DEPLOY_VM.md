@@ -114,6 +114,11 @@ update ever needs undoing, restore the dump taken just before it with `./deploy/
 
 ## Useful commands
 
+- Sign out every device (a lost phone, a shared computer): put a new random value in `SCRIPTORIUM_SESSION_SECRET` in
+  `.env.production` (make one with `openssl rand -hex 32`), then
+  `docker compose -f docker-compose.prod.yml --env-file .env.production up -d`. Every existing sign-in stops working;
+  sign in again on your own devices. (Signing out on one device only ends that device's session.)
+
 - Logs: `docker compose -f docker-compose.prod.yml --env-file .env.production logs -f web worker`
 - Restart: `docker compose -f docker-compose.prod.yml --env-file .env.production restart`
 - Background jobs: sign in, then open `/jobs`.

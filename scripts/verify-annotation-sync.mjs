@@ -30,4 +30,13 @@ assert.equal(belongsToScope({ id: "x", documentId: "elsewhere", createdAt: "" },
 // An empty server answer clears synced records but not unsaved ones
 const none = mergeServerRecords(local, [], scope);
 assert.deepEqual(none.records.map((record) => record.id).sort(), ["c3", "o4"]);
-console.log("Annotation sync verified: database wins, deletions propagate, unsaved work is kept, other books untouched.");
+// An edit the database never received survives the next sync (it used to be silently replaced).
+const edited = [{ id: "e1", documentId: "doc", versionId: "v1", serverAnnotationId: "s1", createdAt: "2026-01-01", note: "my new note", pendingEdit: true }];
+const fromServer = [{ id: "x", documentId: "doc", versionId: "v1", serverAnnotationId: "s1", createdAt: "2026-01-01", note: "old note" }];
+const kept = mergeServerRecords(edited, fromServer, { versionIds: new Set(["v1"]), localDocumentIds: new Set(["doc"]) });
+assert.equal(kept.records.length, 1);
+assert.equal(kept.records[0].note, "my new note", "the unsent edit is kept");
+assert.equal(kept.unsaved, 1, "and counted as unsaved so it can be sent again");
+// ...but if the highlight was deleted elsewhere, the deletion wins.
+assert.equal(mergeServerRecords(edited, [], { versionIds: new Set(["v1"]), localDocumentIds: new Set(["doc"]) }).records.length, 0);
+console.log("Annotation sync verified: database wins, deletions propagate, unsaved work and unsent edits are kept, other books untouched.");

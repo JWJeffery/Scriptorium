@@ -8,9 +8,11 @@
 //     elsewhere, so it is dropped
 //   * a record the database never received (saved while it was unreachable) is
 //     kept, flagged as unsaved, so it can be sent again
+//   * a record with an edit the database never received (pendingEdit) keeps the
+//     browser's version, flagged as unsaved, so the edit is not silently undone
 //   * records of other books are left alone
 
-export type SyncRecord = { id: string; documentId: string; versionId?: string; serverAnnotationId?: string; createdAt: string };
+export type SyncRecord = { id: string; documentId: string; versionId?: string; serverAnnotationId?: string; createdAt: string; pendingEdit?: boolean };
 
 export type SyncScope = { versionIds: Set<string>; localDocumentIds: Set<string> };
 
@@ -33,6 +35,7 @@ export function mergeServerRecords<T extends SyncRecord>(local: T[], fetched: T[
     const server = fresh.get(record.serverAnnotationId);
     if (!server) { removed += 1; continue; }
     fresh.delete(record.serverAnnotationId);
+    if (record.pendingEdit) { kept.push(record); unsaved += 1; continue; }
     kept.push({ ...server, id: record.id });
     updated += 1;
   }

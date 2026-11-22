@@ -22,7 +22,7 @@ import { ReadNoteCard } from "./ReadNoteCard";
 import { ThemeMenu } from "./ThemeMenu";
 import { MoreMenu } from "./MoreMenu";
 
-import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getBrowserPdf, persistDocument, persistPdfFile, attachPdfToServer, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation } from "../lib/reader-model";
+import { type CitationStyle, type SourceRecord, type PageMap, type StoredDocument, type SelectionAnchor, type SavedAnnotation, type EngineCitation, TEXT_CONTENT_KEY, DRAFT_KEY, PENDING_SPLIT_OCR_KEY, PENDING_JUMP_KEY, EMPTY_SOURCE, DEFAULT_PAGE_MAP, localId, bookPage, serverPdfUrl, isPdf, isText, isTextAnchor, lineLocator, normalizeTextSnapshot, mediaTypeFor, formatFor, titleFromFilename, fileKind, citation, formatViaEngine, validateSource, readDocument, readAnnotations, saveDocument, saveTextContent, readTextContent, fetchServerRecords, readLastPages, rememberLastPage, saveAnnotations, currentLocator, recordMatchesCurrentVersion, putPdf, getBrowserPdf, persistDocument, persistPdfFile, attachPdfToServer, findDuplicateFile, persistTextLikeFile, persistSourceMetadata, persistAnnotation, patchAnnotation, whyNotSaved, ServerRefusedError } from "../lib/reader-model";
 
 export function ScriptoriumMilestoneOnePersisted() {
   const [documentRecord, setDocumentRecord] = useState<StoredDocument | null>(null);
@@ -602,6 +602,11 @@ export function ScriptoriumMilestoneOnePersisted() {
     }
 
     if (kind === "PDF") {
+      // Same limit as the server (lib/server-storage.ts MAX_PDF_BYTES), checked before anything changes.
+      if (file.size > 75 * 1024 * 1024) {
+        setStatus(`Not added: this PDF is ${Math.round(file.size / 1024 / 1024)} MB, and the largest that can be added is 75 MB.`);
+        return;
+      }
       const duplicate = await findDuplicateFile(file);
       if (duplicate && !window.confirm(`This exact file is already in your library as "${duplicate.title}".\n\nPress OK to add another copy anyway, or Cancel and use "Open saved" to open the existing one.`)) {
         setStatus(`Not added: "${duplicate.title}" is already in your library. Use Open saved to open it.`);
@@ -638,13 +643,13 @@ export function ScriptoriumMilestoneOnePersisted() {
         const server = await persistPdfFile(file, nextDocument, bookPage(nextDocument.pageMap));
         nextDocument = { ...nextDocument, server };
         setStatus("Book added.");
-      } catch {
+      } catch (uploadError) {
         try {
           const server = await persistDocument(nextDocument, bookPage(nextDocument.pageMap));
           nextDocument = { ...nextDocument, server };
-          setStatus("Book added, but its file could not be stored on the server.");
-        } catch {
-          setStatus("Book opened here only; it could not be saved to the server.");
+          setStatus(`Book added, but its file is only in this browser for now (${whyNotSaved(uploadError)}). It will be copied to the server automatically when you next open it here.`);
+        } catch (recordError) {
+          setStatus(`Book opened here only; it could not be saved to the server (${whyNotSaved(recordError instanceof ServerRefusedError ? recordError : uploadError)}).`);
         }
       }
       setPdfUrl(URL.createObjectURL(file));
@@ -740,8 +745,8 @@ export function ScriptoriumMilestoneOnePersisted() {
       const serverRecord = await persistAnnotation(documentRecord, record);
       record = { ...record, serverAnnotationId: serverRecord.annotation.id, serverCitationId: serverRecord.citation.id };
       setStatus("Highlight saved.");
-    } catch {
-      setStatus("Highlight saved in this browser only; the server could not be reached.");
+    } catch (error) {
+      setStatus(`Highlight kept in this browser only: ${whyNotSaved(error)}. Use "Save unsaved" in Highlights to try again.`);
     }
 
     setAnnotations((previous) => {
@@ -799,15 +804,23 @@ export function ScriptoriumMilestoneOnePersisted() {
   // Send records that were saved only in this browser (the database was unreachable at the time).
   async function saveUnsavedRecords() {
     if (!documentRecord?.server) return;
-    const pending = annotations.filter((record) => !record.serverAnnotationId && (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id));
+    const inThisBook = (record: SavedAnnotation) => (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id);
+    const pending = annotations.filter((record) => inThisBook(record) && (!record.serverAnnotationId || record.pendingEdit));
     let saved = 0;
+    let lastError: unknown;
     const updates = new Map<string, SavedAnnotation>();
     for (const record of pending) {
       try {
-        const result = await persistAnnotation(documentRecord, record);
-        updates.set(record.id, { ...record, serverAnnotationId: result.annotation.id, serverCitationId: result.citation.id });
+        if (!record.serverAnnotationId) {
+          // Safe to repeat: the server recognises the browser id and never creates a second copy.
+          const result = await persistAnnotation(documentRecord, record);
+          updates.set(record.id, { ...record, serverAnnotationId: result.annotation.id, serverCitationId: result.citation.id, pendingEdit: undefined });
+        } else {
+          await patchAnnotation(record.serverAnnotationId, { note: record.note, colorKey: record.colorKey, tags: record.tags ?? [] });
+          updates.set(record.id, { ...record, pendingEdit: undefined });
+        }
         saved += 1;
-      } catch { /* try the rest, report below */ }
+      } catch (error) { lastError = error; /* try the rest, report below */ }
     }
     if (updates.size) {
       setAnnotations((previous) => {
@@ -817,7 +830,7 @@ export function ScriptoriumMilestoneOnePersisted() {
       });
     }
     setSyncInfo((current) => ({ ...current, unsaved: pending.length - saved }));
-    setStatus(saved === pending.length ? `Saved ${saved} record${saved === 1 ? "" : "s"} to the database.` : `Saved ${saved} of ${pending.length}. The database could not be reached for the rest; try again shortly.`);
+    setStatus(saved === pending.length ? `Saved ${saved} record${saved === 1 ? "" : "s"} to the database.` : `Saved ${saved} of ${pending.length}. The rest were not saved: ${whyNotSaved(lastError)}.`);
   }
 
   // Sync when a book is opened, and again whenever the tab is brought back into view.
@@ -852,18 +865,15 @@ export function ScriptoriumMilestoneOnePersisted() {
     const nextNote = note.trim();
     if (!nextNote && !editingRecord.selectedText.trim()) { setStatus("A page note cannot be left empty. Delete the highlight instead."); return; }
     const nextTags = normalizeTags(tags);
-    const updated: SavedAnnotation = { ...editingRecord, note: nextNote, colorKey: selectedColor, tags: nextTags };
+    let updated: SavedAnnotation = { ...editingRecord, note: nextNote, colorKey: selectedColor, tags: nextTags, pendingEdit: undefined };
     let message = "Highlight updated.";
     if (editingRecord.serverAnnotationId) {
       try {
-        const response = await fetch("/api/core/annotations", {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ annotationId: editingRecord.serverAnnotationId, note: nextNote, colorKey: selectedColor, tags: nextTags })
-        });
-        if (!response.ok) throw new Error("update failed");
-      } catch {
-        message = "Highlight updated in this browser only; the server could not be reached.";
+        await patchAnnotation(editingRecord.serverAnnotationId, { note: nextNote, colorKey: selectedColor, tags: nextTags });
+      } catch (error) {
+        // Marked, so the next sync keeps this version instead of undoing it, and "Save unsaved" re-sends it.
+        updated = { ...updated, pendingEdit: true };
+        message = `Change kept in this browser only: ${whyNotSaved(error)}. Use "Save unsaved" in Highlights to try again.`;
       }
     } else {
       message = "Highlight updated in this browser only.";
@@ -886,22 +896,19 @@ export function ScriptoriumMilestoneOnePersisted() {
     if (!record) return;
     const nextNote = text.trim();
     let message = "Comment saved.";
+    let pendingEdit: true | undefined;
     if (record.serverAnnotationId) {
       try {
-        const response = await fetch("/api/core/annotations", {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ annotationId: record.serverAnnotationId, note: nextNote })
-        });
-        if (!response.ok) throw new Error("update failed");
-      } catch {
-        message = "Comment kept in this browser only; the server could not be reached.";
+        await patchAnnotation(record.serverAnnotationId, { note: nextNote });
+      } catch (error) {
+        pendingEdit = true;
+        message = `Comment kept in this browser only: ${whyNotSaved(error)}. Use "Save unsaved" in Highlights to try again.`;
       }
     } else {
       message = "Comment kept in this browser only.";
     }
     setAnnotations((previous) => {
-      const next = previous.map((item) => (item.id === recordId ? { ...item, note: nextNote } : item));
+      const next = previous.map((item) => (item.id === recordId ? { ...item, note: nextNote, pendingEdit: pendingEdit ?? item.pendingEdit } : item));
       saveAnnotations(next);
       return next;
     });
@@ -1183,7 +1190,7 @@ export function ScriptoriumMilestoneOnePersisted() {
     setStatus(`Went to book page ${bookPageGoto.trim()} (PDF page ${target}).`);
   }
 
-  const unsavedCount = documentRecord?.server ? annotations.filter((record) => !record.serverAnnotationId && (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id)).length : 0;
+  const unsavedCount = documentRecord?.server ? annotations.filter((record) => (!record.serverAnnotationId || record.pendingEdit) && (record.versionId ? record.versionId === documentRecord.server?.versionId : record.documentId === documentRecord.id)).length : 0;
   const usedHighlightColors = allHighlightColors.filter((color) => annotations.some((record) => record.colorKey === color.key));
   const filteredAnnotations = annotations.filter((record) => {
     if (tagFilter && !(record.tags ?? []).some((tag) => tag.toLowerCase() === tagFilter.toLowerCase())) return false;
@@ -1300,7 +1307,7 @@ export function ScriptoriumMilestoneOnePersisted() {
           {unsavedCount > 0 || syncInfo.unreachable ? (
             <div className="syncNotice" role="status">
               {syncInfo.unreachable ? <span>The database could not be reached; this is the copy saved in this browser.</span> : null}
-              {unsavedCount > 0 ? <span>{unsavedCount} record{unsavedCount === 1 ? " is" : "s are"} only in this browser.</span> : null}
+              {unsavedCount > 0 ? <span>{unsavedCount} record{unsavedCount === 1 ? " has" : "s have"} changes not yet saved to the database.</span> : null}
               <span>
                 {unsavedCount > 0 ? <button type="button" className="textAction" onClick={() => void saveUnsavedRecords()}>Save to the database</button> : null}{" "}
                 <button type="button" className="textAction" onClick={() => void syncFromServer(true)}>Check again</button>
