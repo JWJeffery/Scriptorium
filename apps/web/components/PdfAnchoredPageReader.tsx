@@ -443,50 +443,60 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
     }
     node.addEventListener("wheel", onWheel, { passive: false });
 
-    // On a touch screen: a quick sideways swipe turns the page (left = next, right = previous). A page that is
-    // wider than the screen (zoomed in) scrolls sideways first and turns only once it is at that edge. A slow
-    // drag, a mostly vertical one, a two-finger gesture, or one that is selecting text or drawing a box is not
-    // a page turn.
-    let touch: { x: number; y: number; at: number; scrollLeft: number } | null = null;
+    // On a touch screen the page turns the same way as with a mouse or trackpad: scroll down to the bottom of the
+    // page (on a phone the whole page usually fits, so it is already there), keep pulling, and let go: the next
+    // page opens. At the top, pulling down goes back a page. A hint shows once the pull is far enough. A short
+    // drag, a two-finger gesture, a pinch-zoomed screen, or a drag that is selecting text or drawing a box never
+    // turns the page, and the pull is claimed so the browser does not also "pull to refresh".
+    const TOUCH_PULL_NEEDED = 110;
+    let touch: { lastY: number; pull: number } | null = null;
+    const atBottom = () => node!.scrollTop + node!.clientHeight >= node!.scrollHeight - 2 && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
+    const atTop = () => node!.scrollTop <= 0 && window.scrollY <= 0;
+    const showPull = (direction: "next" | "previous" | null) => { if (direction) node!.dataset.pull = direction; else delete node!.dataset.pull; };
     function onTouchStart(event: TouchEvent) {
-      touch = event.touches.length === 1 ? { x: event.touches[0].clientX, y: event.touches[0].clientY, at: Date.now(), scrollLeft: node!.scrollLeft } : null;
+      touch = event.touches.length === 1 ? { lastY: event.touches[0].clientY, pull: 0 } : null;
     }
-    function onTouchEnd(event: TouchEvent) {
-      const start = touch;
+    function onTouchMove(event: TouchEvent) {
+      if (!touch) return;
+      if (event.touches.length !== 1 || swipeBlockedRef.current || (window.visualViewport?.scale ?? 1) > 1.05) { touch = null; showPull(null); return; }
+      const y = event.touches[0].clientY;
+      const step = touch.lastY - y; // > 0: finger moving up (scrolling down the page)
+      touch.lastY = y;
+      if (step > 0 && atBottom()) touch.pull = Math.max(0, touch.pull) + step;
+      else if (step < 0 && atTop()) touch.pull = Math.min(0, touch.pull) + step;
+      else if (step !== 0 && Math.sign(step) !== Math.sign(touch.pull)) touch.pull = 0;
+      const { pageNumber: current, pageCount: total } = turnRef.current;
+      const canNext = !total || current < total;
+      const canPrevious = current > 1;
+      if ((touch.pull > 8 && canNext) || (touch.pull < -8 && canPrevious)) {
+        if (event.cancelable) event.preventDefault();
+        showPull(touch.pull >= TOUCH_PULL_NEEDED && canNext ? "next" : touch.pull <= -TOUCH_PULL_NEEDED && canPrevious ? "previous" : null);
+      }
+    }
+    function onTouchEnd() {
+      const pulled = touch?.pull ?? 0;
       touch = null;
-      if (!start || event.changedTouches.length !== 1 || swipeBlockedRef.current) return;
+      showPull(null);
+      if (Math.abs(pulled) < TOUCH_PULL_NEEDED || swipeBlockedRef.current) return;
       if ((window.getSelection()?.toString() ?? "").trim()) return;
-      const dx = event.changedTouches[0].clientX - start.x;
-      const dy = event.changedTouches[0].clientY - start.y;
-      if (Date.now() - start.at > 700 || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-      const next = dx < 0;
-      const maxScroll = node!.scrollWidth - node!.clientWidth;
-      // Zoomed in: the swipe must have started at the edge it is moving past.
-      if (maxScroll > 2 && (next ? start.scrollLeft < maxScroll - 2 : start.scrollLeft > 2)) return;
       const { pageNumber: current, pageCount: total, onPageChange: change } = turnRef.current;
+      const next = pulled > 0;
       if (!change || (next ? (total ?? 0) > 0 && current >= (total ?? 0) : current <= 1)) return;
       if (Date.now() - lastTurn < COOLDOWN_MS) return;
       lastTurn = Date.now();
-      pendingScrollRef.current = "top";
+      pendingScrollRef.current = next ? "top" : "bottom";
       change(next ? current + 1 : current - 1);
-    }
-    // Once a gesture is clearly sideways on a page that cannot scroll sideways, the reader takes it, so the browser
-    // does not also treat it as "go back" (which would leave the book). Vertical scrolling, pinch-zoom, selecting
-    // text and panning a zoomed-in page are untouched.
-    function onTouchMove(event: TouchEvent) {
-      if (!touch || event.touches.length !== 1 || swipeBlockedRef.current) return;
-      const dx = event.touches[0].clientX - touch.x;
-      const dy = event.touches[0].clientY - touch.y;
-      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2 && node!.scrollWidth - node!.clientWidth <= 2 && event.cancelable) event.preventDefault();
     }
     node.addEventListener("touchstart", onTouchStart, { passive: true });
     node.addEventListener("touchmove", onTouchMove, { passive: false });
     node.addEventListener("touchend", onTouchEnd, { passive: true });
+    node.addEventListener("touchcancel", onTouchEnd, { passive: true });
     return () => {
       node.removeEventListener("wheel", onWheel);
       node.removeEventListener("touchstart", onTouchStart);
       node.removeEventListener("touchmove", onTouchMove);
       node.removeEventListener("touchend", onTouchEnd);
+      node.removeEventListener("touchcancel", onTouchEnd);
       window.clearTimeout(resetTimer);
     };
   }, []);

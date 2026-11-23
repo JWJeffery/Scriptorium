@@ -1,9 +1,11 @@
 // End-to-end check of reading on a phone (Pixel 7 emulation, real touch events):
 //   1. a large book opens page by page: the first page shows after downloading a small part of the file;
 //   2. the file route answers byte ranges, and "not modified" when the browser already has it;
-//   3. a sideways swipe turns the page (left = next, right = previous); a vertical drag does not;
+//   3. as with a mouse wheel: pulling up past the end of the page turns to the next one (a hint shows first), pulling
+//      down at the top goes back; a short drag or a sideways swipe does not turn the page;
 //   4. in full screen the page uses the whole width (the tools sit in a row at the top), and Fit width works;
 //   5. afterwards the browser keeps its own copy, so reopening downloads nothing.
+//   6. the page toolbar is on screen when the book opens (not below the fold).
 // Needs a running server (auth disabled) and Chromium.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -73,6 +75,10 @@ try {
   const downloadedForFirstPage = counted.reduce((a, b) => a + b, 0);
   assert.ok(downloadedForFirstPage < bytes.length * 0.5, `the first page needed only part of the file (${downloadedForFirstPage} of ${bytes.length} bytes)`);
 
+  // The page toolbar is on screen as soon as the book opens (it used to sit below the fold).
+  const toolbar = await page.evaluate(() => { const r = document.querySelector(".pdfToolbar").getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: innerHeight }; });
+  assert.ok(toolbar.top >= 0 && toolbar.bottom <= toolbar.height, `the page toolbar is visible without scrolling (${JSON.stringify(toolbar)})`);
+
   // 3. Swipes, as real touch input.
   const cdp = await context.newCDPSession(page);
   const box = await page.locator(".pdfPageFrame").boundingBox();
@@ -91,12 +97,22 @@ try {
       throw new Error(`expected PDF page ${n}, but the reader shows page ${await shownPage()} (address ${page.url()})`);
     }
   };
-  await swipe(320, 80); await onPage(2);
-  await swipe(320, 80); await onPage(3);
-  await swipe(80, 320); await onPage(2);
-  await swipe(200, 210, box.y + 100, box.y + 400); // a vertical drag
+  // A finger drag in small steps, like a real scroll. `hold` checks the hint before the finger lifts.
+  const drag = async (fromY, toY, x = 200, hold) => {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: fromY }] });
+    for (let i = 1; i <= 12; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: fromY + ((toY - fromY) * i) / 12 }] });
+    if (hold) await hold();
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await page.waitForTimeout(800);
+  };
+  const pullHint = () => page.evaluate(() => document.querySelector(".pdfFrameViewport").dataset.pull ?? "");
+  await drag(650, 350, 200, async () => assert.equal(await pullHint(), "next", "a long pull shows the next-page hint before letting go"));
   await onPage(2);
-
+  assert.equal(await pullHint(), "", "the hint goes away");
+  await drag(650, 350); await onPage(3);
+  await drag(350, 650, 200, async () => assert.equal(await pullHint(), "previous")); await onPage(2);
+  await drag(650, 600); await onPage(2); // a short drag does not turn the page
+  await swipe(320, 80); await onPage(2); // nor does a sideways swipe
   // 4. Full screen on a phone.
   await page.keyboard.press("r").catch(() => undefined);
   if (!(await page.locator(".ledgerWorkspace.readMode").count())) await page.locator("button[title*='ull']").first().click();
@@ -114,7 +130,7 @@ try {
   await page.waitForTimeout(400);
   const afterFit = await page.evaluate(() => { const f = document.querySelector(".pdfPageFrame").getBoundingClientRect(); return { left: f.left, right: f.right, width: window.innerWidth }; });
   assert.ok(afterFit.left >= -1 && afterFit.right <= afterFit.width + 1 && afterFit.right - afterFit.left > afterFit.width * 0.9, `Fit width fills the screen (${JSON.stringify(afterFit)})`);
-  await swipe(320, 80); await onPage(3); // swiping works in full screen too
+  await drag(650, 350); await onPage(3); // pulling works in full screen too
 
   // 5. The browser keeps its own copy: reopening downloads nothing from the file route.
   await page.waitForTimeout(10000); // the copy is made a few seconds after opening
@@ -125,7 +141,7 @@ try {
   await page.locator("canvas.pdfCanvas").waitFor({ timeout: 20000 });
   await page.waitForTimeout(1500);
   assert.equal(counted.reduce((a, b) => a + b, 0), 0, "reopening the book used this browser's copy");
-  console.log(`Phone reading verified: first page after ${Math.round((downloadedForFirstPage / bytes.length) * 100)}% of the file, byte ranges and 304, swipes turn pages (not vertical drags), full screen fits the width, reopening downloads nothing.`);
+  console.log(`Phone reading verified: first page after ${Math.round((downloadedForFirstPage / bytes.length) * 100)}% of the file, byte ranges and 304, pulling past the end turns pages like the mouse wheel (hint shown; short drags and sideways swipes do not), toolbar visible, full screen fits the width, reopening downloads nothing.`);
 } finally {
   await browser.close();
 }
