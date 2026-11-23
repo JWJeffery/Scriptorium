@@ -38,6 +38,7 @@ run node scripts/e2e-discard.mjs
 run node scripts/e2e-save-safety.mjs
 run node scripts/e2e-position-sync.mjs
 run node scripts/e2e-add-book.mjs
+run node scripts/e2e-phone-reader.mjs
 if [ "${SCRIPTORIUM_STORAGE_BACKEND:-}" = "s3" ]; then run node scripts/verify-object-storage.mjs; fi
 run node scripts/e2e-browser.mjs
 run node scripts/e2e-library.mjs

@@ -1,7 +1,9 @@
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { s3Delete, s3Get, s3List, s3Put, s3Size } from "./s3-storage.ts";
+import { createReadStream } from "node:fs";
+import { Readable } from "node:stream";
+import { s3Delete, s3Get, s3GetRangeStream, s3List, s3Put, s3Size } from "./s3-storage.ts";
 
 // Files live on local disk by default. Set SCRIPTORIUM_STORAGE_BACKEND=s3 (see s3-storage.ts) to keep
 // them in S3-compatible object storage instead. While moving across, the old folder stays readable as
@@ -240,6 +242,30 @@ export async function storeTextSnapshot(documentId: string, rawText: string): Pr
 
 export async function readStoredPdfFile(storageKey: string) {
   return await readStorageFile(storageKey);
+}
+
+/**
+ * Part of a stored file (byte range, both ends inclusive) as a web stream, without reading the rest. The PDF
+ * reader asks for the parts it needs, so a large book opens without downloading all of it first.
+ */
+export async function openStoredFileRange(storageKey: string, start: number, end: number): Promise<ReadableStream> {
+  if (usingS3()) {
+    try {
+      return await s3GetRangeStream(storageKey, start, end);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; // else: not copied across yet
+    }
+  }
+  for (const root of storageRootCandidates()) {
+    const filePath = resolveStorageKeyAtRoot(root, storageKey);
+    try {
+      await stat(filePath);
+    } catch {
+      continue;
+    }
+    return Readable.toWeb(createReadStream(filePath, { start, end })) as ReadableStream;
+  }
+  throw Object.assign(new Error(`Stored file not found: ${storageKey}`), { code: "ENOENT" });
 }
 
 export async function readStoredTextSnapshot(storageKey: string) {

@@ -509,6 +509,7 @@ export function ScriptoriumReader() {
         const storedServerUrl = serverPdfUrl(storedDocument);
         if (storedServerUrl) {
           setPdfUrl(storedServerUrl);
+          keepBrowserCopy(storedDocument, storedServerUrl);
           setStatus("Recovered PDF from server file storage.");
           return;
         }
@@ -609,6 +610,22 @@ export function ScriptoriumReader() {
     if (highlighterOnRef.current) setAutoSavePending(true);
     setStatus(`Captured selected text, context, offsets, and line locator ${lineLocator(nextAnchor)}.`);
   }, []);
+
+  // The reader opens a server book page by page (byte ranges), which is fast. Afterwards it quietly keeps a full
+  // copy in this browser, so the next time the book opens here there is nothing to download at all. Skipped when
+  // the phone asks to save data.
+  function keepBrowserCopy(stored: StoredDocument, url: string) {
+    const serverId = stored.server?.documentId;
+    if (!serverId) return;
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+    if (connection?.saveData) return;
+    window.setTimeout(() => {
+      void fetch(url)
+        .then((response) => (response.ok ? response.blob() : null))
+        .then((blob) => (blob && blob.size > 0 ? putPdf(serverId, blob) : undefined))
+        .catch(() => undefined); // only a convenience: the book still opens from the server
+    }, 8000);
+  }
 
   // Returns true once the file is stored on the server. interactive: the person chose this file
   // themselves, so a file that differs from the original can be confirmed instead of refused.

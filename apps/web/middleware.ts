@@ -104,6 +104,9 @@ export async function middleware(request: NextRequest) {
   }
 
   if (PUBLIC_PATHS.has(pathname)) return NextResponse.next();
+  // The app description and icons are fetched by the phone without the sign-in cookie (to offer "Install");
+  // they say nothing about the library.
+  if (pathname === "/manifest.webmanifest" || pathname.startsWith("/icons/")) return NextResponse.next();
 
   const config = { user, password, secret: process.env.SCRIPTORIUM_SESSION_SECRET };
   const session = await checkSessionToken(readCookie(request.headers.get("cookie"), SESSION_COOKIE), config);

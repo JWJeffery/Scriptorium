@@ -2990,3 +2990,40 @@ button:disabled { opacity: 0.5; cursor: default; }
 .addBookBoxList small { margin-left: auto; color: var(--muted); }
 .addBookBusy { color: var(--muted); }
 .addBookError { color: var(--danger); }
+
+/* Read mode on a phone: the tool rail sits as a compact row at the top instead of taking a column on the left,
+   so the page gets the whole width (and Fit width measures the real reading area). */
+@media (max-width: 700px) {
+  .ledgerWorkspace.readMode .ledgerReader .pdfReaderShell {
+    padding: 62px 0 0 0;
+  }
+  .readRail {
+    top: 6px;
+    left: 50%;
+    flex-direction: row;
+    gap: 4px;
+    padding: 4px 6px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+  }
+  /* Its pop-outs (highlighter colours, theme) open below the row, centred on it, instead of to the right. */
+  .readRail .readRailGroup,
+  .readRail .readRailTheme {
+    position: static;
+  }
+  .readPalette,
+  .readRail .themeMenuPanel.right {
+    top: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* A sideways swipe on the page turns it (PdfAnchoredPageReader). Without this, a browser treats a sideways swipe
+   on something that cannot scroll sideways as "go back" and leaves the book. */
+.pdfFrameViewport,
+.pdfReaderShell,
+.ledgerWorkspace.readMode {
+  overscroll-behavior-x: none;
+}

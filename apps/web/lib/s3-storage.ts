@@ -90,6 +90,19 @@ export async function s3Get(key: string): Promise<Buffer> {
   }
 }
 
+/** A byte range of a stored object (both ends inclusive), as a web stream. */
+export async function s3GetRangeStream(key: string, start: number, end: number): Promise<ReadableStream> {
+  const settings = config();
+  await ensureBucket(settings);
+  try {
+    const response = await settings.client.send(new GetObjectCommand({ Bucket: settings.bucket, Key: key, Range: `bytes=${start}-${end}` }));
+    return response.Body!.transformToWebStream();
+  } catch (error) {
+    if (isMissing(error)) throw enoent(key);
+    throw error;
+  }
+}
+
 export async function s3Size(key: string): Promise<number | null> {
   const settings = config();
   await ensureBucket(settings);

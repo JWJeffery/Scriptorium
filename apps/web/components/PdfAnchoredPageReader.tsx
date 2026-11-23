@@ -103,11 +103,12 @@ function embeddedMetadataFrom(pdfMetadata: PdfMetadata): PdfEmbeddedMetadata {
 
 async function renderCanvas(page: PdfPage, canvas: HTMLCanvasElement, scale: number) {
   const viewport = page.getViewport({ scale });
-  const canvasContext = canvas.getContext("2d", { willReadFrequently: true });
+  const canvasContext = canvas.getContext("2d");
   if (!canvasContext) throw new Error("Canvas unavailable.");
   // Draw at the screen's real pixel density (2 on a Retina display), keeping the page's size on screen.
   // At 1 the browser stretched the image, which blurred the type and greyed out thin strokes.
-  const density = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
+  // Capped at 2: a 3x phone screen gains little visibly but would draw (and hold) more than twice the pixels.
+  const density = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
   canvas.width = Math.floor(viewport.width * density);
   canvas.height = Math.floor(viewport.height * density);
   canvas.style.width = `${viewport.width}px`;
@@ -122,13 +123,23 @@ const DEFAULT_LEVELS: PageLevels = { paper: 0.9, ink: 0.15 };
 // How light this page's paper is and how dark its ink is, measured from the rendered image (brightness 0-1).
 // Most of a book page is paper, so the median is the paper; the darkest 1.5% is the ink.
 function measurePageLevels(canvas: HTMLCanvasElement): PageLevels {
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context || canvas.width === 0 || canvas.height === 0) return DEFAULT_LEVELS;
+  if (canvas.width === 0 || canvas.height === 0) return DEFAULT_LEVELS;
+  // Measured on a smaller copy (at most 800 px wide): the brightness spread is the same, and reading back a whole
+  // high-density page from the graphics card is slow on a phone.
+  const scale = Math.min(1, 800 / canvas.width);
+  const sample = document.createElement("canvas");
+  sample.width = Math.max(1, Math.round(canvas.width * scale));
+  sample.height = Math.max(1, Math.round(canvas.height * scale));
+  const context = sample.getContext("2d", { willReadFrequently: true });
+  if (!context) return DEFAULT_LEVELS;
   let data: Uint8ClampedArray;
-  try { data = context.getImageData(0, 0, canvas.width, canvas.height).data; } catch { return DEFAULT_LEVELS; }
+  try {
+    context.drawImage(canvas, 0, 0, sample.width, sample.height);
+    data = context.getImageData(0, 0, sample.width, sample.height).data;
+  } catch { return DEFAULT_LEVELS; }
   const histogram = new Uint32Array(256);
   let count = 0;
-  for (let i = 0; i < data.length; i += 4 * 7) {
+  for (let i = 0; i < data.length; i += 4) {
     histogram[Math.round(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2])] += 1;
     count += 1;
   }
@@ -396,6 +407,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
   // at its top; scroll up past the top and the previous one opens at its bottom. A short extra pull
   // is needed first so a stray flick at the edge does not turn the page.
   const turnRef = useRef({ pageNumber, pageCount, onPageChange });
+  const swipeBlockedRef = useRef(false);
   turnRef.current = { pageNumber, pageCount, onPageChange };
   const pendingScrollRef = useRef<"top" | "bottom" | null>(null);
 
@@ -430,7 +442,53 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
       change(down ? current + 1 : current - 1);
     }
     node.addEventListener("wheel", onWheel, { passive: false });
-    return () => { node.removeEventListener("wheel", onWheel); window.clearTimeout(resetTimer); };
+
+    // On a touch screen: a quick sideways swipe turns the page (left = next, right = previous). A page that is
+    // wider than the screen (zoomed in) scrolls sideways first and turns only once it is at that edge. A slow
+    // drag, a mostly vertical one, a two-finger gesture, or one that is selecting text or drawing a box is not
+    // a page turn.
+    let touch: { x: number; y: number; at: number; scrollLeft: number } | null = null;
+    function onTouchStart(event: TouchEvent) {
+      touch = event.touches.length === 1 ? { x: event.touches[0].clientX, y: event.touches[0].clientY, at: Date.now(), scrollLeft: node!.scrollLeft } : null;
+    }
+    function onTouchEnd(event: TouchEvent) {
+      const start = touch;
+      touch = null;
+      if (!start || event.changedTouches.length !== 1 || swipeBlockedRef.current) return;
+      if ((window.getSelection()?.toString() ?? "").trim()) return;
+      const dx = event.changedTouches[0].clientX - start.x;
+      const dy = event.changedTouches[0].clientY - start.y;
+      if (Date.now() - start.at > 700 || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      const next = dx < 0;
+      const maxScroll = node!.scrollWidth - node!.clientWidth;
+      // Zoomed in: the swipe must have started at the edge it is moving past.
+      if (maxScroll > 2 && (next ? start.scrollLeft < maxScroll - 2 : start.scrollLeft > 2)) return;
+      const { pageNumber: current, pageCount: total, onPageChange: change } = turnRef.current;
+      if (!change || (next ? (total ?? 0) > 0 && current >= (total ?? 0) : current <= 1)) return;
+      if (Date.now() - lastTurn < COOLDOWN_MS) return;
+      lastTurn = Date.now();
+      pendingScrollRef.current = "top";
+      change(next ? current + 1 : current - 1);
+    }
+    // Once a gesture is clearly sideways on a page that cannot scroll sideways, the reader takes it, so the browser
+    // does not also treat it as "go back" (which would leave the book). Vertical scrolling, pinch-zoom, selecting
+    // text and panning a zoomed-in page are untouched.
+    function onTouchMove(event: TouchEvent) {
+      if (!touch || event.touches.length !== 1 || swipeBlockedRef.current) return;
+      const dx = event.touches[0].clientX - touch.x;
+      const dy = event.touches[0].clientY - touch.y;
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2 && node!.scrollWidth - node!.clientWidth <= 2 && event.cancelable) event.preventDefault();
+    }
+    node.addEventListener("touchstart", onTouchStart, { passive: true });
+    node.addEventListener("touchmove", onTouchMove, { passive: false });
+    node.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      node.removeEventListener("wheel", onWheel);
+      node.removeEventListener("touchstart", onTouchStart);
+      node.removeEventListener("touchmove", onTouchMove);
+      node.removeEventListener("touchend", onTouchEnd);
+      window.clearTimeout(resetTimer);
+    };
   }, []);
 
   // Once a page has drawn, put the view where the reader expects: the top when moving forward (or
@@ -473,6 +531,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
   // that's hard to cleanly text-select for some other reason).
   const [selectionMode, setSelectionMode] = useState<"highlight" | "box">("highlight");
   const useBoxSelection = usingOcrLayer && selectionMode === "box";
+  swipeBlockedRef.current = useBoxSelection || Boolean(hasSelection);
   const textRuns = usingOcrLayer ? runsFromWords(authoritativeWords!) : pdfTextRuns;
 
   // Search hits: precise word boxes where OCR positions exist, otherwise the
@@ -524,7 +583,11 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
     async function loadDocument() {
       setIsLoading(true);
       try {
-        const pdfDocument = (await pdfjsLib.getDocument(fileUrl).promise) as unknown as PdfDocument;
+        // From the server, fetch only the parts of the file the open page needs (the server answers byte-range
+        // requests), so a 40 MB scan shows its first page in seconds on a phone instead of after downloading it
+        // all. A copy already in this browser (a blob: address) is read directly.
+        const fromServer = !fileUrl.startsWith("blob:");
+        const pdfDocument = (await pdfjsLib.getDocument({ url: fileUrl, rangeChunkSize: 256 * 1024, disableAutoFetch: fromServer, disableStream: fromServer }).promise) as unknown as PdfDocument;
         if (cancelled) return;
         if (documentRef.current) await documentRef.current.destroy();
         documentRef.current = pdfDocument;
