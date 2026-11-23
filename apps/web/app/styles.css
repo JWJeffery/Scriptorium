@@ -3055,3 +3055,29 @@ button:disabled { opacity: 0.5; cursor: default; }
     height: 100dvh;
   }
 }
+
+/* Pull past the end of the page to turn it (touch screens; PdfAnchoredPageReader). The hint appears once the pull
+   is far enough that letting go will turn the page. */
+.pdfFrameViewport[data-pull]::after {
+  position: fixed;
+  z-index: 70;
+  left: 50%;
+  bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 16px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 10px 26px rgb(0 0 0 / 22%);
+  font-size: 0.95rem;
+  pointer-events: none;
+}
+.pdfFrameViewport[data-pull="next"]::after { content: "Release for next page"; }
+.pdfFrameViewport[data-pull="previous"]::after { content: "Release for previous page"; }
+.ledgerWorkspace.readMode .pdfFrameViewport[data-pull]::after { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+
+/* While reading, pulling down at the top of a page goes back a page instead of reloading the browser tab. */
+html:has(.pdfFrameViewport) {
+  overscroll-behavior-y: contain;
+}
