@@ -29,7 +29,9 @@ echo "== 3/4 rebuild and restart (a few minutes)"
 
 echo "== 4/4 tidy up"
 docker image prune -f > /dev/null
-docker builder prune -f --keep-storage 3GB > /dev/null
+# Keep recent build pieces (the installed libraries, the compile cache): removing them made the next update reinstall
+# and repack everything. Only pieces unused for two weeks go.
+docker builder prune -f --filter "until=336h" > /dev/null
 "${COMPOSE[@]}" ps --format "table {{.Service}}\t{{.Status}}"
 df -h / | awk 'NR==2 {print "Disk: " $3 " used of " $2 " (" $5 ")"}'
 echo "Scriptorium is updated to $after."

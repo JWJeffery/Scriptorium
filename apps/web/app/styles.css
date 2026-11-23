@@ -3027,3 +3027,31 @@ button:disabled { opacity: 0.5; cursor: default; }
 .ledgerWorkspace.readMode {
   overscroll-behavior-x: none;
 }
+
+/* Phones. `100vh` includes the strip behind the browser's address bar, so the bottom of the reader (and its
+   toolbar) sat below the fold; `100dvh` is the height actually visible (older browsers keep the vh line). The
+   page toolbar is pinned to the bottom of the screen, with room left under the page so it never hides the last
+   lines. */
+@media (max-width: 700px) {
+  .ledgerReader .pdfReaderShell,
+  .ledgerReader .pdfPanel {
+    min-height: calc(100vh - 164px);
+    min-height: calc(100dvh - 164px);
+    height: calc(100vh - 164px);
+    height: calc(100dvh - 164px);
+  }
+  .ledgerReader .pdfToolbar {
+    position: fixed;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .ledgerReader .pdfFrameViewport {
+    padding-bottom: 76px;
+  }
+  .ledgerWorkspace.readMode .ledgerBody,
+  .ledgerWorkspace.readMode .ledgerReader,
+  .ledgerWorkspace.readMode .ledgerReader .pdfPanel,
+  .ledgerWorkspace.readMode .ledgerReader .pdfReaderShell {
+    height: 100vh;
+    height: 100dvh;
+  }
+}

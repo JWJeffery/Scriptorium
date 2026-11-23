@@ -4,6 +4,7 @@
 //   3. a sideways swipe turns the page (left = next, right = previous); a vertical drag does not;
 //   4. in full screen the page uses the whole width (the tools sit in a row at the top), and Fit width works;
 //   5. afterwards the browser keeps its own copy, so reopening downloads nothing.
+//   6. the page toolbar is on screen when the book opens (not below the fold).
 // Needs a running server (auth disabled) and Chromium.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -72,6 +73,10 @@ try {
   await page.waitForTimeout(1500);
   const downloadedForFirstPage = counted.reduce((a, b) => a + b, 0);
   assert.ok(downloadedForFirstPage < bytes.length * 0.5, `the first page needed only part of the file (${downloadedForFirstPage} of ${bytes.length} bytes)`);
+
+  // The page toolbar is on screen as soon as the book opens (it used to sit below the fold).
+  const toolbar = await page.evaluate(() => { const r = document.querySelector(".pdfToolbar").getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: innerHeight }; });
+  assert.ok(toolbar.top >= 0 && toolbar.bottom <= toolbar.height, `the page toolbar is visible without scrolling (${JSON.stringify(toolbar)})`);
 
   // 3. Swipes, as real touch input.
   const cdp = await context.newCDPSession(page);
