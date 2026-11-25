@@ -13,6 +13,7 @@ FROM base AS build
 # Dependencies first, so a code-only change reuses the cached install layer.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/package.json
+COPY apps/dashboard/package.json apps/dashboard/package.json
 COPY prisma prisma
 RUN pnpm install --frozen-lockfile
 COPY . .

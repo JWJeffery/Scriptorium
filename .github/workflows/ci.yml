@@ -324,8 +324,11 @@ jobs:
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
             echo "SCRIPTORIUM_AUTH_USER=ci"
             echo "SCRIPTORIUM_AUTH_PASSWORD=$(openssl rand -hex 16)"
+            echo "DASHBOARD_DOMAIN=http://dashboard.test"
+            echo "DASHBOARD_AUTH_USER=ci"
+            echo "DASHBOARD_AUTH_PASSWORD=$(openssl rand -hex 16)"
           } > .env.production
-          grep -E "AUTH_(USER|PASSWORD)" .env.production | sed 's/^/export /' > ci-auth.sh
+          grep -E "^SCRIPTORIUM_AUTH_(USER|PASSWORD)" .env.production | sed 's/^/export /' > ci-auth.sh
 
       - name: Build the image and start the stack
         run: docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build --wait --wait-timeout 900
@@ -334,6 +337,12 @@ jobs:
         run: |
           source ci-auth.sh
           SCRIPTORIUM_BASE_URL=http://127.0.0.1 node scripts/verify-production-stack.mjs
+
+      - name: The dashboard answers through the front door, and its sign-in gate is on
+        run: |
+          curl -fsS -H 'Host: dashboard.test' http://127.0.0.1/api/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: dashboard.test' -H 'Accept: text/html' http://127.0.0.1/)" = 307
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: dashboard.test' http://127.0.0.1/api/anything)" = 401
 
       - name: A book bigger than 10 MB uploads through the front door
         run: |

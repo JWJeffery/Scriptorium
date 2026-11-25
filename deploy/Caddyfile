@@ -14,3 +14,9 @@
 		}
 	}
 }
+
+# The dashboard. Caddy does not wait for it to start, so a dashboard problem can never keep Scriptorium offline.
+{$DASHBOARD_DOMAIN} {
+	encode gzip zstd
+	reverse_proxy dashboard:3001
+}

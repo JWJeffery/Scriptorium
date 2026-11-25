@@ -1,0 +1,23 @@
+:root {
+  --bg: #f6f4ef; --card: #ffffff; --ink: #1f2328; --muted: #5b636b; --line: #ddd8cc; --accent: #7a2e2e; --ok: #1f6b3a;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181b; --card: #1f2226; --ink: #e8e6e1; --muted: #9aa1a8; --line: #343840; --accent: #d98a8a; --ok: #6fcf97; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 48px; }
+header.top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+h1 { font-size: 1.6rem; margin: 0; }
+.date { color: var(--muted); }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.card h2 { font-size: 1rem; margin: 0 0 8px; }
+.muted { color: var(--muted); font-size: 0.92rem; }
+.badge { display: inline-block; font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-bottom: 8px; }
+.badge.ready { color: var(--ok); border-color: var(--ok); }
+a.button, button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; text-decoration: none; display: inline-block; }
+button.link { background: none; color: var(--muted); padding: 0; text-decoration: underline; }
+form.login { max-width: 360px; margin: 12vh auto; display: grid; gap: 12px; }
+input { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+.error { color: #b3261e; min-height: 1.4em; }

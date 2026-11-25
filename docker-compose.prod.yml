@@ -99,6 +99,29 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # The personal dashboard (apps/dashboard) at DASHBOARD_DOMAIN. Separate image, no database; it shares nothing
+  # with Scriptorium except this server and the Caddy front door.
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    image: scriptorium-dashboard:local
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      NODE_ENV: production
+      DASHBOARD_AUTH_USER: ${DASHBOARD_AUTH_USER:?set DASHBOARD_AUTH_USER in .env.production}
+      DASHBOARD_AUTH_PASSWORD: ${DASHBOARD_AUTH_PASSWORD:?set DASHBOARD_AUTH_PASSWORD in .env.production}
+      DASHBOARD_SESSION_SECRET: ${DASHBOARD_SESSION_SECRET:-}
+      DASHBOARD_SCRIPTORIUM_URL: https://${SCRIPTORIUM_DOMAIN}
+      DASHBOARD_TIMEZONE: ${DASHBOARD_TIMEZONE:-America/New_York}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   # The off-server backup tool, used only by deploy/backup.sh, connect-google-drive.sh and restore.sh (it never runs
   # on its own: the "tools" profile keeps it out of `up`). Official rclone image, pinned.
   rclone:
@@ -119,6 +142,7 @@ services:
       - "${SCRIPTORIUM_HTTPS_PORT:-443}:443"
     environment:
       SCRIPTORIUM_DOMAIN: ${SCRIPTORIUM_DOMAIN:?set SCRIPTORIUM_DOMAIN in .env.production}
+      DASHBOARD_DOMAIN: ${DASHBOARD_DOMAIN:?set DASHBOARD_DOMAIN in .env.production}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
