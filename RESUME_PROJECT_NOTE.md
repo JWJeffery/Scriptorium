@@ -20,6 +20,15 @@ one line overshoots 27 units, the next 4; after: both end at the line), a new ca
 ended mid-line before the fix keeps a small overshoot there (only line ends can be clipped without the
 original character positions); new highlights are exact.
 
+**Follow-up the same day (fix above deployed, Josh: "still is not working").** Clipping to the text layer (or the OCR)
+was not enough on Josh's scanned book: the PDF's own line widths also run past the printed ink. Highlights are now
+trimmed, as the last step everywhere they are drawn, captured or tapped, to the ink actually printed in each line
+(`trimRectsToInk` in `lib/highlight-geometry.ts`, fed by an ink map built from the rendered page in
+`inkGridFrom`, threshold halfway between the page's paper and ink levels). Bars are only ever shortened; a bar
+with no ink under it is unchanged; a full stop or comma is kept, a lone speck of scan noise is not. Checks: three
+new cases in `verify-highlight-geometry.mjs` and a browser check on a rendered page (each bar ends within the
+1.6-unit padding of its line's last ink).
+
 ## HARDENING PLAN — November 2026 (in progress; read before anything else below)
 
 Source: a full review on 2026-11-21 (security, architecture, reliability; three independent reviewers,
