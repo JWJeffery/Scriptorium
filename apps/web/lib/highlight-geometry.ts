@@ -139,3 +139,49 @@ export function mergeLineRects(rects: GeometryRect[]): GeometryRect[] {
     .sort((a, b) => a.top - b.top || a.left - b.left)
     .map((line) => ({ left: line.left, top: line.top + line.height * 0.1, width: line.width, height: line.height * 0.8 }));
 }
+
+/**
+ * Where the page's ink is, sampled from the rendered page image: one cell per page unit (`scale` cells per unit),
+ * 1 where the pixel is ink. Built by the PDF reader after each page renders (see `inkGridFrom`).
+ */
+export type InkGrid = { width: number; height: number; scale: number; dark: Uint8Array };
+
+/**
+ * Trims each highlight bar inward to the ink actually printed in its line: the first and last columns, within the
+ * bar, that have ink in the bar's band. This is the final word on where a line's text ends, whatever the PDF's text
+ * layer or the OCR says (on scanned books both can claim a line runs on past its last letter). A bar is only ever
+ * shortened, never lengthened; one with no ink under it is left as it is. A small pad keeps the bar just clear of
+ * the first and last letters.
+ */
+export function trimRectsToInk(rects: GeometryRect[], grid: InkGrid | null | undefined): GeometryRect[] {
+  if (!grid || rects.length === 0) return rects;
+  const { width, height, scale, dark } = grid;
+  return rects.map((rect) => {
+    const y0 = Math.max(0, Math.floor(rect.top * scale));
+    const y1 = Math.min(height - 1, Math.ceil((rect.top + rect.height) * scale));
+    const x0 = Math.max(0, Math.floor(rect.left * scale));
+    const x1 = Math.min(width - 1, Math.ceil((rect.left + rect.width) * scale));
+    if (y1 < y0 || x1 < x0) return rect;
+    // A column counts as ink when at least two of its pixels in the band are dark, or when it has one and so does
+    // its neighbour (a full stop or comma); a lone speck of scan noise does not stop the search.
+    const darkIn = (x: number) => {
+      if (x < 0 || x >= width) return 0;
+      let count = 0;
+      for (let y = y0; y <= y1; y += 1) if (dark[y * width + x] && ++count >= 2) break;
+      return count;
+    };
+    const inkAt = (x: number) => {
+      const here = darkIn(x);
+      return here >= 2 || (here === 1 && (darkIn(x - 1) > 0 || darkIn(x + 1) > 0));
+    };
+    let first = -1;
+    for (let x = x0; x <= x1; x += 1) if (inkAt(x)) { first = x; break; }
+    if (first < 0) return rect;
+    let last = first;
+    for (let x = x1; x >= first; x -= 1) if (inkAt(x)) { last = x; break; }
+    const pad = rect.height * 0.12;
+    const left = Math.max(rect.left, first / scale - pad);
+    const right = Math.min(rect.left + rect.width, (last + 1) / scale + pad);
+    return right > left ? { ...rect, left, width: right - left } : rect;
+  });
+}

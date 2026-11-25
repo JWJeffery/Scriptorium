@@ -74,3 +74,33 @@ assert.ok(clipped.every((rect) => rect.left + rect.width <= 400 + 1e-9), "no bar
 assert.equal(clipped[0].left, 190, "a highlight that starts mid-line still starts where it did");
 assert.deepEqual(snapRectsToOcrLines(clipped, runBoxes), clipped, "clipping twice changes nothing");
 console.log("Text-layer clipping verified: saved highlights end where the printed line ends.");
+
+// Trimming to the printed ink: whatever the text layer or OCR claims, a bar ends where the line's ink ends.
+{
+  const { trimRectsToInk } = await import("../apps/web/lib/highlight-geometry.ts");
+  const width = 500, height = 100;
+  const dark = new Uint8Array(width * height);
+  const ink = (x0, x1, y0, y1) => { for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) dark[y * width + x] = 1; };
+  ink(40, 300, 20, 30); // line 1: words from x=40 to x=300, with gaps between words
+  for (let x = 120; x < 130; x += 1) for (let y = 20; y < 30; y += 1) dark[y * width + x] = 0;
+  ink(40, 400, 40, 50); // line 2 runs to the margin at x=400
+  dark[60 * width + 450] = 1; // a lone speck of scan noise on line 3
+  ink(40, 200, 58, 68); // line 3 ends at x=200
+  const grid = { width, height, scale: 1, dark };
+  const bars = [
+    { left: 100, top: 21, width: 320, height: 8 }, // starts mid-line, claims to run to 420
+    { left: 40, top: 41, width: 360, height: 8 }, // already right
+    { left: 40, top: 59, width: 430, height: 8 }, // claims to run to 470, past a noise speck
+    { left: 40, top: 81, width: 100, height: 8 } // no ink under it at all
+  ];
+  const trimmed = trimRectsToInk(bars, grid);
+  const right = (r) => r.left + r.width;
+  assert.ok(Math.abs(right(trimmed[0]) - 300) < 2, "line 1 ends where its ink ends, not where the text layer said");
+  assert.equal(trimmed[0].left >= 100, true, "a bar is never lengthened at the start");
+  assert.ok(right(trimmed[1]) <= 400 && right(trimmed[1]) > 398, "a bar already at the line end stays there");
+  assert.ok(Math.abs(right(trimmed[2]) - 200) < 2, "a lone speck of noise past the line does not stretch the bar");
+  assert.deepEqual(trimmed[3], bars[3], "a bar with no ink under it is left as it is");
+  assert.deepEqual(trimRectsToInk(trimmed, grid), trimmed, "trimming twice changes nothing");
+  assert.deepEqual(trimRectsToInk(bars, null), bars, "no ink map: unchanged");
+  console.log("Ink trimming verified: each bar ends where the printed line ends.");
+}

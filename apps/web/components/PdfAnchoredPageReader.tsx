@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import { mergeLineRects, snapRectsToOcrLines } from "../lib/highlight-geometry";
+import { mergeLineRects, snapRectsToOcrLines, trimRectsToInk, type InkGrid } from "../lib/highlight-geometry";
 import { matchWordIndexes } from "../lib/search-text";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
@@ -149,6 +149,32 @@ function measurePageLevels(canvas: HTMLCanvasElement): PageLevels {
     return 1;
   };
   return { paper: percentile(0.5), ink: percentile(0.015) };
+}
+
+// Where this page's ink is, at one cell per page unit (the coordinates highlights are stored in): highlights are
+// trimmed to it so they end where the printed words end (trimRectsToInk). Ink is anything darker than halfway
+// between the page's paper and its ink.
+function inkGridFrom(canvas: HTMLCanvasElement, pageWidth: number, levels: PageLevels): InkGrid | null {
+  if (canvas.width === 0 || canvas.height === 0 || pageWidth <= 0) return null;
+  const scale = Math.min(1, 1600 / pageWidth); // cells per page unit; at most 1600 cells across
+  const width = Math.max(1, Math.round(pageWidth * scale));
+  const height = Math.max(1, Math.round(canvas.height * (width / canvas.width)));
+  const sample = document.createElement("canvas");
+  sample.width = width;
+  sample.height = height;
+  const context = sample.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  let data: Uint8ClampedArray;
+  try {
+    context.drawImage(canvas, 0, 0, width, height);
+    data = context.getImageData(0, 0, width, height).data;
+  } catch { return null; }
+  const cut = ((levels.paper + levels.ink) / 2) * 255;
+  const dark = new Uint8Array(width * height);
+  for (let i = 0, j = 0; i < data.length; i += 4, j += 1) {
+    dark[j] = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2] < cut ? 1 : 0;
+  }
+  return { width, height, scale, dark };
 }
 
 // The dark-page filter settings for a page: anything at least as light as (a little under) its paper becomes
@@ -341,6 +367,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
   const [pdfTextRuns, setPdfTextRuns] = useState<TextRun[]>([]);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [pageLevels, setPageLevels] = useState<PageLevels>(DEFAULT_LEVELS);
+  const [inkGrid, setInkGrid] = useState<InkGrid | null>(null);
   const darkFilter = darkPageFilterSettings(pageLevels);
   const [isLoading, setIsLoading] = useState(false);
   const [documentLoadKey, setDocumentLoadKey] = useState(0);
@@ -569,9 +596,12 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
   const runBoxes = usingOcrLayer ? null : pdfTextRuns
     .filter((run) => run.width && run.width > 0 && run.text.trim())
     .map((run) => ({ left: run.left, top: run.top, width: run.width as number, height: run.fontSize, text: run.text }));
-  const highlightRectsFor = (rects: PdfAnchorRect[]) =>
+  // Last, every bar is trimmed to the ink printed in its line: on scanned books the PDF's text layer and the OCR
+  // can both claim a line runs on past its last letter, and the page image is the final word on where it ends.
+  const highlightRectsFor = (rects: PdfAnchorRect[]) => trimRectsToInk(
     usingOcrLayer ? snapRectsToOcrLines(rects, authoritativeWords)
-      : runBoxes && runBoxes.length > 0 ? snapRectsToOcrLines(rects, runBoxes) : mergeLineRects(rects);
+      : runBoxes && runBoxes.length > 0 ? snapRectsToOcrLines(rects, runBoxes) : mergeLineRects(rects),
+    inkGrid);
 
   // Search hits: precise word boxes where OCR positions exist, otherwise the
   // text runs the PDF itself reports.
@@ -659,6 +689,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
       const canvas = canvasRef.current;
       if (!pdfDocument || !canvas) return;
       setIsLoading(true);
+      setInkGrid(null);
       try {
         const safePageNumber = Math.min(Math.max(pageNumber, 1), pdfDocument.numPages);
         const page = await pdfDocument.getPage(safePageNumber);
@@ -667,7 +698,9 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
         const runs = await buildTextRuns(page, scale);
         if (cancelled) return;
         setPageSize({ width: viewport.width, height: viewport.height });
-        setPageLevels(measurePageLevels(canvas));
+        const levels = measurePageLevels(canvas);
+        setPageLevels(levels);
+        setInkGrid(inkGridFrom(canvas, viewport.width, levels));
         setPdfTextRuns(runs);
         onStatusChange(
           runs.length > 0
