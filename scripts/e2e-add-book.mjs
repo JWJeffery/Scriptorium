@@ -134,7 +134,12 @@ try {
   // Disconnecting Box forgets the sign-in.
   await openDialog();
   await page.getByRole("button", { name: /From Box/ }).click();
-  await page.getByRole("button", { name: "Disconnect Box" }).click();
+  // The button sends its disconnect request in the background, so wait for that request to finish before asking
+  // the server whether Box is still connected (asking straight away raced the request and failed intermittently).
+  await Promise.all([
+    page.waitForResponse((response) => response.request().method() === "DELETE" && new URL(response.url()).pathname === "/api/import/box"),
+    page.getByRole("button", { name: "Disconnect Box" }).click()
+  ]);
   assert.equal((await (await fetch(`${base}/api/import/config`)).json()).box.connected, false, "Box is disconnected");
   console.log("Add a book verified: from a link (refusing a non-PDF), from Box (sign-in, folders, PDFs only, disconnect) and from Google Drive.");
 } finally {
