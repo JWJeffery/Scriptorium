@@ -4,6 +4,22 @@ Read this first in any new session before touching code. Update it at the end of
 session that changes the build state (new gates, fixes, pushes) — same discipline as
 The Universal Office's RESUME_PROJECT_NOTE.md.
 
+## Highlights overshooting the line on PDF-text pages (2026-11-25)
+
+Josh's screenshot: on a page using the PDF's own embedded text (Box mode greyed out, so no Scriptorium OCR),
+saved highlights ran past the right edge of justified lines, each line by a different amount. Cause: the
+invisible text layer draws each run in the browser's font, which is wider than the PDF's; `.pdfTextRun` had
+`transform-origin` but no scale, so a selection's client rects - and the highlight saved from them - ended
+where the browser's text ended, not the printed line. Fix in `PdfAnchoredPageReader.tsx`: (1) each run is
+scaled to the width the PDF reports for it (`scaleX(run.width / scrollWidth)`, as pdf.js does), so new
+selections measure the printed text; (2) on pages without OCR, highlights are clipped at display, capture
+and tap time to the text-layer runs with the same `snapRectsToOcrLines` used for OCR pages, which also
+repairs highlights saved before the fix. OCR pages are unchanged. Checks: a browser reproduction (before:
+one line overshoots 27 units, the next 4; after: both end at the line), a new case in
+`scripts/verify-highlight-geometry.mjs` (CI), typecheck, lint, production build. A saved highlight that
+ended mid-line before the fix keeps a small overshoot there (only line ends can be clipped without the
+original character positions); new highlights are exact.
+
 ## HARDENING PLAN — November 2026 (in progress; read before anything else below)
 
 Source: a full review on 2026-11-21 (security, architecture, reliability; three independent reviewers,
