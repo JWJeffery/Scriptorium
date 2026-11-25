@@ -47,7 +47,24 @@ so one failing source never breaks the page.
 5. Universal Office stats and the Anglican Synaxarium workflow.
 6. Social media messages (most platforms have no usable personal-message API; research first).
 
-## Not done yet
+## Deployment (dashboard.jwjeffery.org)
 
-- Deployment: no Docker service or Caddy route for the dashboard yet. The address
-  (jwjeffery.org itself, or a subdomain, with Scriptorium moving if needed) is still to decide.
+Added: `Dockerfile.dashboard`, a `dashboard` service in `docker-compose.prod.yml`, a Caddy block in
+`deploy/Caddyfile`, and DASHBOARD_* lines in `.env.production.example`. The DNS record
+(`dashboard` A 104.207.80.207) is already in place.
+
+On the server, BEFORE running the update, add these lines to `/opt/scriptorium/.env.production`
+(pick your own user name and a long password):
+
+    DASHBOARD_DOMAIN=dashboard.jwjeffery.org
+    DASHBOARD_AUTH_USER=...
+    DASHBOARD_AUTH_PASSWORD=...
+
+Then update the usual way (`./deploy/update.sh`, which only runs from `main`, so this branch must be
+merged first). Docker then builds the dashboard, Caddy fetches its HTTPS certificate on its own,
+and Scriptorium keeps running throughout. Caddy does not wait for the dashboard, so a dashboard
+fault cannot take Scriptorium offline.
+
+Tested without Docker (none in the cloud session): the compose file validates, a missing setting
+stops with a clear message, and the image's exact install/build/start steps work in a clean folder,
+including the health check. The Caddy block and the real image build have not been run.
