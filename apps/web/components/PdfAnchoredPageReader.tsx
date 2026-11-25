@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { mergeLineRects, snapRectsToOcrLines } from "../lib/highlight-geometry";
 import { matchWordIndexes } from "../lib/search-text";
@@ -524,7 +524,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
     const frame = frameRef.current;
     if (!frame) return;
     const point = pointInFrame(event, frame, finalScale);
-    const hit = [...highlights].reverse().find((highlight) => highlight.anchor.pageNumber === pageNumber && highlight.id !== "active-selection-preview" && (usingOcrLayer ? snapRectsToOcrLines(highlight.anchor.rects, authoritativeWords) : highlight.anchor.rects).some((rect) => point.x >= rect.left && point.x <= rect.left + rect.width && point.y >= rect.top && point.y <= rect.top + rect.height));
+    const hit = [...highlights].reverse().find((highlight) => highlight.anchor.pageNumber === pageNumber && highlight.id !== "active-selection-preview" && highlightRectsFor(highlight.anchor.rects).some((rect) => point.x >= rect.left && point.x <= rect.left + rect.width && point.y >= rect.top && point.y <= rect.top + rect.height));
     if (hit) onHighlightClick(hit.id);
   }
 
@@ -543,6 +543,35 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
   const useBoxSelection = usingOcrLayer && selectionMode === "box";
   swipeBlockedRef.current = useBoxSelection || Boolean(hasSelection);
   const textRuns = usingOcrLayer ? runsFromWords(authoritativeWords!) : pdfTextRuns;
+
+  // The invisible text layer is drawn in the browser's own font, which is rarely the same width as the
+  // PDF's. Left alone, a line of it runs past (or stops short of) the printed line it sits over, so a
+  // selection - and the highlight saved from it - overshoots into the margin by however much wider the
+  // browser's font is on that line (each line by a different amount). Stretch or shrink each run
+  // horizontally to the width the PDF reports for it, as pdf.js's own text layer does, so selection and
+  // highlight geometry match the printed text. OCR pages are left as they are: their highlights are
+  // already clipped to the OCR word boxes (snapRectsToOcrLines).
+  useLayoutEffect(() => {
+    const layer = textLayerRef.current;
+    if (!layer || usingOcrLayer) return;
+    layer.querySelectorAll<HTMLElement>(".pdfTextRun").forEach((el) => {
+      const run = textRuns[Number(el.dataset.textRunIndex)];
+      el.style.transform = "";
+      if (!run || !run.width || run.width <= 0) return;
+      // scrollWidth is layout width in page units: unaffected by the zoom transform on an ancestor.
+      const natural = el.scrollWidth;
+      if (natural > 0) el.style.transform = `scaleX(${run.width / natural})`;
+    });
+  }, [textRuns, usingOcrLayer]);
+
+  // Text-layer runs as word-like boxes, used to clip highlights on pages without OCR to where each
+  // printed line actually ends (fixes highlights saved before the runs were scaled, too).
+  const runBoxes = usingOcrLayer ? null : pdfTextRuns
+    .filter((run) => run.width && run.width > 0 && run.text.trim())
+    .map((run) => ({ left: run.left, top: run.top, width: run.width as number, height: run.fontSize, text: run.text }));
+  const highlightRectsFor = (rects: PdfAnchorRect[]) =>
+    usingOcrLayer ? snapRectsToOcrLines(rects, authoritativeWords)
+      : runBoxes && runBoxes.length > 0 ? snapRectsToOcrLines(rects, runBoxes) : mergeLineRects(rects);
 
   // Search hits: precise word boxes where OCR positions exist, otherwise the
   // text runs the PDF itself reports.
@@ -831,7 +860,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
     const selectedText = parts.join(" ").replace(/\s+/g, " ").trim();
     if (!selectedText) return;
 
-    const rects = usingOcrLayer ? snapRectsToOcrLines(rectsFor(range, frame, finalScale), authoritativeWords) : rectsFor(range, frame, finalScale);
+    const rects = highlightRectsFor(rectsFor(range, frame, finalScale));
     selection.removeAllRanges();
     onSelectionCapture({ selectedText, pageNumber, ...contextFor(textRuns, selectedText), rects });
 
@@ -987,7 +1016,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
           <canvas ref={canvasRef} className="pdfCanvas" />
           <div className="pdfHighlightLayer" aria-hidden="true">
             {highlights.filter((highlight) => highlight.anchor.pageNumber === pageNumber).flatMap((highlight) =>
-              (usingOcrLayer ? snapRectsToOcrLines(highlight.anchor.rects, authoritativeWords) : mergeLineRects(highlight.anchor.rects)).map((rect, index) => (
+              highlightRectsFor(highlight.anchor.rects).map((rect, index) => (
                 <span className="pdfHighlightBox" key={`${highlight.id}-${index}`} style={{ background: highlight.color, left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />
               ))
             )}
@@ -1012,7 +1041,7 @@ export function PdfAnchoredPageReader({ fileUrl, pageNumber, pageCount, onPageCh
             style={useBoxSelection ? { pointerEvents: "none", userSelect: "none", cursor: "default" } : undefined}
           >
             {textRuns.map((run) => (
-              <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: run.width }}>
+              <span className="pdfTextRun" data-text-run-index={run.index} key={`${run.index}-${run.text}`} style={{ left: run.left, top: run.top, fontSize: run.fontSize, width: usingOcrLayer ? run.width : undefined }}>
                 {run.text}
               </span>
             ))}

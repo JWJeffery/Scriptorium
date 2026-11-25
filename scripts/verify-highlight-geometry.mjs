@@ -54,3 +54,23 @@ assert.equal(firstLine.left + firstLine.width, 288, "and runs to the end of the 
 assert.ok(firstLine.height < 20 && firstLine.top > 100, "the bar is painted slightly inside the line");
 assert.equal(mergeLineRects([]).length, 0, "nothing in, nothing out");
 console.log("Line merging verified: fragments on a line join, columns and lines stay apart.");
+
+// Pages without OCR: highlights saved from the PDF's own text layer before its runs were scaled overshoot the
+// printed line by however much wider the browser's font was (each line by a different amount). Clipped to the
+// text-layer runs (PdfAnchoredPageReader passes them as word boxes), each bar ends where the printed line ends.
+const runBoxes = [
+  { left: 40, top: 20, width: 360, height: 12, text: "command general consent. That unity, it says, which must be reborn will include" },
+  { left: 40, top: 36, width: 360, height: 12, text: "something of all the patterns, not in their falsities and negations but in those" },
+  { left: 40, top: 52, width: 360, height: 12, text: "elements of devotion and conviction, of dogma and discipline which they contain." }
+];
+const saved = [
+  { left: 190, top: 19, width: 237, height: 14 }, // starts mid-line, runs 27 units past the line end
+  { left: 40, top: 35, width: 364, height: 14 }, // 4 past
+  { left: 40, top: 51, width: 380, height: 14 } // 20 past
+];
+const clipped = snapRectsToOcrLines(saved, runBoxes);
+assert.equal(clipped.length, 3, "one bar per line");
+assert.ok(clipped.every((rect) => rect.left + rect.width <= 400 + 1e-9), "no bar runs past where the printed line ends");
+assert.equal(clipped[0].left, 190, "a highlight that starts mid-line still starts where it did");
+assert.deepEqual(snapRectsToOcrLines(clipped, runBoxes), clipped, "clipping twice changes nothing");
+console.log("Text-layer clipping verified: saved highlights end where the printed line ends.");
