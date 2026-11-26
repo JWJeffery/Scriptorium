@@ -46,6 +46,12 @@ jobs:
       - name: Generate Prisma client
         run: pnpm prisma:generate
 
+      - name: Verify the dashboard's calendar grouping
+        run: node --experimental-strip-types scripts/verify-dashboard-calendar.mjs
+
+      - name: Verify the dashboard's encrypted secret store
+        run: node --experimental-strip-types scripts/verify-dashboard-secret-store.mjs
+
       - name: Verify development ledger
         run: node scripts/verify-development-ledger.mjs
 

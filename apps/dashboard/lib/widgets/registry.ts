@@ -1,15 +1,10 @@
+import { calendarWidget } from "./calendar";
 import type { Widget, WidgetResult } from "./types";
 
 // First slice: the Today view. Each source below starts as "not connected" and is
 // replaced by a real connector one at a time (see docs/DASHBOARD_PLAN.md).
 
 const notConnected = (setup: string) => async (): Promise<WidgetResult<never>> => ({ status: "not-connected", setup });
-
-export const calendarWidget: Widget<never> = {
-  id: "calendar",
-  title: "Calendar and heads-up",
-  load: notConnected("Connect Google Calendar (read-only) to see today's events and upcoming important dates.")
-};
 
 export const emailWidget: Widget<never> = {
   id: "email",
@@ -39,4 +34,5 @@ export const scriptoriumWidget: Widget<{ url: string }> = {
   }
 };
 
+export { calendarWidget };
 export const todayWidgets = [calendarWidget, emailWidget, liturgyWidget, tasksWidget, scriptoriumWidget] as const;

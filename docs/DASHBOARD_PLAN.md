@@ -6,8 +6,9 @@ database or login with Scriptorium.
 
 ## Status
 
-Slice 1 scaffold is done: sign-in gate, Today page, five placeholder cards
-(Calendar, Email, Daily Office, To-do, Scriptorium). Only the Scriptorium link is live.
+Live at https://dashboard.jwjeffery.org: sign-in gate, Today page, cards for Calendar, Email, Daily Office,
+To-do and Scriptorium. Scriptorium's link is live. The Calendar card is built (read-only Google sign-in,
+events grouped by day in DASHBOARD_TIMEZONE, a 24-hour heads-up) and needs the Google setup below.
 
 Run locally (from the repo root):
 
@@ -40,7 +41,7 @@ so one failing source never breaks the page.
 
 ## Next slices
 
-1. Google Calendar widget (read-only) and the upcoming-event heads-up.
+1. (built, needs the Google setup below) Google Calendar widget and heads-up. Refinement to come: what counts as "important" (colour, keyword).
 2. Gmail + Spacemail "important email" widget.
 3. Task store + MCP server (Claude and ChatGPT).
 4. Daily Office from the 1979 BCP.
@@ -68,3 +69,24 @@ fault cannot take Scriptorium offline.
 Tested without Docker (none in the cloud session): the compose file validates, a missing setting
 stops with a clear message, and the image's exact install/build/start steps work in a clean folder,
 including the health check. The Caddy block and the real image build have not been run.
+
+## Google setup for the Calendar card (one time, free)
+
+The dashboard asks Google for READ-ONLY access and stores only the long-lived sign-in, encrypted, in a
+Docker volume (`dashboard-data`). Gmail will reuse the same sign-in later.
+
+1. console.cloud.google.com: create a project (any name, e.g. "Dashboard").
+2. APIs & Services > Library: enable **Google Calendar API**.
+3. Google Auth Platform (OAuth consent screen): User type **External**; app name "Dashboard"; your email as
+   support and developer contact. Add the scope `.../auth/calendar.readonly`.
+4. **Publish the app ("In production").** Left in "Testing", Google cancels the sign-in every 7 days. For an
+   app only you use, "In production" just shows an "unverified app" warning once; choose Advanced > continue.
+5. Clients > Create client > **Web application**. Authorized redirect URI, exactly:
+   `https://dashboard.jwjeffery.org/api/google/callback`
+6. Copy the Client ID and Client secret into `/opt/scriptorium/.env.production` as
+   `DASHBOARD_GOOGLE_CLIENT_ID` and `DASHBOARD_GOOGLE_CLIENT_SECRET`, then run `./deploy/update.sh`.
+7. Open the dashboard and press **Connect Google Calendar**.
+
+Notes: if the dashboard password changes and `DASHBOARD_ENCRYPTION_KEY` is not set, reconnect Google once.
+Unverified: whether Google keeps the refresh token permanent for an unverified app in production; if the card
+ever says "Connect again", that is the cause to look at first.
