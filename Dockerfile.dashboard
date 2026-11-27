@@ -21,6 +21,8 @@ RUN pnpm --filter @scriptorium/dashboard build
 FROM base AS runtime
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 COPY --from=build --chown=node:node /app /app
+# The saved Google sign-in (encrypted) lives in /data, a volume. It must belong to the app's user BEFORE the volume is first used.
+RUN mkdir -p /data && chown node:node /data
 USER node
 WORKDIR /app/apps/dashboard
 EXPOSE 3001
